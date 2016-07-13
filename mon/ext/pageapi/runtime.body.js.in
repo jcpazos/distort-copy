@@ -1190,6 +1190,13 @@ function (G) {
             return monitor.send("is_friend", {params: {username: username}});
         },
 
+        
+        post_keys: function (username) {
+            return monitor.send("post_keys", {params: {username: username}});
+        },
+
+
+
         /**
            on: add an application handler for extension events
 
@@ -1268,6 +1275,10 @@ function (G) {
         // creates a stream (alias)
         new_conv: function () {
             return monitor.send("new_stream", {params: {}});
+        },
+
+        new_anon_conv: function () {
+            return monitor.send("new_anon_stream", {params: {}});
         },
 
         new_stream: function () {
@@ -1352,6 +1363,15 @@ function (G) {
             return monitor.send("darken", {params: {parent: num, ciphertext: ciphertext}});
         },
 
+        //like darken but decrypts with elGamal
+        darken_elGamal: function (hostElt, ciphertext) {
+            if (!runtime.isPrivateHost(hostElt)) {
+                throw new E(E.INVALIDPAREA, "not a private host");
+            }
+            var num = G.Object_getOwnPropertyDescriptor(hostElt, "micasa_private_host").value;
+            return monitor.send("darken_elGamal", {params: {parent: num, ciphertext: ciphertext}});
+        },
+
         // Extract the plaintext from the private area element hostElt
         // Promises ciphertext
         //
@@ -1362,6 +1382,16 @@ function (G) {
             }
             var num = G.Object_getOwnPropertyDescriptor(hostElt, "micasa_private_host").value;
             return monitor.send("lighten", {params: {parent: num}});
+        },
+
+    
+        //Like lighten, but promises an array of ciphertext encrypted using elGamal
+        lighten_multiple: function (hostElt) {
+            if (!runtime.isPrivateHost(hostElt)) {
+                throw new E(E.INVALIDPAREA, "not a private host");
+            }
+            var num = G.Object_getOwnPropertyDescriptor(hostElt, "micasa_private_host").value;
+            return monitor.send("lighten_multiple", {params: {parent: num}});
         }
         
     };
