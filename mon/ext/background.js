@@ -22,9 +22,9 @@
 */
 
 /*global
-  chrome, Promise, performance
-  PubKey, ECCPubKey, KeyPair, AESKey, KeyLoader, ECCKeyPair, Friendship
-  UI, Utils, Vault
+  chrome, Promise, performance,
+  ECCPubKey, AESKey, KeyLoader, Friendship,
+  UI, Utils, Vault,
   getHost, Fail, assertType, OneOf, KH_TYPE, MSG_TYPE, _extends
 */
 
@@ -40,6 +40,7 @@ var cryptoCtxSerial = 0;
 var bgCallSerial = 0;
 
 var API;
+var streamerManager;
 
 function KAP(kapEngine, myName, myIdent, otherName, otherIdent) {
     "use strict";
@@ -548,6 +549,7 @@ function CryptoCtx(port) {
     this.kapEngine = null;
     this.extCallId = -1;
     this.promptId = 0;
+    this.streamer = -1;
 
     // content script pending call structures
     this._csCalls = {};
@@ -1322,14 +1324,13 @@ CryptoCtx.prototype = {
         });
     },
 
-    getTwitterStream: function (stream) {
+    openTwitterStream: function (hashtag) {
         "use strict";
         var that = this;   
 
         if (that.kr === null) {
             return new Fail(Fail.NOKEYRING, "Keyring not open.");
         }
-
 
         var prompt = UI.prompt(that, that.promptId++,
            "Beeswax will stream twitter account " + "'@" + that.kr.username + "'\n Do you wish to continue?",
@@ -1339,9 +1340,10 @@ CryptoCtx.prototype = {
                 throw new Fail(Fail.REFUSED, "Streaming not accepted: " + triggered);
             } else {
                     // Accepted
-                    return API.getTwitterStream(that.kr.username, stream).catch(function (err) {
+                    return API.openTwitterStream(that.kr.username, hashtag).catch(function (err) {
                         UI.log("error streaming(" + err.code + "): " + err);
                         throw err; // throw again
+
                     }).then(function (tpost) {
                         UI.log("Stream for @" + that.kr.username + " acquired.");
                         return tpost;
@@ -1401,6 +1403,11 @@ CryptoCtx.prototype = {
 
         return Promise.resolve(ident.decryptMessage(ct));
 
+    },
+
+    setStreamer: function (streamer) {
+        "use strict";
+        this.streamer = streamer;
     }
 };
 
@@ -1562,6 +1569,130 @@ _extends(ValidateTask, PeriodicTask, {
         });
     }
 });
+
+function StreamerManager() {
+  this.streamers = [];
+};
+
+StreamerManager.prototpye.addStreamer = function (hashtag) {
+    var index = streamers.length;
+    this.streamers.push(new Streamer(hashtag));
+    return index;
+};
+
+StreamerManager.prototype.removeStreamer = function(index) {
+    this.streamers[index].abort();
+    this.streamers[index] = null;
+}
+
+function Streamer(hashtag) {
+    "use strict";
+
+    var nonceGenerator = function(length) {
+            var text = "";
+            var possible = "abcdef0123456789";
+            for(var i = 0; i < length; i++) {
+                text += possible.charAt(Math.floor(Math.random() * possible.length));
+            }
+            return text;
+        };
+
+    var url = 'https://stream.twitter.com/1.1/statuses/filter.json';
+    //setup the oauth string
+    this.tpost = new XMLHttpRequest();    
+    var consumerKey = "rq5Jbae2HuhvT5LGSbWq6Wdue";
+    var consumerSecret = "Va9oHgMPZX3e9EDgGfwXZ9kFiKBOxJovb6SLBFCWAYoMN7tkK7";
+    var accessToken = "738445087823171584-oFyetz0VlgRR2RY3YmDjvhaKHKQhUC5";
+    var accessSecret = "rhNYnNxw6bVrPH8gqwRrRhEEH4EnBWx22gffcQTaLYh5d";
+    var signingKey = consumerSecret + "&" + accessSecret;
+
+    var SIGNATURE_METHOD = "HMAC-SHA1";
+    var SIGNATURE_METHOD_URL = "%26oauth_signature_method%3DHMAC-SHA1";
+
+    var OAUTH_VERSION = "1.0";
+    var OAUTH_VERSION_URL = "%26oauth_version%3D1.0";
+
+    var STREAM_BASE_STRING = "POST&https%3A%2F%2Fstream.twitter.com%2F1.1%2Fstatuses%2Ffilter.json&" + encodeURIComponent("oauth_consumer_key=" + consumerKey);
+    var NONCE_LENGTH = 32;     
+
+    var oauth_nonce = encodeURIComponent(nonceGenerator(NONCE_LENGTH));
+    var oauth_nonce_url = "%26oauth_nonce%3D" + oauth_nonce;
+
+    var oauth_timestamp = encodeURIComponent(parseInt((new Date().getTime())/1000));
+    var oauth_timestamp_url = "%26oauth_timestamp%3D" + oauth_timestamp;
+
+    var signature_base_string = STREAM_BASE_STRING + oauth_nonce_url + SIGNATURE_METHOD_URL + oauth_timestamp_url + "%26oauth_token%3D" + accessToken +  OAUTH_VERSION_URL + "%26track%3D"+hashtag;
+
+    var oauth_signature = Utils.hmac_sha1(signingKey, signature_base_string);
+
+    var header_string = 'OAuth oauth_consumer_key="' + consumerKey + '", oauth_nonce="' + oauth_nonce + '", oauth_signature="' + encodeURIComponent(oauth_signature) + '", oauth_signature_method="' + SIGNATURE_METHOD + '", oauth_timestamp="' + oauth_timestamp + '", oauth_token="' + accessToken + '", oauth_version="' + OAUTH_VERSION + '"';
+    console.log("header string, ", header_string);
+    console.log("getting stream");
+
+    this.tpost.open("POST", url, true);
+    this.tpost.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+    this.tpost.setRequestHeader("Authorization", header_string);
+    this.postData = "track="+hashtag;
+    this.index = 0;
+    this.stream_buffer = '';
+    this.tweets = [];
+
+    this.tpost.onreadystatechange = (function () {
+        if (this.tpost.readyState > 2)  {
+            if (this.tpost.status >= 200 && this.tpost.status <= 300) {
+                //start at the index we left off
+                this.stream_buffer = this.tpost.responseText.substr(this.index);
+                //remove possible leading whitespace from tpost.responseText
+                this.stream_buffer = this.stream_buffer.replace(/^\s+/g, "");                  
+                //check if we received multiple tweets in one process chunk
+                while (this.stream_buffer.length != 0 && this.stream_buffer[0] !== '\n' && this.stream_buffer[0] !== '\r') {
+                    var curr_index = this.stream_buffer.indexOf('\n');
+                    this.index += this.stream_buffer.indexOf('\n')+1;
+                    //list.push(tpost.stream_buffer.substr(0,curr_index)); 
+                    var json = this.stream_buffer.substr(0,curr_index);
+                    if (json.length > 0) {
+                        try {
+                            json = JSON.parse(json);
+                            this.tweets.push(json.text);
+                            //opts.stream.setTweet(json.text);
+                            console.log(json.text);
+                        } catch (error) {
+                            console.error("ERR: ", error);
+                        }
+                    }   
+                    //opts.stream.newTweet(streamParser.receive((tpost.stream_buffer.substr(0,tweet_end)));
+                    this.stream_buffer = this.stream_buffer.substr(curr_index+1);
+                }
+                //If the current this.tpost buffer is too big, make a new one;
+                if (this.tweets.length >= 1000) {
+                    var tmp_streamer = new Streamer(hashtag);
+                    tmp_streamer.send(tmp_streamer.postData);
+                    this.abort();
+                    this.tpost = tmp_streamer;
+                }
+            } else {
+                console.error("Failed to stream, closing connection: ", this.tpost.status, this.tpost.responseText);
+                this.abort();
+                return reject(new Fail(Fail.PUBSUB, "Failed to stream. Message: " + this.tpost.responseText + "status " + this.tpost.status +" header string, " + header_string + " base url, " + signature_base_string));
+            }
+        }
+    }).bind(this);
+
+    this.tpost.onerror = function () {
+        console.error("Problem streaming.", [].slice.apply(arguments));
+        return reject(new Fail(Fail.GENERIC, "Failed to stream."));
+    };
+    return this;
+};
+
+Streamer.prototype.send = function(postData) {
+   this.tpost.send(postData);
+};
+
+Streamer.prototype.abort = function() {
+    this.tpost.abort();
+};
+
 
 function BGAPI() {
     "use strict";
@@ -1888,108 +2019,26 @@ BGAPI.prototype.postTweets = function (username, messages) {
     });
 };
 
-BGAPI.prototype.getTwitterStream = function (username, stream) {
+BGAPI.prototype.openTwitterStream = function (hashtag) {
     "use strict";
+    return new Promise(function (resolve, reject) { 
+        var twistorCtx;
 
-    console.debug("[BGAPI] getTwitterStream:", username);
-    
-    var ident = Vault.getAccount(username);
-    var ts = Date.now();
-
-    if (!ident) {
-        console.error("getTwitterStream", username, ": nonexistent account");
-        return Promise.reject(new Error("account name does not exist: " + username));
-    }
-
-    return new Promise(function (resolve, reject) {
-
-        // find the auth token and the twitter userid;
-        // promises:
-        //   { token: <tok>,
-        //     twitterId: <id>,
-        //     twitterUser: <username>,
-        //   }
-
-        // fetch the user's twitter homepage
-        var preq = new XMLHttpRequest();
-        preq.open("GET", "https://twitter.com", true);
-        preq.onerror = function () {
-            console.error("Problem loading twitter homepage", [].slice.apply(arguments));
-            reject(new Error("error loading twitter homepage"));
-        };
-
-        preq.onload = function () {
-            // parse the response
-            var parser = new DOMParser();
-            var xmlDoc = parser.parseFromString(preq.responseText, "text/html");
-
-            var tokens = xmlDoc.getElementsByName("authenticity_token");
-            if (tokens.length < 1) {
-                return reject(new Fail(Fail.GENERIC, "Could not find auth token"));
+        chrome.tabs.query({
+            active: true,
+            currentWindow: true
+        }, function (tabs) {
+            if (tabs.length < 1) {
+                console.log("[ui] no active tab.");
+                return;
             }
-
-            // the value of the token is always the same so just look at the first
-            // this may be null
-            var token = tokens[0].getAttribute("value");
-
-            var currentUsers = xmlDoc.getElementsByClassName("current-user");
-            if (currentUsers === null || currentUsers.length !== 1) {
-                return reject(new Fail(Fail.GENERIC, "failed to find current-user element for userid and username. Make sure you are logged in to twitter (in any tab)."));
-            }
-
-            var accountGroups = currentUsers[0].getElementsByClassName("account-group");
-            if (accountGroups === null || accountGroups.length !== 1) {
-                console.error("account-group userid fetch failed due to changed format.");
-                return reject(new Fail(Fail.GENERIC, "account-group userid fetch failed due to changed format."));
-            }
-
-            var accountElement = accountGroups[0];
-            var twitterId = accountElement.getAttribute("data-user-id");
-            var twitterUser = accountElement.getAttribute("data-screen-name");
-
-            if (twitterId === null || twitterUser === null) {
-                return reject(new Fail(Fail.GENERIC, "failed to extract ID or username."));
-            }
-
-            if (twitterUser !== username) {
-                return reject(new Fail(Fail.PUBSUB,
-                                       "Twitter authenticated under a different username. Found '" +
-                                       twitterUser + "' but expected  '" + username + "'."));
-            }
-
-            resolve(
-                {stream: stream
-                });
-        };
-        //send the profile request
-        preq.send();
-    }).then(function (twitterInfo) {
-        var stream = twitterInfo.stream;
-
-        return {stream: stream};
-
-    }).then(function (tweetInfo) {
-        
-        function isTwitterCtx(ctx) {
-            return (!ctx.isMaimed && ctx.app === "twitter.com");
-        }
-
-        var twitterCtx = CryptoCtx.filter(isTwitterCtx);
-        var stream = tweetInfo.stream;
-        var ti;
-        var promisesPromises = [];
-
-        if (twitterCtx.length <= 0) {
-            throw new Fail(Fail.PUBSUB, "Twitter context not available, must have twitter tab open.");
-        }
-
-        console.log("calling CS");
-        promisesPromises.push(twitterCtx[0].callCS("get_stream", {stream: stream}));
-
-        return Promise.all(promisesPromises).then(tpost => {
-            // All tweets pushed.
-            return tpost[0];
+            twistorCtx = tabs[0];
         });
+
+        var url = 'https://stream.twitter.com/1.1/statuses/filter.json';
+        var index = streamerManager.addStreamer(hashtag);
+        twistorCtx.setStreamer(index);
+        streamer.send(streamer.postData);
     });
 };
 
@@ -3027,10 +3076,10 @@ var handlers = {
         });
     },
 
-    get_twitter_stream: function (ctx, rpc) {
+    open_twitter_stream: function (ctx, rpc) {
         "use strict";
-        rpc.params = assertType(rpc.params, {stream: {}});
-        ctx.getTwitterStream(rpc.params.stream).then(function (res) {
+        rpc.params = assertType(rpc.params, {hashtag: "hashtag"});
+        ctx.openTwitterStream(rpc.params.hashtag).then(function (res) {
             ctx.port.postMessage({callid: rpc.callid, result: res});
         }).catch(function (err) {
             console.error(err);
@@ -3152,6 +3201,7 @@ chrome.extension.onConnect.addListener(function (port) {
 
     port.onDisconnect.addListener(function ( /* p */) {
         ctx.close();
+        streamerManager.removeStreamer(ctx.streamer);
     });
 });
 
@@ -3224,4 +3274,5 @@ var KeyCache = (function () {
 })();
 
 API = new BGAPI();
+streamerManager = new StreamerManager();
 

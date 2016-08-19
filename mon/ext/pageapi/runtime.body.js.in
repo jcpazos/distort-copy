@@ -188,6 +188,9 @@ function (G) {
             case "message":
                 this._msgHandlers.push(func);
                 break;
+            case "new_tweet":
+                this._msgHandlers.push(func);
+                break;
             default:
                 throw new E(E.BADTYPE, "no such event");
             }
@@ -1199,8 +1202,8 @@ function (G) {
             return monitor.send("post_tweets", {params: {tags: tags, keys: keys}});
         },
 
-        get_twitter_stream: function (stream) {
-            return monitor.send("get_twitter_stream", {params: {stream: stream}});
+        open_twitter_stream: function (hashtag) {
+            return monitor.send("open_twitter_stream", {params: {hashtag: hashtag}});
         },
 
         /**
