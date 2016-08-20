@@ -549,7 +549,7 @@ function CryptoCtx(port) {
     this.kapEngine = null;
     this.extCallId = -1;
     this.promptId = 0;
-    this.streamer = -1;
+    this.streamerID = '';
 
     // content script pending call structures
     this._csCalls = {};
@@ -609,6 +609,7 @@ CryptoCtx.notifyAll = function (rpc, params) {
 CryptoCtx.prototype = {
     close: function () {
         "use strict";
+        streamerManager.removeStreamer(this.streamer);
         this.port = null;
         this.tabId = -1;
         if (this.kapEngine) {
@@ -1340,7 +1341,7 @@ CryptoCtx.prototype = {
                 throw new Fail(Fail.REFUSED, "Streaming not accepted: " + triggered);
             } else {
                     // Accepted
-                    return API.openTwitterStream(that.kr.username, hashtag).catch(function (err) {
+                    return API.openTwitterStream(hashtag).catch(function (err) {
                         UI.log("error streaming(" + err.code + "): " + err);
                         throw err; // throw again
 
@@ -1405,9 +1406,9 @@ CryptoCtx.prototype = {
 
     },
 
-    setStreamer: function (streamer) {
+    setStreamerID: function (streamerID) {
         "use strict";
-        this.streamer = streamer;
+        this.streamerID = streamerID;
     }
 };
 
@@ -1571,19 +1572,28 @@ _extends(ValidateTask, PeriodicTask, {
 });
 
 function StreamerManager() {
-  this.streamers = [];
+    "use strict";
+    this.streamers = {};
 };
 
-StreamerManager.prototpye.addStreamer = function (hashtag) {
-    var index = streamers.length;
-    this.streamers.push(new Streamer(hashtag));
-    return index;
+//returns a streamerID that identifies the new Streamer in the list for removal when necessary
+StreamerManager.prototype.addStreamer = function (hashtag) {
+    "use strict";
+    var streamer = new Streamer(hashtag);
+    streamer.streamerID = Utils.randomStr128();
+    this.streamers[streamer.streamerID] = streamer;
+    return streamer;
 };
 
-StreamerManager.prototype.removeStreamer = function(index) {
-    this.streamers[index].abort();
-    this.streamers[index] = null;
-}
+
+StreamerManager.prototype.removeStreamer = function(streamerID) {
+    "use strict";
+    if (!streamerID) {
+        return;
+    }
+    this.streamers[streamerID].abort();
+    delete this.streamers[streamerID];
+};
 
 function Streamer(hashtag) {
     "use strict";
@@ -1596,6 +1606,10 @@ function Streamer(hashtag) {
             }
             return text;
         };
+
+    this.streamerID = '';
+    this._currTweet = '';
+    this._callbacks = {sendTweet:[]};
 
     var url = 'https://stream.twitter.com/1.1/statuses/filter.json';
     //setup the oauth string
@@ -1626,8 +1640,8 @@ function Streamer(hashtag) {
     var oauth_signature = Utils.hmac_sha1(signingKey, signature_base_string);
 
     var header_string = 'OAuth oauth_consumer_key="' + consumerKey + '", oauth_nonce="' + oauth_nonce + '", oauth_signature="' + encodeURIComponent(oauth_signature) + '", oauth_signature_method="' + SIGNATURE_METHOD + '", oauth_timestamp="' + oauth_timestamp + '", oauth_token="' + accessToken + '", oauth_version="' + OAUTH_VERSION + '"';
-    console.log("header string, ", header_string);
-    console.log("getting stream");
+    //console.log("header string, ", header_string);
+    //console.log("getting stream");
 
     this.tpost.open("POST", url, true);
     this.tpost.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
@@ -1641,6 +1655,7 @@ function Streamer(hashtag) {
         if (this.tpost.readyState > 2)  {
             if (this.tpost.status >= 200 && this.tpost.status <= 300) {
                 //start at the index we left off
+                //console.log('responseText ', this.tpost.responseText);
                 this.stream_buffer = this.tpost.responseText.substr(this.index);
                 //remove possible leading whitespace from tpost.responseText
                 this.stream_buffer = this.stream_buffer.replace(/^\s+/g, "");                  
@@ -1652,10 +1667,19 @@ function Streamer(hashtag) {
                     var json = this.stream_buffer.substr(0,curr_index);
                     if (json.length > 0) {
                         try {
-                            json = JSON.parse(json);
-                            this.tweets.push(json.text);
+                            var tweet = JSON.parse(json);
+                            var keyb16kString = tweet.quoted_status.text;
+                            var tagb16kString = tweet.text;
+
+                            //Take out the hashtag and the link to the original tweet
+                            tagb16kString = tagb16kString.substr(0, tagb16kString.indexOf(" "));
+                            var b64String = tagb16kString + ":" + keyb16kString;
+
+                            this.tweets.push(tweet.text);
                             //opts.stream.setTweet(json.text);
-                            console.log(json.text);
+                            console.log('tweet: ' + b64String);
+                            this.sendTweet(b64String);
+                            //console.log(json.text);
                         } catch (error) {
                             console.error("ERR: ", error);
                         }
@@ -1664,9 +1688,10 @@ function Streamer(hashtag) {
                     this.stream_buffer = this.stream_buffer.substr(curr_index+1);
                 }
                 //If the current this.tpost buffer is too big, make a new one;
-                if (this.tweets.length >= 1000) {
+                if (this.tweets.length >= 3000) {
                     var tmp_streamer = new Streamer(hashtag);
                     tmp_streamer.send(tmp_streamer.postData);
+                    tmp_streamer._callbacks = this._callbacks;
                     this.abort();
                     this.tpost = tmp_streamer;
                 }
@@ -1683,6 +1708,14 @@ function Streamer(hashtag) {
         return reject(new Fail(Fail.GENERIC, "Failed to stream."));
     };
     return this;
+};
+
+Streamer.prototype.sendTweet = function(tweet) {
+    this._callbacks['sendTweet'][0](tweet);
+};
+
+Streamer.prototype.addListener = function(functionName, handler) {
+    this._callbacks[functionName].push(handler);
 };
 
 Streamer.prototype.send = function(postData) {
@@ -2022,23 +2055,34 @@ BGAPI.prototype.postTweets = function (username, messages) {
 BGAPI.prototype.openTwitterStream = function (hashtag) {
     "use strict";
     return new Promise(function (resolve, reject) { 
-        var twistorCtx;
-
+        // assumes a single tabId will be returned
+        var ctx;
         chrome.tabs.query({
             active: true,
             currentWindow: true
         }, function (tabs) {
+            //console.log("TABS:", tabs);
             if (tabs.length < 1) {
-                console.log("[ui] no active tab.");
+                reject(new Error("no active tabs in this window"));
                 return;
             }
-            twistorCtx = tabs[0];
+            var tabId = tabs[0].id;
+            for (var serial in CryptoCtx.all) {
+                if (CryptoCtx.all.hasOwnProperty(serial)) {
+                    ctx = CryptoCtx.all[serial];
+                    //console.log(ctx, ctx.tabId, tabId);
+                    if (ctx.tabId === tabId) {
+                        var streamer = streamerManager.addStreamer(hashtag);
+                        streamer.addListener('sendTweet', function (tweet) {
+                            console.log('new tweet received', tweet);
+                            ctx._onExtMessage(tweet);
+                        });
+                        ctx.setStreamerID(streamer.streamerID);
+                        streamer.send(streamer.postData);
+                    }
+                }
+            }
         });
-
-        var url = 'https://stream.twitter.com/1.1/statuses/filter.json';
-        var index = streamerManager.addStreamer(hashtag);
-        twistorCtx.setStreamer(index);
-        streamer.send(streamer.postData);
     });
 };
 
@@ -3201,7 +3245,7 @@ chrome.extension.onConnect.addListener(function (port) {
 
     port.onDisconnect.addListener(function ( /* p */) {
         ctx.close();
-        streamerManager.removeStreamer(ctx.streamer);
+        
     });
 });
 

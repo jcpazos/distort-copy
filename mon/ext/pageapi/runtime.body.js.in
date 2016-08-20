@@ -188,7 +188,7 @@ function (G) {
             case "message":
                 this._msgHandlers.push(func);
                 break;
-            case "new_tweet":
+            case "newTweet":
                 this._msgHandlers.push(func);
                 break;
             default:
@@ -202,6 +202,14 @@ function (G) {
 
             switch (typ) {
             case "message":
+                for (i = 0; i < hdls.length; i++) {
+                    if (hdls[i] === func) {
+                        this._msgHandlers = G.Array_slice(hdls, [i, 1]);
+                        return;
+                    }
+                }
+                break;
+            case "newTweet":
                 for (i = 0; i < hdls.length; i++) {
                     if (hdls[i] === func) {
                         this._msgHandlers = G.Array_slice(hdls, [i, 1]);
