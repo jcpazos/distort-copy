@@ -549,7 +549,8 @@ function CryptoCtx(port) {
     this.kapEngine = null;
     this.extCallId = -1;
     this.promptId = 0;
-    this.streamerID = '';
+    this.tweetStreamerID = '';
+    this.pKeyStreamerID = '';
 
     // content script pending call structures
     this._csCalls = {};
@@ -609,7 +610,8 @@ CryptoCtx.notifyAll = function (rpc, params) {
 CryptoCtx.prototype = {
     close: function () {
         "use strict";
-        streamerManager.removeStreamer(this.streamer);
+        streamerManager.removeStreamer(this.tweetStreamerID);
+        streamerManager.removeStreamer(this.pKeyStreamerID);
         this.port = null;
         this.tabId = -1;
         if (this.kapEngine) {
@@ -1356,31 +1358,12 @@ CryptoCtx.prototype = {
     encryptMessage: function (principals, plaintext) {
         "use strict";
         var that = this;
-        //TODO: ENCRYPT WITH PUBLIC KEY OF EACH USER IN KEYOBJ
       
         var result = [];
         var promisesPromises = [];
 
         for (var i=0; i<principals.length; i++){
-            /*var ident = Vault.getAccount(principals[i]);
-            if (!ident) {
-                return Promise.reject(new Error("account name does not exist: " + principals[i]));
-            }
-            var pubKey = /*ident.toPubKey();*/
             promisesPromises.push(API.fetchPublic(principals[i]));
-            /*.then(function (pubKey) {
-                console.log("encrypting plaintext " + plaintext + " with pubKey ", pubKey);
-
-                var ct = pubKey.encryptMessage(plaintext);
-                console.log("ct is ", ct);
-                result.push(ct);
-                if ((i+1) === principals.length) {
-                    return result;
-                }
-            }).catch(function (err) {
-                console.error("encryptMessage error:", err);
-                throw err;
-            });  */
         }
         return Promise.all(promisesPromises).then(pubKeys => {
             for (var i=0; i<pubKeys.length; i++) {
@@ -1406,9 +1389,11 @@ CryptoCtx.prototype = {
 
     },
 
-    setStreamerID: function (streamerID) {
+    setStreamerIDs: function (tweetStreamerID, pKeyStreamerID) {
         "use strict";
-        this.streamerID = streamerID;
+        this.tweetstreamerID = tweetStreamerID;
+        this.pKeyStreamerID = pKeyStreamerID;
+
     }
 };
 
@@ -1577,10 +1562,14 @@ function StreamerManager() {
 };
 
 //returns a streamerID that identifies the new Streamer in the list for removal when necessary
-StreamerManager.prototype.addStreamer = function (hashtag) {
+StreamerManager.prototype.addStreamer = function (hashtag, klass) {
     "use strict";
-    var streamer = new Streamer(hashtag);
-    streamer.streamerID = Utils.randomStr128();
+    var streamer;
+    if (klass === Streamer.TWEET_STREAMER) {
+        streamer = new TweetStreamer(hashtag, Utils.randomStr128());
+    } else if (klass === Streamer.PKEY_STREAMER) {
+        streamer = new PKeyStreamer(Utils.randomStr128());
+    }
     this.streamers[streamer.streamerID] = streamer;
     return streamer;
 };
@@ -1588,6 +1577,7 @@ StreamerManager.prototype.addStreamer = function (hashtag) {
 
 StreamerManager.prototype.removeStreamer = function(streamerID) {
     "use strict";
+    console.log("removing streamer ", streamerID);
     if (!streamerID) {
         return;
     }
@@ -1595,7 +1585,7 @@ StreamerManager.prototype.removeStreamer = function(streamerID) {
     delete this.streamers[streamerID];
 };
 
-function Streamer(hashtag) {
+function Streamer(hashtag, streamerID) {
     "use strict";
 
     var nonceGenerator = function(length) {
@@ -1607,9 +1597,8 @@ function Streamer(hashtag) {
             return text;
         };
 
-    this.streamerID = '';
-    this._currTweet = '';
     this._callbacks = {sendTweet:[]};
+    this.streamerID = streamerID;
 
     var url = 'https://stream.twitter.com/1.1/statuses/filter.json';
     //setup the oauth string
@@ -1651,6 +1640,41 @@ function Streamer(hashtag) {
     this.stream_buffer = '';
     this.tweets = [];
 
+    return this;
+};
+
+Streamer.TWEET_STREAMER = 'TweetStreamer';
+Streamer.PKEY_STREAMER     = 'PKeyStreamer';
+
+Streamer.prototype.sendTweet = function(tweet) {
+    "use strict";
+    this._callbacks['sendTweet'][0](tweet);
+};
+
+Streamer.prototype.addListener = function(functionName, handler) {
+    "use strict";
+    this._callbacks[functionName].push(handler);
+};
+
+Streamer.prototype.send = function() {
+    "use strict";
+    this.tpost.send(this.postData);
+};
+
+Streamer.prototype.abort = function() {
+    "use strict";
+    this.tpost.abort();
+};
+
+Streamer.prototype.setupTpost = function() {
+    "use strict";
+    throw new Fail(Fail.GENERIC, "run() must be implemented by subclasses");
+};
+
+function TweetStreamer(hashtag, streamerID) {
+    "use strict";
+    TweetStreamer.__super__.constructor.call(this, hashtag, streamerID);
+
     this.tpost.onreadystatechange = (function () {
         if (this.tpost.readyState > 2)  {
             if (this.tpost.status >= 200 && this.tpost.status <= 300) {
@@ -1660,6 +1684,70 @@ function Streamer(hashtag) {
                 //remove possible leading whitespace from tpost.responseText
                 this.stream_buffer = this.stream_buffer.replace(/^\s+/g, "");                  
                 //check if we received multiple tweets in one process chunk
+                while (this.stream_buffer.length != 0 && this.stream_buffer[0] !== '\n' && this.stream_buffer[0] !== '\r') {
+                    var curr_index = this.stream_buffer.indexOf('\n');
+                    this.index += this.stream_buffer.indexOf('\n')+1;
+                    var json = this.stream_buffer.substr(0,curr_index);
+                    if (json.length > 0) {
+                        try {
+                            var tweet = JSON.parse(json);
+                            var keyb16kString = tweet.quoted_status.text;
+                            var tagb16kString = tweet.text;
+
+                            //Take out the hashtag and the link to the original tweet
+                            tagb16kString = tagb16kString.substr(0, tagb16kString.indexOf(" "));
+                            var b64String = tagb16kString + ":" + keyb16kString;
+
+                            this.tweets.push(tweet.text);
+                            console.log('tweet: ' + b64String);
+                            this.sendTweet(b64String);
+                        } catch (error) {
+                            console.error("ERR: ", error);
+                        }
+                    }   
+                    this.stream_buffer = this.stream_buffer.substr(curr_index+1);
+                }
+                //If the current this.tpost buffer is too big, make a new one;
+                if (this.tweets.length >= 3000) {
+                    var tmp_streamer = new Streamer(hashtag);
+                    tmp_streamer.send();
+                    tmp_streamer._callbacks = this._callbacks;
+                    this.abort();
+                    this.tpost = tmp_streamer;
+                }
+            } else {
+                console.error("Failed to stream, closing connection: ", this.tpost.status, this.tpost.responseText);
+                this.abort();
+                return reject(new Fail(Fail.PUBSUB, "Failed to stream. Message: " + this.tpost.responseText + "status " + this.tpost.status +" header string, " + header_string + " base url, " + signature_base_string));
+            }
+        }
+    }).bind(this);
+
+    this.tpost.onerror = function () {
+        console.error("Problem streaming tweets.", [].slice.apply(arguments));
+        return reject(new Fail(Fail.GENERIC, "Failed to stream tweets."));
+    };
+}
+
+_extends(TweetStreamer, Streamer, {
+
+});
+
+function PKeyStreamer(streamerID) {
+    "use strict";
+    PKeyStreamer.__super__.constructor.call(this, "encryptkey,keysig,signkey", streamerID);
+    //TODO: FINISH THIS
+    this.tpost.onreadystatechange = (function () {
+        if (this.tpost.readyState > 2)  {
+            if (this.tpost.status >= 200 && this.tpost.status <= 300) {
+                //parse pkey info and save into database 
+                var sign = {};
+                var encrypt = {};
+                var signature = {};
+                var expiration = {};
+                var timestamp = null;
+                var twitterId = null;
+                
                 while (this.stream_buffer.length != 0 && this.stream_buffer[0] !== '\n' && this.stream_buffer[0] !== '\r') {
                     var curr_index = this.stream_buffer.indexOf('\n');
                     this.index += this.stream_buffer.indexOf('\n')+1;
@@ -1684,48 +1772,84 @@ function Streamer(hashtag) {
                             console.error("ERR: ", error);
                         }
                     }   
-                    //opts.stream.newTweet(streamParser.receive((tpost.stream_buffer.substr(0,tweet_end)));
                     this.stream_buffer = this.stream_buffer.substr(curr_index+1);
                 }
-                //If the current this.tpost buffer is too big, make a new one;
-                if (this.tweets.length >= 3000) {
-                    var tmp_streamer = new Streamer(hashtag);
-                    tmp_streamer.send(tmp_streamer.postData);
-                    tmp_streamer._callbacks = this._callbacks;
-                    this.abort();
-                    this.tpost = tmp_streamer;
+
+                if (findtag("#signkey", tweet)) {
+                    toks = tweet.innerText.split(/\s+/);
+                    if (toks.length === 3 && sign[toks[1]] === undefined && Number(toks[1])) {
+                        sign[toks[1]] = {tweet: toks[2], twitterid: id};
+                    } else {
+                        console.warn("#signkey tweet for user", username, "is malformed:", tweet);
+                    continue; // try next tweet
+                    }
                 }
-            } else {
-                console.error("Failed to stream, closing connection: ", this.tpost.status, this.tpost.responseText);
-                this.abort();
-                return reject(new Fail(Fail.PUBSUB, "Failed to stream. Message: " + this.tpost.responseText + "status " + this.tpost.status +" header string, " + header_string + " base url, " + signature_base_string));
+
+                //look through each tweet for the hashtag for encrypting
+                if (findtag("#encryptkey", tweet)) {
+                    toks = tweet.innerText.split(/\s+/);
+                    if (toks.length === 3 && encrypt[toks[1]] === undefined && Number(toks[1])) {
+                        encrypt[toks[1]] = {tweet: toks[2], twitterid: id};
+                    } else {
+                        console.warn("#encryptkey tweet for user", username, "is malformed:", tweet);
+                        continue; // try next tweet
+                    }
+                }
+
+                //look through each tweet for the hashtag for encrypting
+                if (findtag("#keysig", tweet)) {
+                    toks = tweet.innerText.split(/\s+/);
+                    if (toks.length === 4 && signature[toks[1]] === undefined && Number(toks[1]) && Number(toks[2])) {
+                        expiration[toks[1]] = {tweet: toks[2], twitterid: id};
+                        signature[toks[1]] = {tweet: toks[3], twitterid: id};
+                    } else {
+                        console.warn("#keysig tweet for user", username, "is malformed:", tweet);
+                        continue; // try next tweet
+                    }
+                }
+
+                var timestamps = [];
+                // Determine timestamps for which we have entire triples.
+                for (var ts in signature) {
+                    if (sign[ts] && encrypt[ts] && sign[ts].twitterid === signature[ts].twitterid && encrypt[ts].twitterid === signature[ts].twitterid) {
+                        timestamps.push(ts);
+                    }
+                }
+                timestamps.sort(function (a, b) {
+                // We want a descending order so negative should be returned when the second is larger.
+                return Number(b) - Number(a);
+                });
+
+                // If we find no timestamps, that is a problem.
+                if (timestamps.length === 0) {
+                // TODO(rjsumi): error reporting
+                    sign = null;
+                    encrypt = null;
+                    signature = null;
+                    expiration = null;
+                    return;
+                }
+
+                // Check for the newest one i.e. the highest timestamp.
+                timestamp = timestamps[0];
+
+                sign = sign[timestamp].tweet;
+                encrypt = encrypt[timestamp].tweet;
+                twitterId = signature[timestamp].twitterid;
+                signature = signature[timestamp].tweet;
+                expiration = expiration[timestamp].tweet;
             }
         }
     }).bind(this);
 
     this.tpost.onerror = function () {
-        console.error("Problem streaming.", [].slice.apply(arguments));
-        return reject(new Fail(Fail.GENERIC, "Failed to stream."));
+        console.error("Problem streaming public keys.", [].slice.apply(arguments));
+        return reject(new Fail(Fail.GENERIC, "Failed to stream public keys."));
     };
-    return this;
-};
+}
+_extends(PKeyStreamer, Streamer, {
 
-Streamer.prototype.sendTweet = function(tweet) {
-    this._callbacks['sendTweet'][0](tweet);
-};
-
-Streamer.prototype.addListener = function(functionName, handler) {
-    this._callbacks[functionName].push(handler);
-};
-
-Streamer.prototype.send = function(postData) {
-   this.tpost.send(postData);
-};
-
-Streamer.prototype.abort = function() {
-    this.tpost.abort();
-};
-
+});
 
 function BGAPI() {
     "use strict";
@@ -2072,13 +2196,18 @@ BGAPI.prototype.openTwitterStream = function (hashtag) {
                     ctx = CryptoCtx.all[serial];
                     //console.log(ctx, ctx.tabId, tabId);
                     if (ctx.tabId === tabId) {
-                        var streamer = streamerManager.addStreamer(hashtag);
-                        streamer.addListener('sendTweet', function (tweet) {
+                        var tweetStreamer = streamerManager.addStreamer(hashtag, Streamer.TWEET_STREAMER);
+                        //var pKeyStreamer = streamerManager.addStreamer(hashtag, Streamer.PKEY_STREAMER);
+                        tweetStreamer.addListener('sendTweet', function (tweet) {
                             console.log('new tweet received', tweet);
                             ctx._onExtMessage(tweet);
                         });
-                        ctx.setStreamerID(streamer.streamerID);
-                        streamer.send(streamer.postData);
+                        /*pKeyStreamer.addListener('newPKey', function (pKey) {
+                            //save key to database
+                        });*/
+                        ctx.setStreamerIDs(tweetStreamer.streamerID, '');
+                        tweetStreamer.send(tweetStreamer.postData);
+                        //pKeyStreamer.send(pKeyStreamer.postData);
                     }
                 }
             }
