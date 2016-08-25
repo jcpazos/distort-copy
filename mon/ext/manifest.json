@@ -40,5 +40,5 @@
   ],
   "permissions": ["webRequest", "webRequestBlocking",
                   "tabs", "storage", "https://twitter.com/",
-                  "<all_urls>"]
+                  "<all_urls>", "clipboardRead", "clipboardWrite"]
 }

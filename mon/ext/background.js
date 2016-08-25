@@ -1391,7 +1391,7 @@ CryptoCtx.prototype = {
 
     setStreamerIDs: function (tweetStreamerID, pKeyStreamerID) {
         "use strict";
-        this.tweetstreamerID = tweetStreamerID;
+        this.tweetStreamerID = tweetStreamerID;
         this.pKeyStreamerID = pKeyStreamerID;
 
     }
@@ -1624,7 +1624,7 @@ function Streamer(hashtag, streamerID) {
     var oauth_timestamp = encodeURIComponent(parseInt((new Date().getTime())/1000));
     var oauth_timestamp_url = "%26oauth_timestamp%3D" + oauth_timestamp;
 
-    var signature_base_string = STREAM_BASE_STRING + oauth_nonce_url + SIGNATURE_METHOD_URL + oauth_timestamp_url + "%26oauth_token%3D" + accessToken +  OAUTH_VERSION_URL + "%26track%3D"+hashtag;
+    var signature_base_string = STREAM_BASE_STRING + oauth_nonce_url + SIGNATURE_METHOD_URL + oauth_timestamp_url + "%26oauth_token%3D" + accessToken +  OAUTH_VERSION_URL + "%26track%3D"+encodeURIComponent(encodeURIComponent(hashtag));
 
     var oauth_signature = Utils.hmac_sha1(signingKey, signature_base_string);
 
@@ -1691,6 +1691,8 @@ function TweetStreamer(hashtag, streamerID) {
                     if (json.length > 0) {
                         try {
                             var tweet = JSON.parse(json);
+                            console.log(tweet);
+                            if (tweet.quoted_status) {
                             var keyb16kString = tweet.quoted_status.text;
                             var tagb16kString = tweet.text;
 
@@ -1701,6 +1703,8 @@ function TweetStreamer(hashtag, streamerID) {
                             this.tweets.push(tweet.text);
                             console.log('tweet: ' + b64String);
                             this.sendTweet(b64String);
+                            }
+                            
                         } catch (error) {
                             console.error("ERR: ", error);
                         }
@@ -1718,7 +1722,7 @@ function TweetStreamer(hashtag, streamerID) {
             } else {
                 console.error("Failed to stream, closing connection: ", this.tpost.status, this.tpost.responseText);
                 this.abort();
-                return reject(new Fail(Fail.PUBSUB, "Failed to stream. Message: " + this.tpost.responseText + "status " + this.tpost.status +" header string, " + header_string + " base url, " + signature_base_string));
+                //return reject(new Fail(Fail.PUBSUB, "Failed to stream. Message: " + this.tpost.responseText + "status " + this.tpost.status +" header string, " + header_string + " base url, " + signature_base_string));
             }
         }
     }).bind(this);
@@ -1737,36 +1741,105 @@ function PKeyStreamer(streamerID) {
     "use strict";
     PKeyStreamer.__super__.constructor.call(this, "encryptkey,keysig,signkey", streamerID);
     //TODO: FINISH THIS
+    // return ECCPubKey
+    function parseKey(sign, encrypt, expiration, signature, timestamp, twitterId, username) {
+            //we found both keys, persist them
+        var minified = {
+            encrypt: encrypt,
+            sign: sign
+        };
+        var key = ECCPubKey.unminify(minified);
+            
+        var signedMessage = username + twitterId + encrypt + sign + timestamp + expiration;
+        if (!key.verifySignature(signedMessage, signature)) {
+            console.error("Failed to verify signature: ", sign, encrypt, signature);
+            throw new Fail(Fail.GENERIC, "verification failed");
+        }
+        return {key:  key,
+                ts: Number(timestamp),
+                expiration: Number(expiration)};
+    };
+
+    var users = {};
     this.tpost.onreadystatechange = (function () {
         if (this.tpost.readyState > 2)  {
             if (this.tpost.status >= 200 && this.tpost.status <= 300) {
                 //parse pkey info and save into database 
-                var sign = {};
-                var encrypt = {};
-                var signature = {};
-                var expiration = {};
-                var timestamp = null;
-                var twitterId = null;
+                //start at the index we left off
+                //console.log('responseText ', this.tpost.responseText);
+                this.stream_buffer = this.tpost.responseText.substr(this.index);
+                //remove possible leading whitespace from tpost.responseText
+                this.stream_buffer = this.stream_buffer.replace(/^\s+/g, ""); 
                 
                 while (this.stream_buffer.length != 0 && this.stream_buffer[0] !== '\n' && this.stream_buffer[0] !== '\r') {
                     var curr_index = this.stream_buffer.indexOf('\n');
                     this.index += this.stream_buffer.indexOf('\n')+1;
+                    var toks;
                     //list.push(tpost.stream_buffer.substr(0,curr_index)); 
                     var json = this.stream_buffer.substr(0,curr_index);
                     if (json.length > 0) {
                         try {
                             var tweet = JSON.parse(json);
-                            var keyb16kString = tweet.quoted_status.text;
-                            var tagb16kString = tweet.text;
+                            console.log('tweet: ' + tweet.text);
 
-                            //Take out the hashtag and the link to the original tweet
-                            tagb16kString = tagb16kString.substr(0, tagb16kString.indexOf(" "));
-                            var b64String = tagb16kString + ":" + keyb16kString;
+                            //0 is sign, 1 is encrypt, 2 is expiration, 3 is signature, 4 is timestamp
+                            if (!users[tweet.user.id_str]) {
+                                users[tweet.user.id_str] = [undefined, undefined, undefined, undefined, undefined];
+                            }
+                            var username = tweet.user.screen_name;
+                            var userID = tweet.user.id_str;
+                           
 
-                            this.tweets.push(tweet.text);
-                            //opts.stream.setTweet(json.text);
-                            console.log('tweet: ' + b64String);
-                            this.sendTweet(b64String);
+                            if (tweet.text.includes('#signkey')) {
+                                toks = tweet.text.split(/\s+/);
+                                if (toks.length === 3 && users[userID][0] === undefined && Number(toks[1])) {
+                                    users[tweet.user.id_str][0] = toks[2]
+                                    users[tweet.user.id_str][4] = toks[1];
+                                } else {
+                                    console.warn("#signkey tweet for user", username, "is malformed:", tweet);
+                                }
+                            } else if (tweet.text.includes('#encryptkey')) {
+                                toks = tweet.text.split(/\s+/);
+                                if (toks.length === 3 && users[userID][1] === undefined && Number(toks[1])) {
+                                    users[tweet.user.id_str][1] = toks[2];
+                                } else {
+                                    console.warn("#encryptkey tweet for user", username, "is malformed:", tweet);
+                                }
+                            } else if (tweet.text.includes('#keysig')) {
+                                toks = tweet.text.split(/\s+/);
+                                if (toks.length === 4 && users[userID][3] === undefined && Number(toks[1]) && Number(toks[2])) {
+                                    users[tweet.user.id_str][2] = toks[2]
+                                    users[tweet.user.id_str][3] = toks[3]
+                                } else {
+                                    console.warn("#keysig tweet for user", username, "is malformed:", tweet);
+                                }
+                            }
+
+                            //check if we have all the user info needed
+                            var userDone = true;
+                            for (var i=0; i<4; i++){
+                                var userInfo = users[userID];
+                                if (userInfo[i] === undefined) {
+                                    userDone = false;
+                                }
+                            }
+
+                            if (userDone) {
+                                var storageName = CryptoCtx.globalKeyName(username, "@");
+                                var pubKeyContainer = parseKey(users[userID][0], users[userID][1], users[userID][2], users[userID][3], users[userID][4], userID, username);
+                                var pubKey = pubKeyContainer.key;
+                                var stale = pubKeyContainer.expiration < Date.now();
+                                if (stale) {
+                                    throw new Fail(Fail.STALE, "Found only a stale key for " + username);
+                                }
+                                else {
+                                    API.storeKey(storageName, pubKey).then(function () {
+                                    console.log('stored key for username ', username);
+                                    delete users[tweet.user.id_str];
+                                    });
+                                }
+                            }
+                            
                             //console.log(json.text);
                         } catch (error) {
                             console.error("ERR: ", error);
@@ -1775,69 +1848,6 @@ function PKeyStreamer(streamerID) {
                     this.stream_buffer = this.stream_buffer.substr(curr_index+1);
                 }
 
-                if (findtag("#signkey", tweet)) {
-                    toks = tweet.innerText.split(/\s+/);
-                    if (toks.length === 3 && sign[toks[1]] === undefined && Number(toks[1])) {
-                        sign[toks[1]] = {tweet: toks[2], twitterid: id};
-                    } else {
-                        console.warn("#signkey tweet for user", username, "is malformed:", tweet);
-                    continue; // try next tweet
-                    }
-                }
-
-                //look through each tweet for the hashtag for encrypting
-                if (findtag("#encryptkey", tweet)) {
-                    toks = tweet.innerText.split(/\s+/);
-                    if (toks.length === 3 && encrypt[toks[1]] === undefined && Number(toks[1])) {
-                        encrypt[toks[1]] = {tweet: toks[2], twitterid: id};
-                    } else {
-                        console.warn("#encryptkey tweet for user", username, "is malformed:", tweet);
-                        continue; // try next tweet
-                    }
-                }
-
-                //look through each tweet for the hashtag for encrypting
-                if (findtag("#keysig", tweet)) {
-                    toks = tweet.innerText.split(/\s+/);
-                    if (toks.length === 4 && signature[toks[1]] === undefined && Number(toks[1]) && Number(toks[2])) {
-                        expiration[toks[1]] = {tweet: toks[2], twitterid: id};
-                        signature[toks[1]] = {tweet: toks[3], twitterid: id};
-                    } else {
-                        console.warn("#keysig tweet for user", username, "is malformed:", tweet);
-                        continue; // try next tweet
-                    }
-                }
-
-                var timestamps = [];
-                // Determine timestamps for which we have entire triples.
-                for (var ts in signature) {
-                    if (sign[ts] && encrypt[ts] && sign[ts].twitterid === signature[ts].twitterid && encrypt[ts].twitterid === signature[ts].twitterid) {
-                        timestamps.push(ts);
-                    }
-                }
-                timestamps.sort(function (a, b) {
-                // We want a descending order so negative should be returned when the second is larger.
-                return Number(b) - Number(a);
-                });
-
-                // If we find no timestamps, that is a problem.
-                if (timestamps.length === 0) {
-                // TODO(rjsumi): error reporting
-                    sign = null;
-                    encrypt = null;
-                    signature = null;
-                    expiration = null;
-                    return;
-                }
-
-                // Check for the newest one i.e. the highest timestamp.
-                timestamp = timestamps[0];
-
-                sign = sign[timestamp].tweet;
-                encrypt = encrypt[timestamp].tweet;
-                twitterId = signature[timestamp].twitterid;
-                signature = signature[timestamp].tweet;
-                expiration = expiration[timestamp].tweet;
             }
         }
     }).bind(this);
@@ -1847,6 +1857,7 @@ function PKeyStreamer(streamerID) {
         return reject(new Fail(Fail.GENERIC, "Failed to stream public keys."));
     };
 }
+
 _extends(PKeyStreamer, Streamer, {
 
 });
@@ -2196,18 +2207,17 @@ BGAPI.prototype.openTwitterStream = function (hashtag) {
                     ctx = CryptoCtx.all[serial];
                     //console.log(ctx, ctx.tabId, tabId);
                     if (ctx.tabId === tabId) {
-                        var tweetStreamer = streamerManager.addStreamer(hashtag, Streamer.TWEET_STREAMER);
-                        //var pKeyStreamer = streamerManager.addStreamer(hashtag, Streamer.PKEY_STREAMER);
-                        tweetStreamer.addListener('sendTweet', function (tweet) {
+                        //var tweetStreamer = streamerManager.addStreamer(hashtag, Streamer.TWEET_STREAMER);
+                        var pKeyStreamer = streamerManager.addStreamer(hashtag, Streamer.PKEY_STREAMER);
+                        /*tweetStreamer.addListener('sendTweet', function (tweet) {
                             console.log('new tweet received', tweet);
                             ctx._onExtMessage(tweet);
-                        });
-                        /*pKeyStreamer.addListener('newPKey', function (pKey) {
-                            //save key to database
                         });*/
-                        ctx.setStreamerIDs(tweetStreamer.streamerID, '');
-                        tweetStreamer.send(tweetStreamer.postData);
-                        //pKeyStreamer.send(pKeyStreamer.postData);
+                        console.log('ctx tab id', ctx.tabId);
+                        //console.log('setting tweetStreamerID to ', tweetStreamer.streamerID);
+                        ctx.setStreamerIDs(''/*tweetStreamer.streamerID*/, pKeyStreamer.streamerID);
+                        //tweetStreamer.send(tweetStreamer.postData);
+                        pKeyStreamer.send(pKeyStreamer.postData);
                     }
                 }
             }
