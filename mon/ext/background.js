@@ -1713,14 +1713,15 @@ function TweetStreamer(hashtag, streamerID) {
                 }
                 //If the current this.tpost buffer is too big, make a new one;
                 if (this.tweets.length >= 3000) {
-                    var tmp_streamer = new Streamer(hashtag);
+                    //context and streamerManager keep the ID of the first streamer
+                    var tmp_streamer = new TweetStreamer(hashtag, Utils.randomStr128());
                     tmp_streamer.send();
                     tmp_streamer._callbacks = this._callbacks;
                     this.abort();
                     this.tpost = tmp_streamer;
                 }
             } else {
-                console.error("Failed to stream, closing connection: ", this.tpost.status, this.tpost.responseText);
+                console.error("Failed to stream tweets, closing connection: ", this.tpost.status, this.tpost.responseText);
                 this.abort();
                 //return reject(new Fail(Fail.PUBSUB, "Failed to stream. Message: " + this.tpost.responseText + "status " + this.tpost.status +" header string, " + header_string + " base url, " + signature_base_string));
             }
@@ -1848,6 +1849,18 @@ function PKeyStreamer(streamerID) {
                     this.stream_buffer = this.stream_buffer.substr(curr_index+1);
                 }
 
+                if (this.tpost.length >= 10000) {
+                    //context and streamerManager keep the ID of the first streamer
+                    var tmp_streamer = new PKeyStreamer(Utils.randomStr128());
+                    tmp_streamer.send();
+                    tmp_streamer._callbacks = this._callbacks;
+                    this.abort();
+                    this.tpost = tmp_streamer;
+                }
+
+            } else {
+                console.error("Failed to stream public keys, closing connection: ", this.tpost.status, this.tpost.responseText);
+                this.abort();
             }
         }
     }).bind(this);
@@ -2207,15 +2220,15 @@ BGAPI.prototype.openTwitterStream = function (hashtag) {
                     ctx = CryptoCtx.all[serial];
                     //console.log(ctx, ctx.tabId, tabId);
                     if (ctx.tabId === tabId) {
-                        //var tweetStreamer = streamerManager.addStreamer(hashtag, Streamer.TWEET_STREAMER);
+                        var tweetStreamer = streamerManager.addStreamer(hashtag, Streamer.TWEET_STREAMER);
                         var pKeyStreamer = streamerManager.addStreamer(hashtag, Streamer.PKEY_STREAMER);
-                        /*tweetStreamer.addListener('sendTweet', function (tweet) {
+                        tweetStreamer.addListener('sendTweet', function (tweet) {
                             console.log('new tweet received', tweet);
                             ctx._onExtMessage(tweet);
-                        });*/
+                        });
                         console.log('ctx tab id', ctx.tabId);
                         //console.log('setting tweetStreamerID to ', tweetStreamer.streamerID);
-                        ctx.setStreamerIDs(''/*tweetStreamer.streamerID*/, pKeyStreamer.streamerID);
+                        ctx.setStreamerIDs(tweetStreamer.streamerID, pKeyStreamer.streamerID);
                         //tweetStreamer.send(tweetStreamer.postData);
                         pKeyStreamer.send(pKeyStreamer.postData);
                     }
