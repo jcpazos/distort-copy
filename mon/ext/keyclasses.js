@@ -305,27 +305,41 @@ AESKey.fromStore = function (obj) {
 KeyLoader.registerClass("aes", AESKey);
 
 
-//calculates the y-coordinate of a point on the curve p-192 given the x-coordinate.
- function calc_y_p192(x)  {
-      var two = new sjcl.bn(2);
-      var two_64 = two;
-      for(i=0;i<63;i++) two_64 = two_64.mul(two).trim(); 
-      var two_128 = two_64.mul(two_64).trim();
-      var two_192 = two_128.mul(two_64).trim();
-      var prime = two_192.sub(new sjcl.bn(1)).normalize();
-      prime = prime.sub(two_64).normalize();
-      var exponent;
-      exponent = prime.add(new sjcl.bn(1)).normalize();
-      exponent.halveM();
-      exponent.halveM();
+//calculates the y-coordinate of a point on the curve p-192 given the
+//x-coordinate.
+//
+// y^2 = x^3 + ax + b
+//
+// see http://course1.winona.edu/eerrthum/13Spring/SquareRoots.pdf
+//
+function calc_y_p192(x)  {
+    "use strict";
 
-      var x_cubed = x.mulmod(x,prime).mulmod(x,prime);
-      var three_x = x.mulmod(new sjcl.bn(3), prime);
-      var a = ((x_cubed.sub(three_x)).add(new sjcl.bn("0x64210519e59c80e70fa7e9ab72243049feb8deecc146b9b1"))).mod(prime);
-      var pos_root = a.powermod(exponent,prime);
-      var neg_root = prime.sub(pos_root);
-      return [neg_root.toBits(), pos_root.toBits()];
-  }
+    var two = new sjcl.bn(2);
+    var two_64 = two;
+    var i;
+
+    for (i = 0; i < 63; i++) {
+        two_64 = two_64.mul(two).trim();
+    }
+
+    //fixme reuse
+    var two_128 = two_64.mul(two_64).trim();
+    var two_192 = two_128.mul(two_64).trim();
+    var prime = two_192.sub(new sjcl.bn(1)).normalize();
+    prime = prime.sub(two_64).normalize();
+    var exponent;
+    exponent = prime.add(new sjcl.bn(1)).normalize();
+    exponent.halveM();
+    exponent.halveM();
+
+    var x_cubed = x.mulmod(x, prime).mulmod(x, prime);
+    var three_x = x.mulmod(new sjcl.bn(3), prime);
+    var a = ((x_cubed.sub(three_x)).add(new sjcl.bn("0x64210519e59c80e70fa7e9ab72243049feb8deecc146b9b1"))).mod(prime);
+    var pos_root = a.powermod(exponent, prime);
+    var neg_root = prime.sub(pos_root);
+    return [neg_root.toBits(), pos_root.toBits()];
+}
 
 /**
  * Asymmetric keys with only 'public' information
@@ -573,31 +587,36 @@ ECCPubKey.prototype = {
         var pKem = this.encrypt.pub.kem();
         // stringified json
         var len = sjcl.bitArray.bitLength(pKem.tag);
-        var x = sjcl.bn.fromBits(sjcl.bitArray.bitSlice(pKem.tag, 0, len/2));
-        var y = sjcl.bitArray.bitSlice(pKem.tag, len/2);
-        var root = -1;
-        if (sjcl.bitArray.equal(calc_y_p192(x)[1],y)) root = 1;
-        else root = 0;
+        var x = sjcl.bn.fromBits(sjcl.bitArray.bitSlice(pKem.tag, 0, len / 2));
+        var y = sjcl.bitArray.bitSlice(pKem.tag, len / 2);
+        var root = sjcl.bitArray.equal(calc_y_p192(x)[1], y) ? 1 : 0;
+
         var ct = sjcl.json.encrypt(pKem.key, btoa(message));
-        console.log("root and ct " + root+ct);
-        var ret = sjcl.codec.hex.fromBits(x.toBits()) + ":" + btoa(root+ct);
+        var ret = sjcl.codec.hex.fromBits(x.toBits()) + ":" + btoa(root + ct);
+
         return ret;
     },
 
     equalTo: function (other) {
+        "use strict";
+
         if (!other) {
             return false;
         }
-        if (typeof this != typeof other) {
+
+        if (typeof this !== typeof other) {
             return false;
         }
         
         function arrayEquals(a, b) {
-            if (a.length != b.length) {
+            var i;
+
+            if (a.length !== b.length) {
                 return false;
             }
-            for (var i = 0; i < a.length; i++) {
-                if (a[i] != b[i]) {
+
+            for (i = 0; i < a.length; i++) {
+                if (a[i] !== b[i]) {
                     return false;
                 }
             }
@@ -713,6 +732,7 @@ _extends(ECCKeyPair, ECCPubKey, {
 
     decryptSymmetric: function (keyCipher) {
         "use strict";
+
         var first = keyCipher.indexOf(":");
         var hexTag = keyCipher.substr(0, first);
         var ct = atob(keyCipher.substr(first + 1));
@@ -723,10 +743,11 @@ _extends(ECCKeyPair, ECCPubKey, {
     },
 
     decryptMessage: function (keyCipher) {
-       "use strict";
+        "use strict";
+
         var first = keyCipher.indexOf(":");
         var hex_x = keyCipher.substr(0, first);
-        var root_ct = atob(keyCipher.substr(first + 1)); 
+        var root_ct = atob(keyCipher.substr(first + 1));
         var root = root_ct.charAt(0);
         var ct = root_ct.substr(1);
         var hex_y = calc_y_p192(new sjcl.bn(hex_x))[root];
@@ -737,6 +758,7 @@ _extends(ECCKeyPair, ECCPubKey, {
 
     signText: function (message) {
         "use strict";
+
         var hashMsg = sjcl.hash.sha256.hash(message);
         var sKey = this.sign.sec;
         return sjcl.codec.hex.fromBits(sKey.sign(hashMsg, ECCKeyPair.getParanoia()));
@@ -744,6 +766,7 @@ _extends(ECCKeyPair, ECCPubKey, {
 
     toPubKey: function () {
         "use strict";
+
         var pub = ECCPubKey.prototype.toStore.apply(this);
         return ECCPubKey.fromStore(pub);
     },
@@ -770,12 +793,12 @@ ECCKeyPair.fromStore = function (obj) {
 KeyLoader.registerClass("ecckp", ECCKeyPair);
 
 function AnonKey(key) {
+    "use strict";
 
     if (!key) {
-    this.principals = [];
-    this.keyid = null;
-    }
-    else {
+        this.principals = [];
+        this.keyid = null;
+    } else {
         this.principals = key.principals;
         this.keyid = key.keyid;
     }

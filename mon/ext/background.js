@@ -17,10 +17,6 @@
     <http://www.gnu.org/licenses/>.
 **/
 
-/*jshint
-  es5: true
-*/
-
 /*global
   chrome, Promise, performance,
   ECCPubKey, AESKey, KeyLoader, Friendship,
@@ -792,7 +788,7 @@ CryptoCtx.prototype = {
             var encodedPrefix = encodeURIComponent(prefix);
             var message = encodedPrefix + ":" + encodedUser + ":" + randomHex + ":" + extra;
             var signature = account.signText(message);
-            resolve( encodedPrefix + ":" + encodedUser + ":" + randomHex + ":" + signature);
+            resolve(encodedPrefix + ":" + encodedUser + ":" + randomHex + ":" + signature);
         });
     },
 
@@ -944,13 +940,13 @@ CryptoCtx.prototype = {
 
     //promises an anon streamid
     newAnonStream: function () {
-       "use strict";
-       //var keyObj = new AnonKey();
-       var that = this;
+        "use strict";
+        //var keyObj = new AnonKey();
+        var that = this;
 
-       return that.genKeyid("", "anon").then(function (keyid) {
-         return keyid;
-       });
+        return that.genKeyid("", "anon").then(function (keyid) {
+            return keyid;
+        });
     },
 
     // CryptoCtx.prototype.invite
@@ -1250,52 +1246,52 @@ CryptoCtx.prototype = {
 
     postKeys: function (message) {
         "use strict";
-        var that = this;       
+        var that = this;
 
-            var prompt = UI.prompt(that, that.promptId++,
-                                   "Beeswax will post public keys to twitter account " + "'@" + message + "'\n Do you wish to continue?",
-                                   [UI.Prompt.ACCEPT, UI.Prompt.REFUSE]);
-            return prompt.getPromise().then(function (triggered) {
-                if (triggered !== UI.Prompt.ACCEPT) {
-                    throw new Fail(Fail.REFUSED, "Posting Keys not accepted: " + triggered);
-                } else {
-                    // Accepted
-                    that.openKeyring(message).then(function () {
-                      console.log("opened keyring " + message);
-                      return API.postKeys(that.kr.username).catch(function (err) {
+        var prompt = UI.prompt(that, that.promptId++,
+                               "Beeswax will post public keys to twitter account " + "'@" + message + "'\n Do you wish to continue?",
+                               [UI.Prompt.ACCEPT, UI.Prompt.REFUSE]);
+        return prompt.getPromise().then(function (triggered) {
+            if (triggered !== UI.Prompt.ACCEPT) {
+                throw new Fail(Fail.REFUSED, "Posting Keys not accepted: " + triggered);
+            } else {
+                // Accepted
+                that.openKeyring(message).then(function () {
+                    console.log("opened keyring " + message);
+                    return API.postKeys(that.kr.username).catch(function (err) {
                         UI.log("error reposting(" + err.code + "): " + err);
                         throw err; // throw again
-                      }).then(function () {
+                    }).then(function () {
                         UI.log("Key for @" + that.kr.username + " posted.");
-                      });       
-                    })["catch"](function (err) {
-                      console.error("failed to open keyring " + message, err);
-                      if (err.code === "NOKEYRING") {
-                        return that.newKeyring(message).then(function () {
-                          console.log("new keyring created");
-                          return API.postKeys(that.kr.username).catch(function (err) {
-                            UI.log("error reposting(" + err.code + "): " + err);
-                            throw err; // throw again
-                          }).then(function () {
-                            UI.log("Key for @" + that.kr.username + " reposted.");
-                          });
-                        });
-                      } else {
-                        throw err;
-                        }
                     });
-                }
-            });
+                })["catch"](function (err) {
+                    console.error("failed to open keyring " + message, err);
+                    if (err.code === "NOKEYRING") {
+                        return that.newKeyring(message).then(function () {
+                            console.log("new keyring created");
+                            return API.postKeys(that.kr.username).catch(function (err) {
+                                UI.log("error reposting(" + err.code + "): " + err);
+                                throw err; // throw again
+                            }).then(function () {
+                                UI.log("Key for @" + that.kr.username + " reposted.");
+                            });
+                        });
+                    } else {
+                        throw err;
+                    }
+                });
+            }
+        });
     },
 
     postTweets: function (tags, keys) {
         "use strict";
-        var that = this;   
+        var that = this;
+        var i;
 
         if (that.kr === null) {
             return new Fail(Fail.NOKEYRING, "Keyring not open.");
         }
-
 
         var prompt = UI.prompt(that, that.promptId++,
            "Beeswax will post your messages to twitter account " + "'@" + that.kr.username + "'\n Do you wish to continue?",
@@ -1310,26 +1306,29 @@ CryptoCtx.prototype = {
                         throw err; // throw again
                     }).then(function (tweetIDs) {
                     });*/
-                    return API.postTweets(that.kr.username, keys).catch(function (err) {
-                        UI.log("error posting messages(" + err.code + "): " + err);
-                        throw err; // throw again
-                    }).then(function (tweetIDs) {
-                        var baseString = " https://twitter.com/" + encodeURIComponent(that.kr.username) + "/status/";
-                        UI.log("Tweets for @" + that.kr.username + " posted.");
-                        for (var i=0; i<tags.length; i++) tags[i] = tags[i] + baseString + tweetIDs[i];
-                        return API.postTweets(that.kr.username, tags).catch(function (err) {
-                            UI.log("error replying(" + err.code + "): " + err);
-                        }).then(function () {
-                            UI.log("Replies for @" + that.kr.username + " posted.");
-                        });
-                    });       
-                }
+                return API.postTweets(that.kr.username, keys).catch(function (err) {
+                    UI.log("error posting messages(" + err.code + "): " + err);
+                    throw err; // throw again
+                }).then(function (tweetIDs) {
+                    var baseString = " https://twitter.com/" + encodeURIComponent(that.kr.username) + "/status/";
+                    UI.log("Tweets for @" + that.kr.username + " posted.");
+                    for (i = 0; i < tags.length; i++) {
+                        tags[i] = tags[i] + baseString + tweetIDs[i];
+                    }
+                    return API.postTweets(that.kr.username, tags).catch(function (err) {
+                        UI.log("error replying(" + err.code + "): " + err);
+                    }).then(function () {
+                        UI.log("Replies for @" + that.kr.username + " posted.");
+                    });
+                });
+            }
         });
     },
 
     openTwitterStream: function (hashtag) {
         "use strict";
-        var that = this;   
+
+        var that = this;
 
         if (that.kr === null) {
             return new Fail(Fail.NOKEYRING, "Keyring not open.");
@@ -1342,31 +1341,33 @@ CryptoCtx.prototype = {
             if (triggered !== UI.Prompt.ACCEPT) {
                 throw new Fail(Fail.REFUSED, "Streaming not accepted: " + triggered);
             } else {
-                    // Accepted
-                    return API.openTwitterStream(hashtag).catch(function (err) {
-                        UI.log("error streaming(" + err.code + "): " + err);
-                        throw err; // throw again
+                // Accepted
+                return API.openTwitterStream(hashtag).catch(function (err) {
+                    UI.log("error streaming(" + err.code + "): " + err);
+                    throw err; // throw again
 
-                    }).then(function (tpost) {
-                        UI.log("Stream for @" + that.kr.username + " acquired.");
-                        return tpost;
-                    });       
-                }
+                }).then(function (tpost) {
+                    UI.log("Stream for @" + that.kr.username + " acquired.");
+                    return tpost;
+                });       
+            }
         });
     },
 
     encryptMessage: function (principals, plaintext) {
         "use strict";
+
         var that = this;
-      
         var result = [];
         var promisesPromises = [];
-
-        for (var i=0; i<principals.length; i++){
+        var i;
+        
+        for (i = 0; i < principals.length; i++) {
             promisesPromises.push(API.fetchPublic(principals[i]));
         }
+
         return Promise.all(promisesPromises).then(pubKeys => {
-            for (var i=0; i<pubKeys.length; i++) {
+            for (i = 0; i < pubKeys.length; i++) {
                 result.push(pubKeys[i].encryptMessage(plaintext));
             }
             console.log("pubKeys are ", pubKeys);
@@ -1932,8 +1933,8 @@ BGAPI.prototype.accountChanged = function (username) {
 BGAPI.prototype.postKeys = function (username) {
     "use strict";
 
-    console.debug("[BGAPI] postKeys:", username);
-    
+    console.debug("postKeys:", username);
+
     var ident = Vault.getAccount(username);
     var ts = Date.now();
 
@@ -2148,8 +2149,6 @@ BGAPI.prototype.postTweets = function (username, messages) {
         var encryptStatus = "#encryptkey " + ts + " " + encryptKey;
         var signStatus = "#signkey " + ts + " " + signKey;
 
-        
-
         // Generate signature tweet
         // Expiration is 30 days
         var expiration = ts + (60 * 60 * 24 * 30) * 1000;
@@ -2181,7 +2180,6 @@ BGAPI.prototype.postTweets = function (username, messages) {
 
         for (ti = 0; ti < tweets.length; ti++) {
             promisesPromises.push(twitterCtx[0].callCS("post_public", {tweet: tweets[ti], authToken: authToken}));
-
         }
 
         return Promise.all(promisesPromises).then(values => {
