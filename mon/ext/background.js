@@ -749,6 +749,7 @@ CryptoCtx.prototype = {
 
             var canon = that.getStorageName(keyringName, "kr");
             API.getStorageVal(canon).then(function (kr) {
+                console.log('opened keyring for ctx tab id', that.tabId);
                 that._setKeyring(kr);
                 resolve(true);
             }).catch(function (err) {
@@ -1325,7 +1326,7 @@ CryptoCtx.prototype = {
         });
     },
 
-    openTwitterStream: function (hashtag) {
+    openTwitterStream: function (hashtag, accountCredentials) {
         "use strict";
 
         var that = this;
@@ -1342,7 +1343,7 @@ CryptoCtx.prototype = {
                 throw new Fail(Fail.REFUSED, "Streaming not accepted: " + triggered);
             } else {
                 // Accepted
-                return API.openTwitterStream(hashtag).catch(function (err) {
+                return API.openTwitterStream(hashtag, accountCredentials).catch(function (err) {
                     UI.log("error streaming(" + err.code + "): " + err);
                     throw err; // throw again
 
@@ -1563,13 +1564,13 @@ function StreamerManager() {
 };
 
 //returns a streamerID that identifies the new Streamer in the list for removal when necessary
-StreamerManager.prototype.addStreamer = function (hashtag, klass) {
+StreamerManager.prototype.addStreamer = function (hashtag, klass, accountCredentials) {
     "use strict";
     var streamer;
     if (klass === Streamer.TWEET_STREAMER) {
-        streamer = new TweetStreamer(hashtag, Utils.randomStr128());
+        streamer = new TweetStreamer(hashtag, Utils.randomStr128(), accountCredentials);
     } else if (klass === Streamer.PKEY_STREAMER) {
-        streamer = new PKeyStreamer(Utils.randomStr128());
+        streamer = new PKeyStreamer(Utils.randomStr128(), accountCredentials);
     }
     this.streamers[streamer.streamerID] = streamer;
     return streamer;
@@ -1586,7 +1587,7 @@ StreamerManager.prototype.removeStreamer = function(streamerID) {
     delete this.streamers[streamerID];
 };
 
-function Streamer(hashtag, streamerID) {
+function Streamer(hashtag, streamerID, accountCredentials) {
     "use strict";
 
     var nonceGenerator = function(length) {
@@ -1604,10 +1605,10 @@ function Streamer(hashtag, streamerID) {
     var url = 'https://stream.twitter.com/1.1/statuses/filter.json';
     //setup the oauth string
     this.tpost = new XMLHttpRequest();    
-    var consumerKey = "rq5Jbae2HuhvT5LGSbWq6Wdue";
-    var consumerSecret = "Va9oHgMPZX3e9EDgGfwXZ9kFiKBOxJovb6SLBFCWAYoMN7tkK7";
-    var accessToken = "738445087823171584-oFyetz0VlgRR2RY3YmDjvhaKHKQhUC5";
-    var accessSecret = "rhNYnNxw6bVrPH8gqwRrRhEEH4EnBWx22gffcQTaLYh5d";
+    var consumerKey = accountCredentials[0];//"rq5Jbae2HuhvT5LGSbWq6Wdue";
+    var consumerSecret = accountCredentials[1];//"Va9oHgMPZX3e9EDgGfwXZ9kFiKBOxJovb6SLBFCWAYoMN7tkK7";
+    var accessToken = accountCredentials[2];//"738445087823171584-oFyetz0VlgRR2RY3YmDjvhaKHKQhUC5";
+    var accessSecret = accountCredentials[3];//"rhNYnNxw6bVrPH8gqwRrRhEEH4EnBWx22gffcQTaLYh5d";
     var signingKey = consumerSecret + "&" + accessSecret;
 
     var SIGNATURE_METHOD = "HMAC-SHA1";
@@ -1672,9 +1673,9 @@ Streamer.prototype.setupTpost = function() {
     throw new Fail(Fail.GENERIC, "run() must be implemented by subclasses");
 };
 
-function TweetStreamer(hashtag, streamerID) {
+function TweetStreamer(hashtag, streamerID, accountCredentials) {
     "use strict";
-    TweetStreamer.__super__.constructor.call(this, hashtag, streamerID);
+    TweetStreamer.__super__.constructor.call(this, hashtag, streamerID, accountCredentials);
 
     this.tpost.onreadystatechange = (function () {
         if (this.tpost.readyState > 2)  {
@@ -1739,9 +1740,9 @@ _extends(TweetStreamer, Streamer, {
 
 });
 
-function PKeyStreamer(streamerID) {
+function PKeyStreamer(streamerID, accountCredentials) {
     "use strict";
-    PKeyStreamer.__super__.constructor.call(this, "encryptkey,keysig,signkey", streamerID);
+    PKeyStreamer.__super__.constructor.call(this, "encryptkey,keysig,signkey", streamerID, accountCredentials);
     //TODO: FINISH THIS
     // return ECCPubKey
     function parseKey(sign, encrypt, expiration, signature, timestamp, twitterId, username) {
@@ -2198,7 +2199,7 @@ BGAPI.prototype.postTweets = function (username, messages) {
     });
 };
 
-BGAPI.prototype.openTwitterStream = function (hashtag) {
+BGAPI.prototype.openTwitterStream = function (hashtag, accountCredentials) {
     "use strict";
     return new Promise(function (resolve, reject) { 
         // assumes a single tabId will be returned
@@ -2218,8 +2219,8 @@ BGAPI.prototype.openTwitterStream = function (hashtag) {
                     ctx = CryptoCtx.all[serial];
                     //console.log(ctx, ctx.tabId, tabId);
                     if (ctx.tabId === tabId) {
-                        var tweetStreamer = streamerManager.addStreamer(hashtag, Streamer.TWEET_STREAMER);
-                        var pKeyStreamer = streamerManager.addStreamer(hashtag, Streamer.PKEY_STREAMER);
+                        var tweetStreamer = streamerManager.addStreamer(hashtag, Streamer.TWEET_STREAMER, accountCredentials);
+                        var pKeyStreamer = streamerManager.addStreamer(hashtag, Streamer.PKEY_STREAMER, accountCredentials);
                         tweetStreamer.addListener('sendTweet', function (tweet) {
                             console.log('new tweet received', tweet);
                             ctx._onExtMessage(tweet);
@@ -2227,7 +2228,7 @@ BGAPI.prototype.openTwitterStream = function (hashtag) {
                         console.log('ctx tab id', ctx.tabId);
                         //console.log('setting tweetStreamerID to ', tweetStreamer.streamerID);
                         ctx.setStreamerIDs(tweetStreamer.streamerID, pKeyStreamer.streamerID);
-                        //tweetStreamer.send(tweetStreamer.postData);
+                        tweetStreamer.send(tweetStreamer.postData);
                         pKeyStreamer.send(pKeyStreamer.postData);
                     }
                 }
@@ -3272,8 +3273,8 @@ var handlers = {
 
     open_twitter_stream: function (ctx, rpc) {
         "use strict";
-        rpc.params = assertType(rpc.params, {hashtag: "hashtag"});
-        ctx.openTwitterStream(rpc.params.hashtag).then(function (res) {
+        rpc.params = assertType(rpc.params, {hashtag: "", accountCredentials: []});
+        ctx.openTwitterStream(rpc.params.hashtag, rpc.params.accountCredentials).then(function (res) {
             ctx.port.postMessage({callid: rpc.callid, result: res});
         }).catch(function (err) {
             console.error(err);
