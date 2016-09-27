@@ -1210,8 +1210,12 @@ function (G) {
             return monitor.send("post_tweets", {params: {tags: tags, keys: keys}});
         },
 
-        open_twitter_stream: function (hashtag, accountCredentials) {
-            return monitor.send("open_twitter_stream", {params: {hashtag: hashtag, accountCredentials: accountCredentials}});
+        open_twitter_stream: function (hashtag) {
+            return monitor.send("open_twitter_stream", {params: {hashtag: hashtag}});
+        },
+
+        get_dev_keys: function(appName) {
+            return monitor.send("get_dev_keys", {params: {appName: appName}});
         },
 
         /**

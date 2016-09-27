@@ -1210,6 +1210,11 @@ CryptoCtx.prototype = {
             throw new Error("No port!");
         }
 
+        if (!this.kr) {
+            console.error("keyring isn't open.");
+            throw new Error('Keyring not open!');
+            //TODO: fix bug
+        }
         console.debug("[message] from=" + this.kr.username + " app=" + this.app + " outgoing", message);
 
         this.port.postMessage({callid: null, extcallid: this.extCallId, cmd: "ext_message", msg: message});
@@ -1326,7 +1331,53 @@ CryptoCtx.prototype = {
         });
     },
 
-    openTwitterStream: function (hashtag, accountCredentials) {
+    getDevKeys: function () {
+        "use strict";
+        var that = this;
+
+        if (that.kr === null) {
+            return new Fail(Fail.NOKEYRING, "Keyring not open.");
+        }
+
+
+        var prompt = UI.prompt(that, that.promptId++,
+           "Beeswax will get developer keys for twitter account and app " + "'@" + that.kr.username + "'\n Do you wish to continue?",
+           [UI.Prompt.ACCEPT, UI.Prompt.REFUSE]);
+
+        return prompt.getPromise().then(function (triggered) {
+            if (triggered !== UI.Prompt.ACCEPT) {
+                throw new Fail(Fail.REFUSED, "Streaming not accepted: " + triggered);
+            } else {
+                return API.getDevKeys(that.kr.username).catch(function (err) {
+                    UI.log("error posting messages(" + err.code + "): " + err);
+                    console.log('error', err);
+                    throw err; // throw again
+                }).then(function (devKeys) {
+                    var devKey = KeyLoader.fromStore(devKeys);
+                    return that.storeKey('devKeys', devKey, "fr").catch(function (err) {
+                        UI.log('error storing devKey : ' + err);
+                        console.log('error', err);
+                        throw err;
+                    }).then (function (keyhandle) {
+                        UI.log("Dev keys for @" + that.kr.username + " stored succesfully.");
+                        console.log('keyhandle: ', keyhandle);
+                        that.loadKey('devKeys', DevKey, 'fr').catch(function (err) {
+                            UI.log('error loading devkey: ' + err);
+                            console.log('error', err);
+                            throw err;
+                        }).then (function (devKey) {
+                            console.log('got devKey', devKey);
+                        });
+                    });
+
+                    
+                });
+            }
+        });
+
+    },
+
+    openTwitterStream: function (hashtag) {
         "use strict";
 
         var that = this;
@@ -1343,7 +1394,7 @@ CryptoCtx.prototype = {
                 throw new Fail(Fail.REFUSED, "Streaming not accepted: " + triggered);
             } else {
                 // Accepted
-                return API.openTwitterStream(hashtag, accountCredentials).catch(function (err) {
+                return API.openTwitterStream(hashtag, that.kr.username).catch(function (err) {
                     UI.log("error streaming(" + err.code + "): " + err);
                     throw err; // throw again
 
@@ -1605,10 +1656,10 @@ function Streamer(hashtag, streamerID, accountCredentials) {
     var url = 'https://stream.twitter.com/1.1/statuses/filter.json';
     //setup the oauth string
     this.tpost = new XMLHttpRequest();    
-    var consumerKey = accountCredentials[0];//"rq5Jbae2HuhvT5LGSbWq6Wdue";
-    var consumerSecret = accountCredentials[1];//"Va9oHgMPZX3e9EDgGfwXZ9kFiKBOxJovb6SLBFCWAYoMN7tkK7";
-    var accessToken = accountCredentials[2];//"738445087823171584-oFyetz0VlgRR2RY3YmDjvhaKHKQhUC5";
-    var accessSecret = accountCredentials[3];//"rhNYnNxw6bVrPH8gqwRrRhEEH4EnBWx22gffcQTaLYh5d";
+    var consumerKey = accountCredentials.consumerKey;//"rq5Jbae2HuhvT5LGSbWq6Wdue";
+    var consumerSecret = accountCredentials.consumerSecret ;//"Va9oHgMPZX3e9EDgGfwXZ9kFiKBOxJovb6SLBFCWAYoMN7tkK7";
+    var accessToken = accountCredentials.accessToken;//"738445087823171584-oFyetz0VlgRR2RY3YmDjvhaKHKQhUC5";
+    var accessSecret = accountCredentials.accessSecret;//"rhNYnNxw6bVrPH8gqwRrRhEEH4EnBWx22gffcQTaLYh5d";
     var signingKey = consumerSecret + "&" + accessSecret;
 
     var SIGNATURE_METHOD = "HMAC-SHA1";
@@ -1743,8 +1794,6 @@ _extends(TweetStreamer, Streamer, {
 function PKeyStreamer(streamerID, accountCredentials) {
     "use strict";
     PKeyStreamer.__super__.constructor.call(this, "encryptkey,keysig,signkey", streamerID, accountCredentials);
-    //TODO: FINISH THIS
-    // return ECCPubKey
     function parseKey(sign, encrypt, expiration, signature, timestamp, twitterId, username) {
             //we found both keys, persist them
         var minified = {
@@ -2199,9 +2248,80 @@ BGAPI.prototype.postTweets = function (username, messages) {
     });
 };
 
-BGAPI.prototype.openTwitterStream = function (hashtag, accountCredentials) {
+BGAPI.prototype.getDevKeys = function (username) {
+    "use strict";
+
+    return new Promise(function (resolve, reject) {
+        console.debug("[BGAPI] getDevKeys:", username);
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', 'https://apps.twitter.com/', true);
+
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState === 4)  {
+                if (xhr.status >= 200 && xhr.status <= 300) {
+                    var el = $( '<div></div>' );
+                    el.html(xhr.responseText);
+                    var appURL = '';
+                    var apps = $('.twitter-app', el);
+                    for (var i = 0; i<apps.length; i++) {
+                        if ($('.app-details a', apps[i])[0].text === 'Apperino') {
+                            var appID = $($('.app-details a', apps[0])).attr('href');
+                            appID = appID.substr(0,appID.length-4) + 'keys';
+                            appURL = 'https://apps.twitter.com/' + appID;
+                        }
+                    }
+
+                    if (!!appURL) {
+                        var tpost = new XMLHttpRequest();
+                        tpost.open('GET', appURL, true);
+                        console.log('URL ', appURL);
+
+                        tpost.onreadystatechange = function () {
+                            if (tpost.readyState > 2)  {
+                                if (tpost.status >= 200 && tpost.status <= 300) {
+                                    var el = $( '<div></div>' );
+                                    el.html(tpost.responseText);
+                                    var consumerKey = $('.app-settings .row span', el)[1].innerHTML;
+                                    var consumerSecret = $('.app-settings .row span', el)[3].innerHTML;
+                                    var accessToken = $('.access .row span', el)[1].innerHTML;
+                                    var accessSecret = $('.access .row span', el)[3].innerHTML;
+
+                                    var keys = {consumerKey:consumerKey, consumerSecret:consumerSecret, accessToken:accessToken, accessSecret:accessSecret, keyid: 'devKeys', typ: 'dev'};
+                                    
+
+                                    resolve(keys);
+                                }
+                            }
+                        }
+
+                        tpost.onerror = function () {
+                            console.error("Problem going to specific app URL.", [].slice.apply(arguments));
+                            return reject(new Fail(Fail.GENERIC, "Failed to access app URL and retrieve keys."));
+                        };
+
+                        tpost.send(); 
+                    } else {
+                        console.error("Twistor app not found.", [].slice.apply(arguments));
+                        return reject(new Fail(Fail.GENERIC, "Twistor app not found, could not retrieve keys."));
+                    }
+                }
+            }
+        };
+
+        xhr.onerror = function () {
+            console.error("Problem accessing twitter account apps.", [].slice.apply(arguments));
+            return reject(new Fail(Fail.GENERIC, "Failed to access twitter apps and retrieve keys."));
+        };
+        
+        xhr.send();  
+
+    });
+};
+
+BGAPI.prototype.openTwitterStream = function (hashtag, username) {
     "use strict";
     return new Promise(function (resolve, reject) { 
+        console.debug("[BGAPI] getting Twitter Stream for :", username);
         // assumes a single tabId will be returned
         var ctx;
         chrome.tabs.query({
@@ -2219,17 +2339,25 @@ BGAPI.prototype.openTwitterStream = function (hashtag, accountCredentials) {
                     ctx = CryptoCtx.all[serial];
                     //console.log(ctx, ctx.tabId, tabId);
                     if (ctx.tabId === tabId) {
-                        var tweetStreamer = streamerManager.addStreamer(hashtag, Streamer.TWEET_STREAMER, accountCredentials);
-                        var pKeyStreamer = streamerManager.addStreamer(hashtag, Streamer.PKEY_STREAMER, accountCredentials);
-                        tweetStreamer.addListener('sendTweet', function (tweet) {
-                            console.log('new tweet received', tweet);
-                            ctx._onExtMessage(tweet);
-                        });
-                        console.log('ctx tab id', ctx.tabId);
-                        //console.log('setting tweetStreamerID to ', tweetStreamer.streamerID);
-                        ctx.setStreamerIDs(tweetStreamer.streamerID, pKeyStreamer.streamerID);
-                        tweetStreamer.send(tweetStreamer.postData);
-                        pKeyStreamer.send(pKeyStreamer.postData);
+
+                        var canon = CryptoCtx.userKeyName(username, 'devKeys', 'fr');
+
+                        API.loadKey(canon, DevKey).catch(function (err) {
+                            console.log("error streaming: couldn't retrieve dev keys", err);
+                            throw err;
+                        }).then(function (keyObj) {
+                            var tweetStreamer = streamerManager.addStreamer(hashtag, Streamer.TWEET_STREAMER, keyObj);
+                            var pKeyStreamer = streamerManager.addStreamer(hashtag, Streamer.PKEY_STREAMER, keyObj);
+                            tweetStreamer.addListener('sendTweet', function (tweet) {
+                                console.log('new tweet received', tweet);
+                                ctx._onExtMessage(tweet);
+                            });
+                            console.log('ctx tab id', ctx.tabId);
+                            //console.log('setting tweetStreamerID to ', tweetStreamer.streamerID);
+                            ctx.setStreamerIDs(tweetStreamer.streamerID, pKeyStreamer.streamerID);
+                            tweetStreamer.send(tweetStreamer.postData);
+                            pKeyStreamer.send(pKeyStreamer.postData);
+                        });                       
                     }
                 }
             }
@@ -2664,6 +2792,7 @@ BGAPI.prototype.fetchPublic = function (username) {
 
     return this.loadKey(storageName, ECCPubKey).catch(function (err) {
         if (err.code === Fail.NOKEY) {
+            console.log("Key not in store, fetching from Twitter");
             return that.fetchTwitter(username).then(function (pubKeyContainer) {
                 var pubKey = pubKeyContainer.key;
                 var stale = pubKeyContainer.expiration < fetchTime;
@@ -3273,8 +3402,8 @@ var handlers = {
 
     open_twitter_stream: function (ctx, rpc) {
         "use strict";
-        rpc.params = assertType(rpc.params, {hashtag: "", accountCredentials: []});
-        ctx.openTwitterStream(rpc.params.hashtag, rpc.params.accountCredentials).then(function (res) {
+        rpc.params = assertType(rpc.params, {hashtag: ""});
+        ctx.openTwitterStream(rpc.params.hashtag).then(function (res) {
             ctx.port.postMessage({callid: rpc.callid, result: res});
         }).catch(function (err) {
             console.error(err);
@@ -3286,8 +3415,8 @@ var handlers = {
         "use strict";
         rpc.params = assertType(rpc.params, {principals: []});
 
-        ctx.encryptMessage(rpc.params.principals, rpc.params.plaintext).then(function (ret) {
-            ctx.port.postMessage({callid: rpc.callid, result: ret});
+        ctx.encryptMessage(rpc.params.principals, rpc.params.plaintext).then(function (res) {
+            ctx.port.postMessage({callid: rpc.callid, result: res});
         });
         /*.then(function (res) {
             return res;
@@ -3302,6 +3431,16 @@ var handlers = {
         rpc.params = assertType(rpc.params, {keyhandle: OneOf(KH_TYPE, ""), ciphertext: ""});
         var pt = ctx.decryptMessage(rpc.params.ciphertext);
         return pt;
+    },
+
+    get_dev_keys: function (ctx, rpc) {
+        "use strict";
+        ctx.getDevKeys().then(function (res) {
+             ctx.port.postMessage({callid: rpc.callid, result: res});
+        }).catch(function (err) {
+            console.error(err);
+            ctx.port.postMessage({callid: rpc.callid, error: Fail.toRPC(err)});
+        });
     }
 };
 

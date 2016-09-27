@@ -805,14 +805,14 @@ function AnonKey(key) {
 }
 
 AnonKey.prototype.toStore = function (keyid) {
-        "use strict";
+    "use strict";
 
-        return {
-            typ: "anon",
-            principals: this.principals,
-            keyid: keyid
-        };
+    return {
+        typ: "anon",
+        principals: this.principals,
+        keyid: keyid
     };
+};
 
 AnonKey.fromStore = function (obj) {
     "use strict";
@@ -832,6 +832,58 @@ AnonKey.fromStore = function (obj) {
 };
 
 KeyLoader.registerClass("anon", AnonKey);
+
+function DevKey(key) {
+    "use strict";
+
+    if (!key) {
+        this.consumerKey = '';
+        this.consumerSecret = '';
+        this.accessToken = '';
+        this.accessSecret = '';
+        this.keyid = 'devKeys';
+    } else {
+        this.consumerKey = key.consumerKey;
+        this.consumerSecret = key.consumerSecret;
+        this.accessToken = key.accessToken;
+        this.accessSecret = key.accessSecret;
+        this.keyid = key.keyid;
+    }
+}
+
+DevKey.prototype.toStore = function (keyid) {
+    "use strict";
+
+    return {
+        typ: "dev",
+        consumerKey: this.consumerKey,
+        consumerSecret: this.consumerSecret,
+        accessToken: this.accessToken,
+        accessSecret: this.accessSecret,
+        keyid: keyid
+    };
+};
+
+DevKey.fromStore = function (obj) {
+    "use strict";
+    if (obj.typ !== 'dev') {
+        return null;
+    }
+
+    var key = new DevKey(obj.key);
+    if (obj.consumerKey && obj.consumerSecret && obj.accessToken && obj.accessSecret) {
+        key.consumerKey = obj.consumerKey;
+        key.consumerSecret = obj.consumerSecret;
+        key.accessToken = obj.accessToken;
+        key.accessSecret = obj.accessSecret;
+    }
+    if (obj.keyid) {
+        key.keyid = obj.keyid;
+    }
+    return key;
+};
+
+KeyLoader.registerClass('dev', DevKey);
 
 function Friendship(opts) {
     "use strict";
