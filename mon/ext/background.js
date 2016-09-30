@@ -1213,7 +1213,6 @@ CryptoCtx.prototype = {
         if (!this.kr) {
             console.error("keyring isn't open.");
             throw new Error('Keyring not open!');
-            //TODO: fix bug
         }
         console.debug("[message] from=" + this.kr.username + " app=" + this.app + " outgoing", message);
 
@@ -1250,6 +1249,8 @@ CryptoCtx.prototype = {
         });
     },
 
+
+    //TODO: remove.
     postKeys: function (message) {
         "use strict";
         var that = this;
@@ -1305,32 +1306,25 @@ CryptoCtx.prototype = {
         return prompt.getPromise().then(function (triggered) {
             if (triggered !== UI.Prompt.ACCEPT) {
                 throw new Fail(Fail.REFUSED, "Posting Tweets not accepted: " + triggered);
-            } else {
-                    // Accepted
-                    /*return API.postTweets(that.kr.username, keys).catch(function (err) {
-                        UI.log("error posting messages(" + err.code + "): " + err);
-                        throw err; // throw again
-                    }).then(function (tweetIDs) {
-                    });*/
-                return API.postTweets(that.kr.username, keys).catch(function (err) {
-                    UI.log("error posting messages(" + err.code + "): " + err);
-                    throw err; // throw again
-                }).then(function (tweetIDs) {
-                    var baseString = " https://twitter.com/" + encodeURIComponent(that.kr.username) + "/status/";
-                    UI.log("Tweets for @" + that.kr.username + " posted.");
-                    for (i = 0; i < tags.length; i++) {
-                        tags[i] = tags[i] + baseString + tweetIDs[i];
-                    }
-                    return API.postTweets(that.kr.username, tags).catch(function (err) {
-                        UI.log("error replying(" + err.code + "): " + err);
-                    }).then(function () {
-                        UI.log("Replies for @" + that.kr.username + " posted.");
-                    });
-                });
             }
+        }).then(function () {
+            return API.postTweets(that.kr.username, keys);
+        }).then(function (tweetIDs) {
+            var baseString = " https://twitter.com/" + encodeURIComponent(that.kr.username) + "/status/";
+            UI.log("Tweets for @" + that.kr.username + " posted.");
+            for (i = 0; i < tags.length; i++) {
+                tags[i] = tags[i] + baseString + tweetIDs[i];
+            }
+            return API.postTweets(that.kr.username, tags);
+        }).then(function () {
+            UI.log("Replies for @" + that.kr.username + " posted.");
+        }).catch(function (err) {
+            UI.log("error posting messages(" + err.code + "): " + err);
+            throw err;
         });
     },
 
+    //TODO: REMOVE. UNNECESSARY NOW THAT CREATETWITTERAPP HANDLES THIS AS WELL
     getDevKeys: function () {
         "use strict";
         var that = this;
@@ -1347,34 +1341,67 @@ CryptoCtx.prototype = {
         return prompt.getPromise().then(function (triggered) {
             if (triggered !== UI.Prompt.ACCEPT) {
                 throw new Fail(Fail.REFUSED, "Streaming not accepted: " + triggered);
-            } else {
-                return API.getDevKeys(that.kr.username).catch(function (err) {
-                    UI.log("error posting messages(" + err.code + "): " + err);
-                    console.log('error', err);
-                    throw err; // throw again
-                }).then(function (devKeys) {
-                    var devKey = KeyLoader.fromStore(devKeys);
-                    return that.storeKey('devKeys', devKey, "fr").catch(function (err) {
-                        UI.log('error storing devKey : ' + err);
-                        console.log('error', err);
-                        throw err;
-                    }).then (function (keyhandle) {
-                        UI.log("Dev keys for @" + that.kr.username + " stored succesfully.");
-                        console.log('keyhandle: ', keyhandle);
-                        that.loadKey('devKeys', DevKey, 'fr').catch(function (err) {
-                            UI.log('error loading devkey: ' + err);
-                            console.log('error', err);
-                            throw err;
-                        }).then (function (devKey) {
-                            console.log('got devKey', devKey);
-                        });
-                    });
-
-                    
-                });
             }
-        });
+            return API.getDevKeys(that.kr.username).catch(function (err) {
+                UI.log("error posting messages(" + err.code + "): " + err);
+                console.log('error', err);
+                throw err; // throw again
+            });
+        }).then(function (devKeys) {
+            var devKey = KeyLoader.fromStore(devKeys);
+            return that.storeKey('devKeys', devKey, "fr").catch(function (err) {
+                UI.log('error storing devKey : ' + err);
+                console.log('error', err);
+                throw err;
+            });
+        }).then (function (keyhandle) {
+            UI.log("Dev keys for @" + that.kr.username + " stored succesfully.");
+            console.log('keyhandle: ', keyhandle);
+            that.loadKey('devKeys', DevKey, 'fr').catch(function (err) {
+                UI.log('error loading devkey: ' + err);
+                console.log('error', err);
+                throw err;
+            });
+        }).then (function (devKey) {
+            console.log('got devKey', devKey);
+        }); 
+    },
 
+    createTwitterApp: function() {
+        "use strict";
+        var that = this;
+        
+        if (that.kr === null) {
+            return new Fail(Fail.NOKEYRING, "Keyring not open.");
+        }
+
+        var prompt = UI.prompt(that, that.promptId++,
+           "Beeswax will create a new twitter app for account " + "'@" + that.kr.username + "'\n Do you wish to continue?",
+           [UI.Prompt.ACCEPT, UI.Prompt.REFUSE]);
+
+        return prompt.getPromise().then(function (triggered) {
+            if (triggered !== UI.Prompt.ACCEPT) {
+                throw new Fail(Fail.REFUSED, "Creating app not accepted: " + triggered);
+            }
+        }).then(function () {
+            return API.createTwitterApp();
+        }).then(function (appName) {
+            console.log("created app " + appName + " succesfully.");
+            return API.getDevKeys(that.kr.username, appName);
+        }).then(function (devKeys) {
+            var devKey = KeyLoader.fromStore(devKeys);
+            return that.storeKey('devKeys', devKey, "fr");
+        }).then (function (keyhandle) {
+            UI.log("Dev keys for @" + that.kr.username + " stored succesfully.");
+            console.log('keyhandle: ', keyhandle);
+            that.loadKey('devKeys', DevKey, 'fr');
+        }).then (function (devKey) {
+            console.log('got devKey', devKey);
+            return appName;
+        }).catch(function (err) {
+            UI.log("error creating app and handling dev keys(" + err.code + "): " + err);
+            throw err;
+        });
     },
 
     openTwitterStream: function (hashtag) {
@@ -1392,18 +1419,16 @@ CryptoCtx.prototype = {
         return prompt.getPromise().then(function (triggered) {
             if (triggered !== UI.Prompt.ACCEPT) {
                 throw new Fail(Fail.REFUSED, "Streaming not accepted: " + triggered);
-            } else {
-                // Accepted
-                return API.openTwitterStream(hashtag, that.kr.username).catch(function (err) {
-                    UI.log("error streaming(" + err.code + "): " + err);
-                    throw err; // throw again
-
-                }).then(function (tpost) {
-                    UI.log("Stream for @" + that.kr.username + " acquired.");
-                    return tpost;
-                });       
-            }
-        });
+            }                // Accepted
+        }).then(function () {
+            return API.openTwitterStream(hashtag, that.kr.username).catch(function (err) {
+                UI.log("error streaming(" + err.code + "): " + err);
+                throw err; // throw again
+            });
+        }).then(function (tpost) {
+            UI.log("Stream for @" + that.kr.username + " acquired.");
+            return tpost;
+        });   
     },
 
     encryptMessage: function (principals, plaintext) {
@@ -2248,7 +2273,36 @@ BGAPI.prototype.postTweets = function (username, messages) {
     });
 };
 
-BGAPI.prototype.getDevKeys = function (username) {
+BGAPI.prototype.createTwitterApp = function () {
+    "use strict";
+    return new Promise(function (resolve, reject) {
+        console.debug("[BGAPI] createTwitterApp");
+
+        function isTwitterAppCtx(ctx) {
+            return (!ctx.isMaimed && ctx.app === "apps.twitter.com");
+        }
+
+        var twitterAppCtx = CryptoCtx.filter(isTwitterAppCtx);
+        var promisesPromises = [];
+
+        //possible issue if user is really fast when accepting the UI prompt
+        if (twitterAppCtx.length <= 0) {
+            throw new Fail(Fail.PUBSUB, "Twitter app context not available, must have twitter app tab open.");
+        }
+
+        promisesPromises.push(twitterAppCtx[0].callCS("create_twitter_app", {}));
+
+        return Promise.all(promisesPromises).then(values => {
+            console.log('create app returned with appName ', values[0]);
+            return resolve(values[0]);
+        }).catch(function (err) {
+            console.log('error creating app: ', err);
+            throw err;
+        })
+    });
+};
+
+BGAPI.prototype.getDevKeys = function (username, appName) {
     "use strict";
 
     return new Promise(function (resolve, reject) {
@@ -2264,7 +2318,7 @@ BGAPI.prototype.getDevKeys = function (username) {
                     var appURL = '';
                     var apps = $('.twitter-app', el);
                     for (var i = 0; i<apps.length; i++) {
-                        if ($('.app-details a', apps[i])[0].text === 'Apperino') {
+                        if ($('.app-details a', apps[i])[0].text === appName) {
                             var appID = $($('.app-details a', apps[0])).attr('href');
                             appID = appID.substr(0,appID.length-4) + 'keys';
                             appURL = 'https://apps.twitter.com/' + appID;
@@ -2350,6 +2404,8 @@ BGAPI.prototype.openTwitterStream = function (hashtag, username) {
                             var pKeyStreamer = streamerManager.addStreamer(hashtag, Streamer.PKEY_STREAMER, keyObj);
                             tweetStreamer.addListener('sendTweet', function (tweet) {
                                 console.log('new tweet received', tweet);
+                                //TOOD: -fix bug with ctx not having the keyring open
+                                //      -add different message handling for tweets
                                 ctx._onExtMessage(tweet);
                             });
                             console.log('ctx tab id', ctx.tabId);
@@ -3437,6 +3493,16 @@ var handlers = {
         "use strict";
         ctx.getDevKeys().then(function (res) {
              ctx.port.postMessage({callid: rpc.callid, result: res});
+        }).catch(function (err) {
+            console.error(err);
+            ctx.port.postMessage({callid: rpc.callid, error: Fail.toRPC(err)});
+        });
+    },
+
+    create_twitter_app: function (ctx, rpc) {
+        "use strict";
+        ctx.createTwitterApp().then(function (res) {
+            ctx.port.postMessage({callid: rpc.callid, result: res});
         }).catch(function (err) {
             console.error(err);
             ctx.port.postMessage({callid: rpc.callid, error: Fail.toRPC(err)});

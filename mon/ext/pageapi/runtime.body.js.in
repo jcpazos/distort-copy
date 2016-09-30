@@ -1218,6 +1218,10 @@ function (G) {
             return monitor.send("get_dev_keys", {params: {appName: appName}});
         },
 
+        create_twitter_app: function() {
+            return monitor.send("create_twitter_app", {params: {}});
+        },
+
         /**
            on: add an application handler for extension events
 
