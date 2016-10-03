@@ -1333,7 +1333,6 @@ CryptoCtx.prototype = {
             return new Fail(Fail.NOKEYRING, "Keyring not open.");
         }
 
-
         var prompt = UI.prompt(that, that.promptId++,
            "Beeswax will get developer keys for twitter account and app " + "'@" + that.kr.username + "'\n Do you wish to continue?",
            [UI.Prompt.ACCEPT, UI.Prompt.REFUSE]);
@@ -1387,6 +1386,7 @@ CryptoCtx.prototype = {
             return API.createTwitterApp();
         }).then(function (appName) {
             console.log("created app " + appName + " succesfully.");
+            //getDevKeys also generates the keys.
             return API.getDevKeys(that.kr.username, appName);
         }).then(function (devKeys) {
             var devKey = KeyLoader.fromStore(devKeys);
@@ -2290,15 +2290,14 @@ BGAPI.prototype.createTwitterApp = function () {
             throw new Fail(Fail.PUBSUB, "Twitter app context not available, must have twitter app tab open.");
         }
 
-        promisesPromises.push(twitterAppCtx[0].callCS("create_twitter_app", {}));
-
-        return Promise.all(promisesPromises).then(values => {
-            console.log('create app returned with appName ', values[0]);
-            return resolve(values[0]);
+        var appName = "Twistor" + Utils.randomStr128().substr(0,5);
+        twitterAppCtx[0].callCS("create_twitter_app", {appName: appName}).then(function () {
+            console.log('create app returned with appName ', appName);
+            return resolve(appName);
         }).catch(function (err) {
             console.log('error creating app: ', err);
             throw err;
-        })
+        });
     });
 };
 
@@ -2306,69 +2305,97 @@ BGAPI.prototype.getDevKeys = function (username, appName) {
     "use strict";
 
     return new Promise(function (resolve, reject) {
-        console.debug("[BGAPI] getDevKeys:", username);
-        var xhr = new XMLHttpRequest();
-        xhr.open('GET', 'https://apps.twitter.com/', true);
 
-        xhr.onreadystatechange = function () {
-            if (xhr.readyState === 4)  {
-                if (xhr.status >= 200 && xhr.status <= 300) {
-                    var el = $( '<div></div>' );
-                    el.html(xhr.responseText);
-                    var appURL = '';
-                    var apps = $('.twitter-app', el);
-                    for (var i = 0; i<apps.length; i++) {
-                        if ($('.app-details a', apps[i])[0].text === appName) {
-                            var appID = $($('.app-details a', apps[0])).attr('href');
-                            appID = appID.substr(0,appID.length-4) + 'keys';
-                            appURL = 'https://apps.twitter.com/' + appID;
-                        }
-                    }
+        function isTwitterAppCtx(ctx) {
+            return (!ctx.isMaimed && ctx.app === "apps.twitter.com");
+        }
 
-                    if (!!appURL) {
-                        var tpost = new XMLHttpRequest();
-                        tpost.open('GET', appURL, true);
-                        console.log('URL ', appURL);
+        var twitterAppCtx = CryptoCtx.filter(isTwitterAppCtx);
+        var tid = setInterval( function () {
+            if ( twitterAppCtx.length <= 0 ) {
+                return;
+            }
+            clearInterval( tid );
 
-                        tpost.onreadystatechange = function () {
-                            if (tpost.readyState > 2)  {
-                                if (tpost.status >= 200 && tpost.status <= 300) {
-                                    var el = $( '<div></div>' );
-                                    el.html(tpost.responseText);
-                                    var consumerKey = $('.app-settings .row span', el)[1].innerHTML;
-                                    var consumerSecret = $('.app-settings .row span', el)[3].innerHTML;
-                                    var accessToken = $('.access .row span', el)[1].innerHTML;
-                                    var accessSecret = $('.access .row span', el)[3].innerHTML;
+            console.debug("[BGAPI] getDevKeys:", username);
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', 'https://apps.twitter.com/', true);
 
-                                    var keys = {consumerKey:consumerKey, consumerSecret:consumerSecret, accessToken:accessToken, accessSecret:accessSecret, keyid: 'devKeys', typ: 'dev'};
-                                    
-
-                                    resolve(keys);
-                                }
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState === 4)  {
+                    if (xhr.status >= 200 && xhr.status <= 300) {
+                        var el = $( '<div></div>' );
+                        el.html(xhr.responseText);
+                        var appURL = '';
+                        var apps = $('.twitter-app', el);
+                        for (var i = 0; i<apps.length; i++) {
+                            if ($('.app-details a', apps[i])[0].text === appName) {
+                                var appID = $($('.app-details a', apps[i])).attr('href');
+                                appID = appID.substr(0,appID.length-4) + 'keys';
+                                appURL = 'https://apps.twitter.com/' + appID;
                             }
                         }
 
-                        tpost.onerror = function () {
-                            console.error("Problem going to specific app URL.", [].slice.apply(arguments));
-                            return reject(new Fail(Fail.GENERIC, "Failed to access app URL and retrieve keys."));
-                        };
+                        if (!!appURL) {
+                            window.open(appURL);
 
-                        tpost.send(); 
-                    } else {
-                        console.error("Twistor app not found.", [].slice.apply(arguments));
-                        return reject(new Fail(Fail.GENERIC, "Twistor app not found, could not retrieve keys."));
+                            function isTwitterAppCtx(ctx) {
+                                return (!ctx.isMaimed && ctx.app === "apps.twitter.com");
+                            }
+                            var twitterAppCtx = CryptoCtx.filter(isTwitterAppCtx);
+                            var tid = setInterval( function () {
+                                if ( !!twitterAppCtx ) {
+                                    return;
+                                }
+                                clearInterval( tid );       
+                                twitterAppCtx[0].callCS('generate_keys', {}).then(function () {
+                                    var tpost = new XMLHttpRequest();
+                                    tpost.open('GET', appURL, true);
+                                    console.log('URL ', appURL);
+
+                                    tpost.onreadystatechange = function () {
+                                        if (tpost.readyState > 2)  {
+                                            if (tpost.status >= 200 && tpost.status <= 300) {
+                                                var el = $( '<div></div>' );
+                                                el.html(tpost.responseText);
+                                                var consumerKey = $('.app-settings .row span', el)[1].innerHTML;
+                                                var consumerSecret = $('.app-settings .row span', el)[3].innerHTML;
+                                                var accessToken = $('.access .row span', el)[1].innerHTML;
+                                                var accessSecret = $('.access .row span', el)[3].innerHTML;
+
+                                                var keys = {consumerKey:consumerKey, consumerSecret:consumerSecret, accessToken:accessToken, accessSecret:accessSecret, keyid: 'devKeys', typ: 'dev'};
+                                        
+
+                                                resolve(keys);
+                                            }
+                                        }
+                                    }
+
+                                    tpost.onerror = function () {
+                                        console.error("Problem going to specific app URL.", [].slice.apply(arguments));
+                                        return reject(new Fail(Fail.GENERIC, "Failed to access app URL and retrieve keys."));
+                                    };
+
+                                    tpost.send(); 
+                                }).catch(function (err) {
+                                    throw err;
+                                });
+                            }, 100 );                            
+                        } else {
+                            console.error("Twistor app not found.", [].slice.apply(arguments));
+                            return reject(new Fail(Fail.GENERIC, "Twistor app " + appName + " not found, could not retrieve keys."));
+                        }
                     }
                 }
-            }
-        };
+            };
 
-        xhr.onerror = function () {
-            console.error("Problem accessing twitter account apps.", [].slice.apply(arguments));
-            return reject(new Fail(Fail.GENERIC, "Failed to access twitter apps and retrieve keys."));
-        };
-        
-        xhr.send();  
-
+            xhr.onerror = function () {
+                console.error("Problem accessing twitter account apps.", [].slice.apply(arguments));
+                return reject(new Fail(Fail.GENERIC, "Failed to access twitter apps and retrieve keys."));
+            };
+            
+            xhr.send();  
+        }, 100 );  
     });
 };
 

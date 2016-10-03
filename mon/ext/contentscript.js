@@ -989,26 +989,40 @@
             });
         },
 
-        create_twitter_app: function () {
+        generate_keys: function() {
             return new Promise(function (resolve, reject) {
-                var appName = 'Twistor';
                 console.log('contentscript creating app'); 
                 var tid = setInterval( function () {
                     if ( document.readyState !== 'complete' ) {
                         return;
                     }
                     clearInterval( tid );       
-                    document.getElementById('edit-name').value = appName;
+                    document.getElementById('edit-submit-owner-token').submit();
+                    return resolve(true);
+                }, 100 );      
+            });          
+        },
+
+        create_twitter_app: function (opts) {
+            return new Promise(function (resolve, reject) {
+                var tid = setInterval( function () {
+                    if ( document.readyState !== 'complete' ) {
+                        return;
+                    }
+                    clearInterval( tid );       
+                    document.getElementById('edit-name').value = opts.appName;
                     document.getElementById('edit-description').value = 'An app for communication through Twistor';
                     document.getElementById('edit-url').value = 'https://example.org';
                     document.getElementById('edit-tos-agreement').checked = true;
                     document.getElementById('edit-submit').addEventListener("click", function (event) {
-                        return resolve(appName);
+                        //make this async to call both things
+                        resolve(true);
+                        document.getElementById('edit-submit').submit();
                     });
-                }, 100 );      
-            });
-                   
-        }
+                }, 100 );                      
+            });             
+        },
+
     };
         
 
