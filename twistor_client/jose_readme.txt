@@ -31,6 +31,13 @@ CHANGE TWISTOR:
 Twistor needs a complete makeover since most of its functionality is now done in beeswax or in the app: Keeping a database of users, adding verification as mentioned above.
 
 
+IN PROGRESS:
+Twitter app creation automation. There's functionality built into Beeswax that allows for the automation of the creation of a twitter app, but it's separated into two steps that
+need to be integrated better. The first step is two create the app itself. Once this is done and twitter gives approval, the second step is to generate the keys required for Beeswax
+to stream. The part that isn't there is the transition from one step to the other. We would need to wait for the app creation approval page to load so that we can go ahead and look up
+the app and generate the keys automatically.
+
+
 
 ADDITIONS TO BEESWAX:
 
