@@ -1015,8 +1015,8 @@
                     document.getElementById('edit-url').value = 'https://example.org';
                     document.getElementById('edit-tos-agreement').checked = true;
                     document.getElementById('edit-submit').addEventListener("click", function (event) {
-                        //make this async to call both things
-                        resolve(true);
+                        //TODO: possible issue here if the submit goes through before the message is delivered.
+                        resolve(opts.appName);
                         document.getElementById('edit-submit').submit();
                     });
                 }, 100 );                      

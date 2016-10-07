@@ -1,0 +1,46 @@
+<html>
+<head>
+	<body>
+Hello world!
+<script src="./sjcl.js"></script>
+<script type="text/javascript">
+  var two = new sjcl.bn(2);
+  var two_64 = two;
+  for(i=0;i<63;i++) two_64 = two_64.mul(two).trim(); //console.log(two_64);} 
+  var two_128 = two_64.mul(two_64).trim();
+  var two_192 = two_128.mul(two_64).trim();
+  var prime = two_192.sub(new sjcl.bn(1)).normalize();
+  var exponent = two_192;
+  exponent.halveM();
+  exponent.halveM();
+
+  var x = new sjcl.bn("0x188da80eb03090f67cbf20eb43a18800f4ff0afd82ff1012");
+  var y = new sjcl.bn("0x07192b95ffc8da78631011ed6b24cdd573f977a11e794811");
+  var y_squared = y.powermod(new sjcl.bn(2), prime).normalize();
+
+
+  var x_cubed = x.powermod(new sjcl.bn(3), prime);
+  var three_x = x.mulmod(new sjcl.bn(3), prime);
+
+  var b = new sjcl.bn("0x64210519e59c80e70fa7e9ab72243049feb8deecc146b9b1");
+  var first_calc_step = (x_cubed.sub(three_x));
+  var a = (first_calc_step.add(b)).mod(prime);
+  var pos_root = a;
+  for (i=0; i < 190; i++) pos_root = pos_root.powermod(new sjcl.bn(2),prime).normalize();
+  var neg_root = prime.sub(pos_root);
+  var calc_a_1 = pos_root.powermod(new sjcl.bn(2), prime).normalize();
+  var calc_a_2 = neg_root.powermod(new sjcl.bn(2), prime).normalize();
+
+  /*prime = new sjcl.bn(43);
+  exponent = new sjcl.bn(11);
+  var a = new sjcl.bn(36);
+  var y = a.powermod(exponent,prime);
+  console.log(prime);
+  var calc_a = y.powermod(new sjcl.bn(2), prime);*/
+
+
+
+  </script>
+</body>
+</head>
+</html>

@@ -1,0 +1,35 @@
+On posting limits:
+
+One of the premises of the project is that we will have a sizeable anonimity set. Of course, if we are going to retweet every message sent
+to a supernode, we are going to hit the limits imposed by twitter. According to them, you can make 15 post requests every 15 minutes on each user.
+With 5000 supernodes, and allowing Twistor users to post a message every hour, this gives an anonimity set of about 300,000. Of course, allowing
+for more messages reduced the anonimity set and vice versa.
+
+
+
+
+
+On using the Search API:
+
+It is not entirely clear how Twitter manages their search API. According to them, they can filter out "low-quality tweets", which roughly translates
+to tweets from people with a low amount of followers and followees. The search API allows for 180 GET requests every 15 minutes. This could be useful
+if we intend to use hashtagging twists, but again, it won't get all the tweets.
+
+
+
+
+
+On using supernodes vs. streaming directly (Note: the following talks about tweets getting 'lost'. It is unclear if the lost tweets would
+eventually get streamed, but in the tests, it wasn't the case, although they weren't alive for longer than 10 or 15 minutes):
+
+Why do we even need supernodes? It would seem like using hashtags (e.g. #twistormsg) and posting directly from the user accountinstead of 
+posting to a supernode and retweeting may be better, both in terms of twitter limits and in performance. Unfortunately, it seems like the
+streaming API isn't very good at catching posts based on hashtags. I did some testing and out of every packet of tweets, for 5 or more tweets,
+at least one usually gets lost. The problem seems to get worse the more tweets are posted. For example: for a package of about 50 tweets, one test
+only had 28 of them streamed. For 30 tweets, 20 were streamed correctly, and for 10, 8 were streamed correctly. Sometimes, even groups of 4 
+could have one get lost. It seems like it gets better when we spread the tweets amongst many users. With 3 users each posting 4 tweets, the worst case
+had 1 lost tweet. However, it may be the case that users want to send a message to several people. If we separate these tweets with time intervals,
+it could be the case that they all get through, but this relies on the stream working perfectly for multiple users sending one tweet (further testing
+required for this).
+On the other hand, when the streaming is done only to the user's feed (or the user's followees), it seems to be in better condition. For a group of 50 tweets,
+the stream seemed to acknowledge all 50 of them. Again, further testing is required for confirmation on this. 
