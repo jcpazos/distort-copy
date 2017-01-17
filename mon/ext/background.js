@@ -24,7 +24,7 @@
   getHost, Fail, assertType, OneOf, KH_TYPE, MSG_TYPE, _extends
 */
 
-console.log("Micasa External Monitor - background script init");
+console.log("Beeswax External Monitor - background script init");
 
 var storageArea = chrome.storage.local;
 
