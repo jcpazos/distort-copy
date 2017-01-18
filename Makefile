@@ -1,7 +1,13 @@
 all: ext
 
+sjcl-ext:
+	git submodule init
+	[ -f sjcl/configure ] || git submodule update
+	cd sjcl && \
+	  ./configure --with-ecc && \
+	  make
 
-ext:
+ext: sjcl-ext
 	$(MAKE) -C mon/ext
 
-.PHONY: ext
+.PHONY: ext sjcl-ext
