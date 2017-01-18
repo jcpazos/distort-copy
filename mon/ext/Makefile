@@ -1,4 +1,4 @@
-all: js
+all: js sjcl.js
 
 JS_TARGETS = pageapi/runtime.js
 
@@ -25,6 +25,13 @@ CLOSURE_BASE := compiler-20150126.zip
 JS_MINIFIED = $(JS_TARGETS:.js=.min.js)
 
 js: $(JS_TARGETS) $(JS_MINIFIED)
+
+../../sjcl/sjcl.js:
+	$(MAKE) -C ../../ sjcl/sjcl.js
+
+sjcl.js: ../../sjcl/sjcl.js
+	rm -f $@ 2>/dev/null
+	cp $< $@ && chmod -w $@
 
 %.js: %.js.in
 	rm -f "$@" && \
