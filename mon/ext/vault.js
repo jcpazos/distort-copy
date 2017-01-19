@@ -133,7 +133,6 @@ window.Vault = (function () {
         _load: function () {
             var settings = localStorage.settings;
             if (settings === undefined) {
-                console.log("clear vault.");
                 this.db = this._defaults();
                 return;
             }

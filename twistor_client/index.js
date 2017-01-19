@@ -1,6 +1,8 @@
 //AppTwistor twitter account password: Beeswax123
 //gmail ID: apptwistor@gmail.com password: Beeswax123
 
+/*global require, process, __dirname*/
+
 var express = require('express');
 var app = express();
 var Twitter = require('twitter-node-client').Twitter;
@@ -8,36 +10,37 @@ var Twitter_stream = require('twitter');
 var Twitter_login = require("node-twitter-api");// secret = include("secret");
 var server = require('http').createServer(app);
 var io = require('socket.io')(server);
-var opener = require('opener');
+
+var openr = require("opener");
+
 var port = process.env.PORT || 3000;
-var prompt = require('prompt');
-var base91 = require('base91');
-var b16k = require("./base16k.js");
-var base32k = require("base32k");
+//var b16k = require("./base16k.js");
+//var base32k = require("base32k");
 var sqlite3 = require('sqlite3').verbose();
 var db = new sqlite3.Database('twistor.db'); 
 var write_app_keys = {consumer_key: "05jswCv23JNXbOvVkW7voMdDJ", consumer_secret: "SknKARXGc4IIiO4787lL5W84PgclGOQ93GS8EfKGBak2O5L7Bk"};
 var read_app_keys = {consumer_key: "Sob9bnpxvrlizyQeEY7OUUVi3", consumer_secret: "w6M3FPpV8syFbZW1BO8hWJhIvhSet64jQXWu6cJzCoG4T97Bpf"};
 
 var supernode_keys = { sn0: ["733744664746983424-lwdtjn5P4JIqsrGueRTRP8qP3uHANdF", "ndmXQecHmtCv4LbtzP89WPHgrEF7x4qIpvwGx9A2MsIoK"] };
-var intermediate_keys = { sn0: []};
 
-var Stream = require('user-stream');
-
-
+//var Stream = require('user-stream');
 
 server.listen(port, function () {
-  console.log('Server listening at port %d', port);
+    "use strict";
+    console.log('Server listening at port %d', port);
 });
 
 app.use(express.static(__dirname + '/public'));
 
-var error = function (err, response, body) {
-        console.log('ERROR ', err);
-    };
-    var success = function (data) {
-        console.log('Data [%s]', data);
-    };
+var error = function (err /*, response, body */) {
+    "use strict";
+    console.log('ERROR ', err);
+};
+
+var success = function (data) {
+    "use strict";
+    console.log('Data [%s]', data);
+};
 
 
  function twitterObj(twitter, client) {
@@ -133,15 +136,17 @@ io.on('connection', function (socket) {
           });
     });
 
-    socket.on('request-token', function (data) {
-    console.log("going to request token");
+    socket.on('request-token', function (/* data */) {
+        console.log("going to request token");
         twitter_login.getRequestToken(function(err, requestToken, requestSecret) {
             if (err) {
                 console.log("getRequestToken error", err);
                 socket.emit('requestToken-error', err);                
             }
             else {
-                opener("https://api.twitter.com/oauth/authorize?oauth_token=" + requestToken);
+                var authorize_url = "https://api.twitter.com/oauth/authorize?oauth_token=" + requestToken;
+                console.log("sending user to:" , authorize_url);
+                openr("http://www.google.ca"); //authorize_url);
                 _requestSecret = requestSecret;
                 _requestToken = requestToken;
             }
@@ -149,9 +154,9 @@ io.on('connection', function (socket) {
     });
 
 
-       socket.on('access-token', function (data){          
-          var verifier = data.toString().trim();     
-          twitter_login.getAccessToken(_requestToken, _requestSecret, verifier, function(err, accessToken, accessSecret) {
+    socket.on('access-token', function (data){          
+        var verifier = data.toString().trim();     
+        twitter_login.getAccessToken(_requestToken, _requestSecret, verifier, function(err, accessToken, accessSecret) {
             if (err) {
                 console.log("getAccessToken error", err);
                 socket.emit('getAccessToken-error', err);
@@ -177,90 +182,88 @@ io.on('connection', function (socket) {
 
 
                 
-       socket.on('user-login', function(data) {
-                   
+    socket.on('user-login', function(data) {
+        currUser = data;
+        socket.emit('send-username', currUser.username);
+        /*SETUP USER POSTING AND STREAMING
+         */
+        twitterObj.client = new Twitter_stream({
+            consumer_key: read_app_keys.consumer_key,
+            consumer_secret: read_app_keys.consumer_secret,
+            access_token_key: data._accesstoken,
+            access_token_secret: data._accessSecret,
+        });
 
-                  currUser = data;
-                  socket.emit('send-username', currUser.username)
-                  /*SETUP USER POSTING AND STREAMING
-                        */
-                        twitterObj.client = new Twitter_stream({
-                          consumer_key: read_app_keys.consumer_key,
-                          consumer_secret: read_app_keys.consumer_secret,
-                          access_token_key: data._accesstoken,
-                          access_token_secret: data._accessSecret,
-                        });
+        
+        var config = {
+            "consumerKey": read_app_keys.consumer_key,
+            "consumerSecret": read_app_keys.consumer_secret,
+            "accessToken": data._accesstoken,
+            "accessTokenSecret": data._accessSecret,
+            "callBackUrl": ""
+        };
 
-                  
-                        var config = {
-                          "consumerKey": read_app_keys.consumer_key,
-                          "consumerSecret": read_app_keys.consumer_secret,
-                          "accessToken": data._accesstoken,
-                          "accessTokenSecret": data._accessSecret,
-                          "callBackUrl": ""
-                        };
-
-                        twitterObj.twitter = new Twitter(config);
+        twitterObj.twitter = new Twitter(config);
 
 
 
-                       /* stream = new Stream({
-                        	consumer_key: read_app_keys.consumer_key,
-                        	consumer_secret: read_app_keys.consumer_secret,
-                        	access_token_key: data._accesstoken,
-                        	access_token_secret:  data._accessSecret,
-                        });
+        /* stream = new Stream({
+           consumer_key: read_app_keys.consumer_key,
+           consumer_secret: read_app_keys.consumer_secret,
+           access_token_key: data._accesstoken,
+           access_token_secret:  data._accessSecret,
+           });
 
-                        var params = {
-                        	track: 'twistormsg'
-                        };                   
+           var params = {
+           track: 'twistormsg'
+           };                   
 
-                        stream.stream(params);*/
+           stream.stream(params);*/
 
-                        /*stream = twitterObj.client.stream('statuses/filter', { track: 'Rio2016'});
-                        stream.on('data', function(tweet) {
-                          console.log(++counter);
-                          //console.log("hashtags", tweet.entities.hashtags);
-                          //console.log("new tweet\n", tweet);
-                          /*if (tweet.text != undefined) {
-                          	//console.log("user is " + tweet.user.screen_name);
-                          	if ((tweet.user.screen_name === data.username) && !tweet.quoted_status) return;
+        /*stream = twitterObj.client.stream('statuses/filter', { track: 'Rio2016'});
+          stream.on('data', function(tweet) {
+          console.log(++counter);
+          //console.log("hashtags", tweet.entities.hashtags);
+          //console.log("new tweet\n", tweet);
+          /*if (tweet.text != undefined) {
+          //console.log("user is " + tweet.user.screen_name);
+          if ((tweet.user.screen_name === data.username) && !tweet.quoted_status) return;
 
-                            //grab the original message's text, i.e. the encrypted message
-                            var keyb16kString = tweet.quoted_status.text;
-                            //the key is the reply to the original message
-                            var tagb16kString = tweet.text;
-                            //Take out the @SUPERNODE
-                            //tagb16kString = tagb16kString.substr(tagb16kString.indexOf(" ") + 1);
-                            //Take out the link to the original tweet
-                            //tagb16kString = tagb16kString.substr(0, tagb16kString.indexOf(" "));
+          //grab the original message's text, i.e. the encrypted message
+          var keyb16kString = tweet.quoted_status.text;
+          //the key is the reply to the original message
+          var tagb16kString = tweet.text;
+          //Take out the @SUPERNODE
+          //tagb16kString = tagb16kString.substr(tagb16kString.indexOf(" ") + 1);
+          //Take out the link to the original tweet
+          //tagb16kString = tagb16kString.substr(0, tagb16kString.indexOf(" "));
 
-                            //Take out the #twistormsg and the link to the original tweet
-                            tagb16kString = tagb16kString.substr(0, tagb16kString.indexOf(" "));
-                            
-                            
-                            
-                            //handle the case where the encrypted message was put into the reply as well
-                            /*if (tagb16kString.indexOf(':') === -1)
-                            tagb16kString = tagb16kString.substr(tagb16kString.indexOf(' ')+1).toString(); 
-                            else {
-                            	keyb16kString = keyb16kString + tagb16kString.substr(tagb16kString.indexOf(':')+1);
-                            	tagb16kString = tagb16kString.substr(tagb16kString.indexOf(' ')+1, tagb16kString.indexOf(':'));
-                            } */                        
-                            
-                           /* var b64String = tagb16kString + ":" + keyb16kString
+          //Take out the #twistormsg and the link to the original tweet
+          tagb16kString = tagb16kString.substr(0, tagb16kString.indexOf(" "));
+          
+          
+          
+          //handle the case where the encrypted message was put into the reply as well
+          /*if (tagb16kString.indexOf(':') === -1)
+          tagb16kString = tagb16kString.substr(tagb16kString.indexOf(' ')+1).toString(); 
+          else {
+          keyb16kString = keyb16kString + tagb16kString.substr(tagb16kString.indexOf(':')+1);
+          tagb16kString = tagb16kString.substr(tagb16kString.indexOf(' ')+1, tagb16kString.indexOf(':'));
+          } */                        
+        
+        /* var b64String = tagb16kString + ":" + keyb16kString
 
 
-                            console.log("base64 ready to decrypt " + b64String);
-                            socket.emit('decrypt', b64String);
-                          }*/
-                        //});
- 
-                        //stream.on('error', function(error) {
-                        //    console.log("stream error", error);
- 
-                        //});
-       });
+           console.log("base64 ready to decrypt " + b64String);
+           socket.emit('decrypt', b64String);
+           }*/
+        //});
+        
+        //stream.on('error', function(error) {
+        //    console.log("stream error", error);
+        
+        //});
+    });
 
 
                    
