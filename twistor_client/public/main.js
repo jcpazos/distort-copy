@@ -1,5 +1,6 @@
 $(function() {
-
+    "use strict";
+    
 var postButton = document.getElementById("post-keys-to-twitter");
 var loginButton = document.getElementById("sign-in-with-twitter");
 var accessButton = document.getElementById("access-twitter");
@@ -17,9 +18,6 @@ var username;
 var socket = io.connect();
 var B = require('buffer');
 
-var buf = Buffer('YmVlcCBib29w', 'base64');
-var hex = buf.toString('hex');
-console.log(hex);
 
 var $loginPage = $('.login.page'); // The login page
 var $twistorPage = $('.twistor.page'); // The main twistor page
@@ -35,20 +33,19 @@ $('#message-form').on('submit', function(e) {
 
 $(usernameInput).keydown(function (event) {
 	if (event.which === 13) {
-	 username = $(usernameInput).val().trim();
-     // If the username is valid
-     if (username) {
+	  username = $(usernameInput).val().trim();
+    // If the username is valid
+    if (username) {
       $loginPage.fadeOut();
       $(usernameInput).off('keydown');
-     
       socket.emit('join', username);
-     }
+    }
 	}
 });
 
 $(loginButton).on("click", function() {
 	socket.emit('request-token', '');
-	});
+});
 
 $(accessButton).on("click", function() {
 	var message = $(inputCode).val();
@@ -58,45 +55,28 @@ $(accessButton).on("click", function() {
 
 $(tweetButton).on("click", function() {
 	console.log("tweeting");
-    _M.lighten_multiple(tweetMessageContainer).then(function (blob) {
-    	console.log("blob is " + blob[0]);
-    	//socket.emit('post-tweet', blob[0]);
-    	for (var i=0; i<blob.length; i++) {
-    		var tmp = blob[i];
-    		var first = tmp.indexOf(":");
-	        var tagHexString = Buffer(tmp.substr(0, first), 'base64').toString('hex');
-    	    var keyHexString = Buffer(tmp.substr(first + 1), 'base64').toString('hex');
-    	    console.log(tagHexString);
-    	    console.log(keyHexString);
-        	var tagb16kString = hexToBase16k(tagHexString);
-        	var keyb16kString = hexToBase16k(keyHexString);
-        	blob[i] = tagb16kString + ":" + keyb16kString;
-        }        
-    	_M.post_tweets(blob).then(function (data) {
-    		console.log("tweets", data);
-    		var keyb16kString = blob[0].substr(blob[0].indexOf(':')+1);
-            var tagb16kString = blob[0].substr(0, blob[0].indexOf(':'));
-
-            var tagHexString = base16kToHex(tagb16kString);
-            var keyHexString = base16kToHex(keyb16kString);
-
-            tagb64String = Buffer(tagHexString.replace(/\W/g, ''), 'hex').toString('base64');
-            keyb64String = Buffer(keyHexString.replace(/\W/g, ''), 'hex').toString('base64');
-
-            var b64String = tagb16kString + ":" + keyb16kString;
-
-            _M.darken_elGamal(decryptedMessageContainer, b64String).then(function () {
-            	console.log("succesfully decrypted message into container");
-            })["catch"](function (err) {
-            	console.error("could not display plaintext into html element. ", err)
-            });
-    		console.log("tweets successfully posted");
-    	})["catch"](function (err) {
-    		console.error("could not post tweets", err);
-    	});
+  _M.lighten_multiple(tweetMessageContainer).then(function (tweets) {
+    console.log("tweets are: ", tweets);
+    var tags = [];
+    var keys = [];
+    for (var i=0; i<tweets.length; i++) {
+      var tmp = tweets[i];
+      var first = tmp.indexOf(":");
+      var tagHexString = Buffer(tmp.substr(0, first), 'base64').toString('hex');
+      var keyHexString = Buffer(tmp.substr(first + 1), 'base64').toString('hex');
+      var tagb16kString = hexToBase16k(tagHexString);
+      var keyb16kString = hexToBase16k(keyHexString);
+      tags.push(tagb16kString + " #twistor");
+      keys.push(keyb16kString);
+    }        
+    _M.post_tweets(tags, keys).then(function (data) {
+      console.log("tweets successfully posted");
     })["catch"](function (err) {
-    	console.error("could not get message blob. ", err)
+      console.error("could not post tweets", err);
     });
+  })["catch"](function (err) {
+    console.error("could not get tweets. ", err)
+  });
 });
 
 $(postButton).on("click", function () {
@@ -107,53 +87,107 @@ $(postButton).on("click", function () {
 	});
 });
 
-
-
 //Socket events
 
 socket.on('decrypt', function (data) {
-   _M.darken_elGamal(decryptedMessageContainer, data).then(function () {
-            console.log("succesfully decrypted message into container");
-    	})["catch"](function (err) {
-    	console.error("could not display plaintext into html element. ", err)
-        }); 
+  console.log("data ", data);
+  data = data.trim();
+  var keyb16kString = data.substr(data.indexOf(':')+1);
+  var tagb16kString = data.substr(0, data.indexOf(':'));
+
+  var tagHexString = base16kToHex(tagb16kString);
+  var keyHexString = base16kToHex(keyb16kString);
+
+  tagb64String = Buffer(tagHexString.replace(/\W/g, ''), 'hex').toString('base64');
+  keyb64String = Buffer(keyHexString.replace(/\W/g, ''), 'hex').toString('base64');
+
+  var b64String = tagb64String + ":" + keyb64String;
+
+  _M.darken_elGamal(decryptedMessageContainer, b64String).then(function () {
+    console.log("succesfully decrypted message into container");
+  })["catch"](function (err) {
+    console.error("could not display plaintext into html element. ", err)
+  });
 });
 
 socket.on('user-setup', function (data) {
-    $setupPage.show();
+  $setupPage.show();
 });
 
 
 socket.on('user-login', function (data) {
-	if ($setupPage.css('display') != 'none') $setupPage.fadeOut();
+	if ($setupPage.css('display') != 'none') { 
+    $setupPage.fadeOut();
+  }
 	$twistorPage.show();
 	username = data.username;
+  keys = [];
+  /*for (var i =1300; i <1350; i++) {
+    keys.push(i + " #twistor");
+  }*/
 	_M.use_keyring(username).then(function () {
-	  _M.new_anon_conv().then(function (anonConv) {
-	    console.log("conversation created: ", anonConv);
-	    _M.mark_private(selectorContainer, anonConv);
-	    _M.mark_private(tweetMessageContainer, anonConv);
-      });
-      _M.new_conv().then(function (conv) {
-      	_M.mark_private(decryptedMessageContainer, conv);
-      });
+    _M.new_anon_conv().then(function (anonConv) {
+      console.log("conversation created: ", anonConv);
+      _M.mark_private(selectorContainer, anonConv);
+      _M.mark_private(tweetMessageContainer, anonConv);
+    });
+    _M.new_conv().then(function (conv) {
+      _M.mark_private(decryptedMessageContainer, conv);
+    });
 
-      /*_M.new_conv().then(function (anonConv) {
-	    console.log("conversation created: ", anonConv);
-	    _M.mark_private(selectorContainer, anonConv);
-	    console.log("marked private");
+    $('#get-stream').on("click", function () {
+      _M.open_twitter_stream('twistor').then(function (data) {
+        console.log("twitter stream acquired succesfully");
+      })["catch"](function (err) {
+        console.error("couldn't get twitter stream ", err);
       });
-      /*_M.new_anon_conv().then(function (anonConv) {
-	    console.log("conversation created: ", anonConv);
-	    _M.mark_private(tweetButtonContainer, anonConv);
-      });*/
+    });
+
+    $('#get-dev-keys').on("click", function () {
+      _M.get_dev_keys('Apperino').then(function (data) {
+        console.log("dev keys acquired succefully");
+      })["catch"](function (err) {
+        console.error("couldn't get dev keys ", err);
+      });
+    });
+
+    $('#create-twitter-app').on("click", function () {
+      window.open("https://apps.twitter.com/app/new");
+      _M.create_twitter_app().then(function (data) {
+        console.log("app created succesfully with appName", data);
+        console.log("bla");
+      })["catch"](function (err) {
+        console.error("couldn't get dev keys ", err);
+      });
+    });
+    
+    _M.on('newTweet', function (tweet) {
+      console.log("new tweet: ", tweet);
+      tweet = tweet.trim();
+      var keyb16kString = tweet.substr(tweet.indexOf(':')+1);
+      var tagb16kString = tweet.substr(0, tweet.indexOf(':'));
+
+      var tagHexString = base16kToHex(tagb16kString);
+      var keyHexString = base16kToHex(keyb16kString);
+
+      tagb64String = Buffer(tagHexString.replace(/\W/g, ''), 'hex').toString('base64');
+      keyb64String = Buffer(keyHexString.replace(/\W/g, ''), 'hex').toString('base64');
+
+      var b64String = tagb64String + ":" + keyb64String;
+
+      _M.darken_elGamal(decryptedMessageContainer, b64String).then(function () {
+        console.log("succesfully decrypted message into container");
+      })["catch"](function (err) {
+        console.error("could not display plaintext into html element. ", err)
+      });
+    });
 	});
 	socket.emit('user-login', data);
 });
 
 
 socket.on('requestToken-error', function (data) {
-   alert("There was an issue processing your request. Please try again.");
+  alert("There was an issue processing your request. Please try again.");
 });
 
 socket.on('getAccessToken-error', function (data) {
@@ -272,7 +306,8 @@ function hexToBase16k (inbin) {
   // check for even number of hex digits
   var length=inbin.length;
   if(length%2!=0) {
-    alert("The binary input must have an even number of hex digits.");
+    console.log("length of string " + inbin + " is " + length);
+    //alert("The binary input must have an even number of hex digits.");
     return;
   }
   length=length/2;

@@ -14,5 +14,8 @@
 	"base32k": "0.1.0",
 	"sqlite3": "3.1.8",
 	"user-stream": "0.0.8"
+    },
+    "devDependencies": {
+	"browserify": "13.3.0"
     }
 }
