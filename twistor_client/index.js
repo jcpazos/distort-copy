@@ -145,8 +145,7 @@ io.on('connection', function (socket) {
             }
             else {
                 var authorize_url = "https://api.twitter.com/oauth/authorize?oauth_token=" + requestToken;
-                console.log("sending user to:" , authorize_url);
-                openr("http://www.google.ca"); //authorize_url);
+                socket.emit("request-token-popup", { "url": authorize_url});
                 _requestSecret = requestSecret;
                 _requestToken = requestToken;
             }

@@ -1,118 +1,130 @@
 $(function() {
     "use strict";
+
+    var postButton = document.getElementById("post-keys-to-twitter");
+    var loginButton1 = document.getElementById("request-token-1");
+    var loginButton2 = document.getElementById("request-token-2");
     
-var postButton = document.getElementById("post-keys-to-twitter");
-var loginButton = document.getElementById("sign-in-with-twitter");
-var accessButton = document.getElementById("access-twitter");
-var inputCode = document.getElementById("input-code");
-var inputTweetMessage = document.getElementById("tweet-message");
-var tweetMessageContainer = document.getElementById("tweet-message-container");
-var tweetButton = document.getElementById("post-tweet");
-var tweetButtonContainer = document.getElementById("post-tweet-container");
-var selectorContainer = document.getElementById("selector-container");
-var selector = document.getElementById("message-recipient-selector");
-var usernameInput = document.getElementById("username-input");
-var messageForm = document.getElementById("message-form");
-var decryptedMessageContainer = document.getElementById("decrypted-message-container");
-var username;
-var socket = io.connect();
-var B = require('buffer');
+    var accessButton = document.getElementById("access-twitter");
+    var inputCode = document.getElementById("input-code");
+    //var inputTweetMessage = document.getElementById("tweet-message");
+    var tweetMessageContainer = document.getElementById("tweet-message-container");
+    var tweetButton = document.getElementById("post-tweet");
+    //var tweetButtonContainer = document.getElementById("post-tweet-container");
+    var selectorContainer = document.getElementById("selector-container");
+    //var selector = document.getElementById("message-recipient-selector");
+    var usernameInput = document.getElementById("username-input");
+    //var messageForm = document.getElementById("message-form");
+    var decryptedMessageContainer = document.getElementById("decrypted-message-container");
+    var username;
+    var socket = io.connect();
 
+    var $loginPage = $('.login.page'); // The login page
+    var $twistorPage = $('.twistor.page'); // The main twistor page
+    var $setupPage = $('.setup.page'); //The page for first-time user setup
 
-var $loginPage = $('.login.page'); // The login page
-var $twistorPage = $('.twistor.page'); // The main twistor page
-var $setupPage = $('.setup.page'); //The page for first-time user setup
+    $('#tags').tagsInput();
 
-var nick = "AppTwistor";
-
-$('#tags').tagsInput();
-
-$('#message-form').on('submit', function(e) {
+    $('#message-form').on('submit', function(e) {
 	e.preventDefault();
-});
+    });
 
-$(usernameInput).keydown(function (event) {
+    $(usernameInput).keydown(function (event) {
 	if (event.which === 13) {
-	  username = $(usernameInput).val().trim();
-    // If the username is valid
-    if (username) {
-      $loginPage.fadeOut();
-      $(usernameInput).off('keydown');
-      socket.emit('join', username);
-    }
+	    username = $(usernameInput).val().trim();
+            // If the username is valid
+            if (username) {
+                $loginPage.fadeOut();
+                $(usernameInput).off('keydown');
+                socket.emit('join', username);
+            }
 	}
-});
+    });
 
-$(loginButton).on("click", function() {
+    $(loginButton1).on("click", function() {
 	socket.emit('request-token', '');
-});
+    });
 
-$(accessButton).on("click", function() {
+    $(loginButton2).on("click", function () {
+        var popupURL = $(loginButton2).data("url");
+        var newWindow = window.open(popupURL, "authorize-popup", 'height=600,width=500');
+        if (window.focus) {
+            newWindow.focus();
+        }
+    });
+    
+    $(accessButton).on("click", function() {
 	var message = $(inputCode).val();
 	$(inputCode).val('');
 	socket.emit('access-token', message);
-});
-
-$(tweetButton).on("click", function() {
-	console.log("tweeting");
-  _M.lighten_multiple(tweetMessageContainer).then(function (tweets) {
-    console.log("tweets are: ", tweets);
-    var tags = [];
-    var keys = [];
-    for (var i=0; i<tweets.length; i++) {
-      var tmp = tweets[i];
-      var first = tmp.indexOf(":");
-      var tagHexString = Buffer(tmp.substr(0, first), 'base64').toString('hex');
-      var keyHexString = Buffer(tmp.substr(first + 1), 'base64').toString('hex');
-      var tagb16kString = hexToBase16k(tagHexString);
-      var keyb16kString = hexToBase16k(keyHexString);
-      tags.push(tagb16kString + " #twistor");
-      keys.push(keyb16kString);
-    }        
-    _M.post_tweets(tags, keys).then(function (data) {
-      console.log("tweets successfully posted");
-    })["catch"](function (err) {
-      console.error("could not post tweets", err);
     });
-  })["catch"](function (err) {
-    console.error("could not get tweets. ", err)
-  });
-});
 
-$(postButton).on("click", function () {
+    $(tweetButton).on("click", function() {
+	console.log("tweeting");
+        _M.lighten_multiple(tweetMessageContainer).then(function (tweets) {
+            console.log("tweets are: ", tweets);
+            var tags = [];
+            var keys = [];
+            for (var i=0; i<tweets.length; i++) {
+                var tmp = tweets[i];
+                var first = tmp.indexOf(":");
+                var tagHexString = Buffer(tmp.substr(0, first), 'base64').toString('hex');
+                var keyHexString = Buffer(tmp.substr(first + 1), 'base64').toString('hex');
+                var tagb16kString = hexToBase16k(tagHexString);
+                var keyb16kString = hexToBase16k(keyHexString);
+                tags.push(tagb16kString + " #twistor");
+                keys.push(keyb16kString);
+            }        
+            _M.post_tweets(tags, keys).then(function (data) {
+                console.log("tweets successfully posted");
+            })["catch"](function (err) {
+                console.error("could not post tweets", err);
+            });
+        })["catch"](function (err) {
+            console.error("could not get tweets. ", err)
+        });
+    });
+
+    $(postButton).on("click", function () {
 	_M.post_keys(username).then(function (keys) {
-		console.log("keys succesfully posted");
+	    console.log("keys succesfully posted");
 	})["catch"](function (err) {
-		console.error("posting keys failed", err);
+	    console.error("posting keys failed", err);
 	});
-});
+    });
 
-//Socket events
+    //Socket events
 
-socket.on('decrypt', function (data) {
-  console.log("data ", data);
-  data = data.trim();
-  var keyb16kString = data.substr(data.indexOf(':')+1);
-  var tagb16kString = data.substr(0, data.indexOf(':'));
+    socket.on('request-token-popup', function (data) {
+        loginButton1.disabled = true;
+        $(loginButton2).show();
+        loginButton2.setAttribute("data-url", data.url);
+    });
+    
+    socket.on('decrypt', function (data) {
+        console.log("data ", data);
+        data = data.trim();
+        var keyb16kString = data.substr(data.indexOf(':')+1);
+        var tagb16kString = data.substr(0, data.indexOf(':'));
 
-  var tagHexString = base16kToHex(tagb16kString);
-  var keyHexString = base16kToHex(keyb16kString);
+        var tagHexString = base16kToHex(tagb16kString);
+        var keyHexString = base16kToHex(keyb16kString);
 
-  tagb64String = Buffer(tagHexString.replace(/\W/g, ''), 'hex').toString('base64');
-  keyb64String = Buffer(keyHexString.replace(/\W/g, ''), 'hex').toString('base64');
+        tagb64String = Buffer(tagHexString.replace(/\W/g, ''), 'hex').toString('base64');
+        keyb64String = Buffer(keyHexString.replace(/\W/g, ''), 'hex').toString('base64');
 
-  var b64String = tagb64String + ":" + keyb64String;
+        var b64String = tagb64String + ":" + keyb64String;
 
-  _M.darken_elGamal(decryptedMessageContainer, b64String).then(function () {
-    console.log("succesfully decrypted message into container");
-  })["catch"](function (err) {
-    console.error("could not display plaintext into html element. ", err)
-  });
-});
+        _M.darken_elGamal(decryptedMessageContainer, b64String).then(function () {
+            console.log("succesfully decrypted message into container");
+        })["catch"](function (err) {
+            console.error("could not display plaintext into html element. ", err)
+        });
+    });
 
-socket.on('user-setup', function (data) {
-  $setupPage.show();
-});
+    socket.on('user-setup', function (data) {
+        $setupPage.show();
+    });
 
 
 socket.on('user-login', function (data) {

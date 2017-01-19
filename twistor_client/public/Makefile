@@ -12,9 +12,11 @@ HTML_FILES = \
 BUNDLE_SRC = main.js
 
 bundle.js: $(BUNDLE_SRC)
-	$(BROWSERIFY) >/dev/null || { \
+	$(BROWSERIFY) --help >/dev/null || { \
 	echo "first install browserify with 'npm install browserify'" >&2; \
 	exit 1; \
 	}
+	rm -f "$@" 2>/dev/null
 	$(BROWSERIFY) $^ -o $@
+	chmod -w "$@"
 

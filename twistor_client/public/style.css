@@ -1,5 +1,9 @@
 /* Pages */
 
+.hidden {
+  display: none;
+}
+
 .pages {
   height: 100%;
   margin: 0;
