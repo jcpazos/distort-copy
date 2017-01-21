@@ -141,6 +141,15 @@ function onMessageSubmit(evt) {
     }
 }
 
+function onOptionsClick() {
+    "use strict";
+    if (chrome.runtime.openOptionsPage) {
+        chrome.runtime.openOptionsPage();
+    } else {
+        window.open(chrome.runtime.getURL('options.html'));
+    }
+}
+
 function onClearClick() {
     "use strict";
 
@@ -470,6 +479,7 @@ function sethooks() {
     $doc.find("#clearall").click(onClearClick);
     $doc.find("#inputsubmit").click(onMessageSubmit);
     $doc.find("#refresh").click(render);
+    $doc.find("#options").click(onOptionsClick);
     $doc.find(".kp-view").click(onKPView);
     $doc.find(".kp-post").click(onKPPost);
     $doc.find(".kp-regen").click(onKPRegen);

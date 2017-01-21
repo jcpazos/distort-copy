@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>My Test Extension Options</title>
+  <style>
+    body: {padding: 10px;}
+    no-accounts {display: none;}
+    .hidden {display: none;}
+    label {
+      padding: 2px;
+      display: block;
+    }
+    form textarea {
+    width: 100%;
+    }
+    .section {
+    top-margin: 10px;
+    }
+}
+
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div data-page="main" class="page">
+      <div class="section">
+	<h2>Accounts</h2>
+	<h3 class="no-accounts">There are no accounts configured yet.</h3>
+	<ul id="account-list"></ul>
+	<button id="new-account">Add account</button>
+      </div>
+      <div class="section has-accounts">
+	<h2>Account Selected: <span class="username"></span></h2>
+      </div>
+    </div>
+
+    <div data-page="new-account" class="page">
+      <h2>New Account</h2><div class="close-button"></div>
+      <form id="new-account-form">
+	<div data-step=0 data-buttons="next.disabled cancel" class="new-account-step">
+	  <h3>Step 1. Twitter Information</h3>
+	  <p>Twistor accounts must be connected to your Twitter account.
+	  <p><a id="connect-twitter">Connect</a>
+
+	    <div id="twitter-info" class="hidden">
+	      <hr>
+	      <label for="primary-username">Twitter Handle</label>
+	      <input placeholder="n/a" type="text" name="primary-handle" readonly></input>
+
+	      <label for="primary-id">User ID</label>
+	      <input placeholder="n/a" type="text" name="primary-id" readonly></input>
+
+	      <input type="hidden" name="primary-token"></input>
+	    </div>
+	</div>
+
+	<div class="step-buttons">
+	  <hr>
+	  <button name="next">Next</button>
+	  <button name="cancel">Cancel</button>
+	</div>
+
+	<!-- <label for="key">Import Key (optional):</label> -->
+	<!-- <textarea name="key"></textarea> -->
+      
+	<!-- <button name="submit">Submit</button> -->
+	<!-- <button name="cancel">Cancel</button> -->
+      </form>
+    </div>
+    
+  </div> <!-- container -->
+  
+  <!-- Favorite color: -->
+  <!-- <select id="color"> -->
+  <!--  <option value="red">red</option> -->
+  <!--  <option value="green">green</option> -->
+  <!--  <option value="blue">blue</option> -->
+  <!--  <option value="yellow">yellow</option> -->
+  <!-- </select> -->
+
+  <!-- <label> -->
+  <!--   <input type="checkbox" id="like"> -->
+  <!--   I like colors. -->
+  <!-- </label> -->
+
+  <div id="status"></div>
+  <!-- <button id="save">Save</button> -->
+
+  <script src="options.js"></script>
+</body>
+</html>

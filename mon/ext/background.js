@@ -20,7 +20,7 @@
 /*global
   chrome, Promise, performance,
   ECCPubKey, AESKey, KeyLoader, Friendship,
-  UI, Utils, Vault,
+  UI, Utils, Vault, Twitter,
   getHost, Fail, assertType, OneOf, KH_TYPE, MSG_TYPE, _extends
 */
 
@@ -2020,75 +2020,24 @@ BGAPI.prototype.postKeys = function (username) {
         return Promise.reject(new Error("account name does not exist: " + username));
     }
 
-    return new Promise(function (resolve, reject) {
-
-        // find the auth token and the twitter userid;
-        // promises:
-        //   { token: <tok>,
-        //     twitterId: <id>,
-        //     twitterUser: <username>,
-        //   }
-
-        // fetch the user's twitter homepage
-        var preq = new XMLHttpRequest();
-        preq.open("GET", "https://twitter.com", true);
-        preq.onerror = function () {
-            console.error("Problem loading twitter homepage", [].slice.apply(arguments));
-            reject(new Error("error loading twitter homepage"));
-        };
-
-        preq.onload = function () {
-            // parse the response
-            var parser = new DOMParser();
-            var xmlDoc = parser.parseFromString(preq.responseText, "text/html");
-
-            var tokens = xmlDoc.getElementsByName("authenticity_token");
-            if (tokens.length < 1) {
-                return reject(new Fail(Fail.GENERIC, "Could not find auth token"));
-            }
-
-            // the value of the token is always the same so just look at the first
-            // this may be null
-            var token = tokens[0].getAttribute("value");
-
-            var currentUsers = xmlDoc.getElementsByClassName("current-user");
-            if (currentUsers === null || currentUsers.length !== 1) {
-                return reject(new Fail(Fail.GENERIC, "failed to find current-user element for userid and username. Make sure you are logged in to twitter (in any tab)."));
-            }
-
-            var accountGroups = currentUsers[0].getElementsByClassName("account-group");
-            if (accountGroups === null || accountGroups.length !== 1) {
-                console.error("account-group userid fetch failed due to changed format.");
-                return reject(new Fail(Fail.GENERIC, "account-group userid fetch failed due to changed format."));
-            }
-
-            var accountElement = accountGroups[0];
-            var twitterId = accountElement.getAttribute("data-user-id");
-            var twitterUser = accountElement.getAttribute("data-screen-name");
-
-            if (twitterId === null || twitterUser === null) {
-                return reject(new Fail(Fail.GENERIC, "failed to extract ID or username."));
-            }
-
-            if (twitterUser !== username) {
-                return reject(new Fail(Fail.PUBSUB,
-                                       "Twitter authenticated under a different username. Found '" +
-                                       twitterUser + "' but expected  '" + username + "'."));
-            }
-
-            resolve(
-                {token: token,
-                 twitterId: twitterId,
-                 twitterUser: twitterUser
-                });
-        };
-        //send the profile request
-        preq.send();
-    }).then(function (twitterInfo) {
+    return Twitter.getUserInfo().then(function (twitterInfo) {
         var token = twitterInfo.token;
         var twitterUser = twitterInfo.twitterUser;
         var twitterId = twitterInfo.twitterId;
+        
+        if (twitterId === null || twitterUser === null) {
+            throw new Fail(Fail.PUBSUB,
+                           "failed to retrieve current user information on Twitter." +
+                           "Make sure you are logged in to twitter (in any tab).");
+        }
 
+        if (twitterUser !== username) {
+            throw new Fail(Fail.PUBSUB,
+                           "Twitter authenticated under a different username. Found '" +
+                           twitterUser + "' but expected  '" + username + "'.");
+        }
+
+        
         var pubKey = ident.toPubKey();
         var min = pubKey.minify();
         var encryptKey = min.encrypt;
