@@ -5,10 +5,35 @@
 var BG = chrome.extension.getBackgroundPage();
 var $ = BG.$;
 var Vault = BG.Vault;
-var API = BG.API;
-var UI = BG.UI;
-var Utils = BG.Utils;
+var Twitter = BG.Twitter;
 var $doc = $(document);
+
+
+/**
+   Displays the error/status text in the Options UI.
+
+   Call updateStatus with an empty string to clear.
+*/
+
+function updateStatus(msg, isError) {
+    "use strict";
+    var $status = $doc.find('#status');
+    if (isError) {
+        $status.addClass("error");
+    } else {
+        $status.removeClass("error");
+    }
+    var updateId = "" + updateStatus.serial++;
+    $status.attr("data-update", updateId);
+
+    setTimeout(function() {
+        if ($status.attr("data-update") === updateId) {
+            $status.text("");
+        }
+    }, 1750);
+    $status.text("" + msg);
+}
+updateStatus.serial = 0;
 
 // Saves options to chrome.storage.sync.
 function save_options() {
@@ -21,11 +46,7 @@ function save_options() {
         likesColor: likesColor
     }, function() {
         // Update status to let user know options were saved.
-        var status = document.getElementById('status');
-        status.textContent = 'Options saved.';
-        setTimeout(function() {
-            status.textContent = '';
-        }, 750);
+        updateStatus("saved.");
     });
 }
 
@@ -36,6 +57,48 @@ function showPage(pageName) {
     $doc.find(".page[data-page='" + pageName + "']").show();
 }
 
+/** when a button (next, cancel) is clicked in the step.
+    state machine doing step transitions.
+*/
+function stepButtonClick(evt) {
+    "use strict";
+
+    var $btn = $(evt.target);
+    var bName = $btn.attr("name");
+    var $buttons = $doc.find(".step-buttons"),
+        stepClass = $buttons.attr("data-class"),
+        stepNo = $buttons.attr("data-step");
+
+    switch (stepClass) {
+    case "new-account-step":
+        switch (stepNo) {
+        case "start":
+            switch(bName) {
+            case "next":
+                //back to main
+                showPage("main");
+                break;
+            case "cancel":
+                showPage("main");
+                break;
+            }
+        }
+    }
+    evt.preventDefault();
+}
+
+/** initializes the DOM for a step just before showing it **/
+function initStep(className, stepNo) {
+    "use strict";
+    var $stepDiv = $doc.find("." + className + "[data-step='" + stepNo + "']");
+    switch(className + "." + stepNo) {
+    case "new-account-step.start":
+        $stepDiv.find("#twitter-info").hide();
+        break;
+    default:
+    }
+}
+
 function showStep(className, stepNo) {
     "use strict";
     $doc.find("." + className).hide();
@@ -43,6 +106,10 @@ function showStep(className, stepNo) {
     var buttonInfo = $stepDiv.attr("data-buttons").split(" ");
     var b, bname, bstate, $btn;
     $doc.find(".step-buttons button").hide();
+    $doc.find(".step-buttons")
+        .attr("data-class", className)
+        .attr("data-step", stepNo);
+
     for (b = 0; b < buttonInfo.length; b++) {
         bname = buttonInfo[b].split(".")[0];
         bstate = buttonInfo[b].split(".")[1];
@@ -53,8 +120,8 @@ function showStep(className, stepNo) {
             $btn.removeProp("disabled");
         }
         $btn.show();
-        console.log($btn);
     }
+    initStep(className, stepNo);
     $stepDiv.show();
 }
 
@@ -107,10 +174,35 @@ function loadPage() {
     });
 
     $doc.find("#new-account").click(function () {
-        showStep("new-account-step", 0);
+        showStep("new-account-step", "start");
         showPage("new-account");
     });
-    
+
+    $doc.find(".step-buttons button").click(function (evt) {
+        return stepButtonClick(evt);
+    });
+
+    $doc.find("#connect-twitter").click(function () {
+        $doc.find(".step-buttons button[name='next']").prop("disabled", true);
+        updateStatus("Connecting to twitter...");
+        Twitter.getUserInfo().then(function (twitterInfo) {
+            if (twitterInfo.twitterId === null ||
+                twitterInfo.twitterUser === null) {
+                updateStatus("Please login to Twitter in a tab.", true);
+                return;
+            }
+            console.log(twitterInfo);
+            updateStatus("Twitter information retrieved.");
+            $doc.find("input[name='primary-handle']").val(twitterInfo.twitterUser);
+            $doc.find("input[name='primary-id']").val(twitterInfo.twitterId);
+            $doc.find("input[name='primary-token']").val(twitterInfo.token);
+            $doc.find("#twitter-info").show();
+            $doc.find(".step-buttons button[name='next']").removeProp("disabled");
+        }).catch(function (err) {
+            updateStatus(err, true);
+            throw err;
+        });
+    });
     showPage("main");
 }
 

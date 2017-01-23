@@ -16,6 +16,15 @@
     .section {
     top-margin: 10px;
     }
+
+    #status {
+      margin-top: 20px;
+      min-height: 15px;
+    }
+
+    #status.error {
+      color: red;
+    }
 }
 
   </style>
@@ -38,14 +47,18 @@
     <div data-page="new-account" class="page">
       <h2>New Account</h2><div class="close-button"></div>
       <form id="new-account-form">
-	<div data-step=0 data-buttons="next.disabled cancel" class="new-account-step">
+	<div data-step="start" data-buttons="next.disabled cancel" class="new-account-step">
 	  <h3>Step 1. Twitter Information</h3>
-	  <p>Twistor accounts must be connected to your Twitter account.
+	  <p>A Twistor account is linked to a Twitter account in your
+	    browser session. Twistor
+	    will post on Twitter using that account. You
+	    may sign out from Twitter and re-login as a different
+	    account.
 	  <p><a id="connect-twitter">Connect</a>
 
 	    <div id="twitter-info" class="hidden">
 	      <hr>
-	      <label for="primary-username">Twitter Handle</label>
+	      <label for="primary-handle">Twitter Handle</label>
 	      <input placeholder="n/a" type="text" name="primary-handle" readonly></input>
 
 	      <label for="primary-id">User ID</label>
