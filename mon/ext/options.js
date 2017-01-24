@@ -57,8 +57,10 @@ function showPage(pageName) {
     $doc.find(".page[data-page='" + pageName + "']").show();
 }
 
-/** when a button (next, cancel) is clicked in the step.
-    state machine doing step transitions.
+/** when a button (next, cancel) is clicked in the wizard step.
+
+    The action to take is a state machine based on the current
+    state.
 */
 function stepButtonClick(evt) {
     "use strict";
@@ -72,21 +74,40 @@ function stepButtonClick(evt) {
     switch (stepClass) {
     case "new-account-step":
         switch (stepNo) {
+
         case "start":
             switch(bName) {
             case "next":
-                //back to main
-                showPage("main");
+                showStep(stepClass, "twitter-app");
                 break;
-            case "cancel":
+            default:
                 showPage("main");
                 break;
             }
+            break;
+
+        case "twitter-app":
+            switch(bName) {
+            case "back":
+                showStep(stepClass, "start");
+                break;
+            case "next":
+                showStep(stepClass, "review");
+                break;
+            default:
+                showPage("main");
+                break;
+            }
+            break;
+        case "review":
+            break;
+        default: //unknown step
+            console.error("unknown step:", stepClass, stepNo);
         }
     }
     evt.preventDefault();
 }
-
+p
 /** initializes the DOM for a step just before showing it **/
 function initStep(className, stepNo) {
     "use strict";
@@ -94,6 +115,9 @@ function initStep(className, stepNo) {
     switch(className + "." + stepNo) {
     case "new-account-step.start":
         $stepDiv.find("#twitter-info").hide();
+        break;
+    case "new-account-step.twitter-app":
+        $stepDiv.find("#twitter-app-info").hide();
         break;
     default:
     }
@@ -191,7 +215,6 @@ function loadPage() {
                 updateStatus("Please login to Twitter in a tab.", true);
                 return;
             }
-            console.log(twitterInfo);
             updateStatus("Twitter information retrieved.");
             $doc.find("input[name='primary-handle']").val(twitterInfo.twitterUser);
             $doc.find("input[name='primary-id']").val(twitterInfo.twitterId);
@@ -201,6 +224,29 @@ function loadPage() {
         }).catch(function (err) {
             updateStatus(err, true);
             throw err;
+        });
+    });
+
+    $doc.find("#twitter-app-validate").click(function (evt) {
+        evt.preventDefault();
+        var $btn = $(evt.target);
+        $btn.prop("disabled", true);
+        updateStatus("Validating name...");
+        function localValidate(name) {
+            if (!name) {
+                throw new Error("Invalid name.");
+            }
+            name = name.trim();
+            if (!name || name.length < 10 || name.length > 32) {
+                throw new Error("must be between 10 and 32 chars.");
+            }
+            return name;
+        }
+        new Promise(function (resolve) {
+            resolve(localValidate($doc.find("input[name='twitter-app-name']").val()));
+        }).then(function (name) {
+            //getDevKeys on the app.
+            //create twitter app
         });
     });
     showPage("main");
