@@ -13,11 +13,16 @@ var $doc = $(document);
    Displays the error/status text in the Options UI.
 
    Call updateStatus with an empty string to clear.
+
+   timeoutMs is optional. defaults to 1.75 seconds.  set to negative
+   or 0 to have the message remain until explicitly replaced.
 */
 
-function updateStatus(msg, isError) {
+function updateStatus(msg, isError, timeoutMs) {
     "use strict";
     var $status = $doc.find('#status');
+    timeoutMs = timeoutMs || 1750;
+
     if (isError) {
         $status.addClass("error");
     } else {
@@ -26,11 +31,14 @@ function updateStatus(msg, isError) {
     var updateId = "" + updateStatus.serial++;
     $status.attr("data-update", updateId);
 
-    setTimeout(function() {
+    
+    if (timeoutMs > 0) {
+        setTimeout(function() {
         if ($status.attr("data-update") === updateId) {
             $status.text("");
         }
-    }, 1750);
+        }, timeoutMs);
+    }
     $status.text("" + msg);
 }
 updateStatus.serial = 0;
@@ -266,9 +274,12 @@ function loadPage() {
             // check for dev tokens.
             updateStatus("got apps listed");
             console.log("check for dev tokens", app);
+            return Twitter.grepDevKeys(app.appId);
+        }).then(function (keys) {
+            
             $btn.removeProp("disabled");
         }).catch(function (err) {
-            updateStatus("" + err, true);
+            updateStatus("Error: " + err.message + ".", true, -1);
             console.error("ERROR", err);
             $btn.removeProp("disabled");
         });

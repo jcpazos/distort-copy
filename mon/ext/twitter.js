@@ -18,7 +18,8 @@
 **/
 
 /*global
-  Promise, Fail, $
+  Promise, Fail, $,
+  API
 */
 
 /*exported Twitter */
@@ -113,34 +114,88 @@ var Twitter = (function () {
             appId: str,
             appURL: str
             }
+
+            This will open a new tab to the proper twitter page, and
+            wait for the user to confirm the creation. If the creation
+            fails, or if the tab is closed before creation could
+            complete this errors out with GENERIC.
         */
         createApp: function (appName) {
-            // try via ajax
-            return new Promise(function (resolve, reject) {
-                var xhr = new XMLHttpRequest();
-                xhr.open('GET', 'https://apps.twitter.com/app/new', true);
-                xhr.onreadystatechange = function () {
-                    if (xhr.readyState === 4)  {
-                        if (xhr.status >= 200 && xhr.status < 400) {
-                            var el = $('<div></div>');
-                            el.html(xhr.responseText);
-                            el.find('#edit-name').val(appName);
-                            el.find('#description').val('An app for communication through Twistor');
-                            el.find('#edit-url').val('https://github.com/web-priv');
-                            el.find('#edit-tos-agreement').checked = true;
-                            el.find('#edit-submit').submit();
-                            resolve(true);
-                        } else {
-                            return reject(new Fail(Fail.GENERIC, "Twitter returned code " + xhr.status));
-                        }
+            var that = this;
+
+            var originalTabId = -1;
+
+            return API.openContext("https://apps.twitter.com/app/new").then(function (ctx) {
+                originalTabId = ctx.tabId;
+
+                return ctx.callCS("create_twitter_app", {appName: appName}).then(function () {
+                    return ctx;
+                }).catch(function (err) {
+                    if (err.code === Fail.MAIMED) {
+                        console.log("app creation tab closed early. checking if operation completed.");
+                        return ctx;
+                    } else {
+                        throw err;
                     }
-                };
-                xhr.onerror = function () {
-                    console.error("Problem loading twitter apps page", [].slice.apply(arguments));
-                    reject(new Fail(Fail.GENERIC, "Error loading list of Twitter apps."));
-                };
-                xhr.send();
+                });
+            }).then(function () {
+                return new Promise(function (resolve, reject) {
+                    var triesLeft = 3;
+                    var retryMs = 2000;
+
+                    function tryAgain() {
+                        if (triesLeft <= 0) {
+                            return reject(new Fail(Fail.GENERIC, "App creation failed."));
+                        }
+
+                        // check if newly created app available
+                        that.listApps().then(function (apps) {
+                            var selectedApp = apps.filter(function (app) {
+                                return app.appName === appName;
+                            });
+                            if (selectedApp.length < 1) {
+                                triesLeft--;
+                                setTimeout(tryAgain, retryMs);
+                                console.log("New app not available yet. Trying again in " + retryMs + "ms.");
+                                return;
+                            }
+                            API.closeContextTab(originalTabId);
+                            resolve(selectedApp[0]);
+                        }).catch(function (err) {
+                            // if an error occurred, the open tab is
+                            // left behind to help diagnosis.
+                            reject(err);
+                        });
+                    }
+                    tryAgain();
+                });
             });
+            // // try via ajax
+            // return new Promise(function (resolve, reject) {
+            //     var xhr = new XMLHttpRequest();
+            //     xhr.open('GET', 'https://apps.twitter.com/app/new', true);
+            //     xhr.onreadystatechange = function () {
+            //         if (xhr.readyState === 4)  {
+            //             if (xhr.status >= 200 && xhr.status < 400) {
+            //                 var el = $('<div></div>');
+            //                 el.html(xhr.responseText);
+            //                 el.find('#edit-name').val(appName);
+            //                 el.find('#description').val('An app for communication through Twistor');
+            //                 el.find('#edit-url').val('https://github.com/web-priv');
+            //                 el.find('#edit-tos-agreement').checked = true;
+            //                 el.find('#edit-submit').submit();
+            //                 resolve(true);
+            //             } else {
+            //                 return reject(new Fail(Fail.GENERIC, "Twitter returned code " + xhr.status));
+            //             }
+            //         }
+            //     };
+            //     xhr.onerror = function () {
+            //         console.error("Problem loading twitter apps page", [].slice.apply(arguments));
+            //         reject(new Fail(Fail.GENERIC, "Error loading list of Twitter apps."));
+            //     };
+            //     xhr.send();
+            // });
         },
 
         /* Promises a list of the Twitter apps the user has access to.
@@ -193,6 +248,8 @@ var Twitter = (function () {
         createAccessToken: function (appId) {
             
         },
+
+
         /**
            Promises the keys for the twitter application appId.  This
            greps the content of the apps page for that id.

@@ -1004,12 +1004,22 @@
         },
 
         create_twitter_app: function (opts) {
+            console.debug("create_twitter_app:", opts);
             return new Promise(function (resolve, reject) {
-                var tid = setInterval( function () {
-                    if ( document.readyState !== 'complete' ) {
+                var triesLeft = 5;
+                function waitForDocument() {
+                    if (document.readyState !== "complete") {
+                        triesLeft--;
+                        if (triesLeft <= 0) {
+                            return reject(Fail.TIMEOUT, "Document did not load.");
+                        }
+                        console.debug("document not ready yet.");
+                        setTimeout(waitForDocument, 500);
                         return;
                     }
-                    clearInterval( tid );       
+                    if (!document.getElementById("edit-name")) {
+                        return reject(new Fail(Fail.GENERIC, "Different page expected."));
+                    }
                     document.getElementById('edit-name').value = opts.appName;
                     document.getElementById('edit-description').value = 'An app for communication through Twistor';
                     document.getElementById('edit-url').value = 'https://github.com/web-priv';
@@ -1019,10 +1029,11 @@
                         resolve(opts.appName);
                         document.getElementById('edit-submit').submit();
                     });
-                }, 100 );                      
-            });             
+                    console.log("Waiting for user to submit application creation form.");
+                }
+                waitForDocument();
+            });
         },
-
     };
         
 

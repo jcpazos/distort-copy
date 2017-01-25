@@ -2225,44 +2225,54 @@ BGAPI.prototype.postTweets = function (username, messages) {
 };
 
 /**
-   Opens a CryptoCtx to a specific URL
+   closes the tab containing a context.
+*/
+BGAPI.prototype.closeContextTab = function (tabId) {
+    "use strict";
+
+    if (tabId >= 0) {
+        chrome.tabs.remove(tabId);
+    }
+};
+
+/**
+   Opens a CryptoCtx to a specific URL.  You will need to provide
+   url-specific semantics to infer if the page contained has loaded or
+   not.
+
+   Promises the newly opened context within 1 second.
+
+   On timeout, fails with Fail.TIMEOUT
 */
 BGAPI.prototype.openContext = function (url) {
-    return new Promise(function (resolve, reject) {
+    "use strict";
+
+    return new Promise(function (resolve) {
         chrome.tabs.create({
             url: url,
             active: true}, function (tab) {
                 resolve(tab.id);
             });
     }).then(function (tabId) {
-        //todo
-    });
-};
-
-BGAPI.prototype.createTwitterApp = function () {
-    "use strict";
-    return new Promise(function (resolve, reject) {
-        console.debug("[BGAPI] createTwitterApp");
-
-        function isTwitterAppCtx(ctx) {
-            return (!ctx.isMaimed && ctx.app === "apps.twitter.com");
+        function isJustOpened(ctx) {
+            return (ctx.app === getHost(url) && ctx.tabId === tabId);
         }
-
-        var twitterAppCtx = CryptoCtx.filter(isTwitterAppCtx);
-        var promisesPromises = [];
-
-        //possible issue if user is really fast when accepting the UI prompt
-        if (twitterAppCtx.length <= 0) {
-            throw new Fail(Fail.PUBSUB, "Twitter app context not available, must have twitter app tab open.");
-        }
-
-        var appName = "Twistor" + Utils.randomStr128().substr(0,5);
-        twitterAppCtx[0].callCS("create_twitter_app", {appName: appName}).then(function () {
-            console.log('create app returned with appName ', appName);
-            return resolve(appName);
-        }).catch(function (err) {
-            console.log('error creating app: ', err);
-            throw err;
+        return new Promise(function (resolve, reject) {
+            var triesLeft = 10;
+            function tryAgain() {
+                if (triesLeft <= 0) {
+                    return reject(new Fail(Fail.TIMEOUT, "opening tab timed out"));
+                }
+                var ctxs = CryptoCtx.filter(isJustOpened);
+                if (ctxs.length < 1) {
+                    triesLeft--;
+                    setTimeout(tryAgain, 1000);
+                    return;
+                }
+                // opened. get first one.
+                resolve(ctxs[0]);
+            }
+            tryAgain();
         });
     });
 };
