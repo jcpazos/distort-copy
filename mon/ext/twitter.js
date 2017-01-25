@@ -18,7 +18,7 @@
 **/
 
 /*global
-  Promise, Fail
+  Promise, Fail, $
 */
 
 /*exported Twitter */
@@ -103,8 +103,176 @@ var Twitter = (function () {
                 //send the profile request
                 preq.send();
             });
-        }
-    };
+        },
 
+        /** promises a new application to be created. the output format is similar to
+            listApps.
+
+            {
+            appName: str,
+            appId: str,
+            appURL: str
+            }
+        */
+        createApp: function (appName) {
+            // try via ajax
+            return new Promise(function (resolve, reject) {
+                var xhr = new XMLHttpRequest();
+                xhr.open('GET', 'https://apps.twitter.com/app/new', true);
+                xhr.onreadystatechange = function () {
+                    if (xhr.readyState === 4)  {
+                        if (xhr.status >= 200 && xhr.status < 400) {
+                            var el = $('<div></div>');
+                            el.html(xhr.responseText);
+                            el.find('#edit-name').val(appName);
+                            el.find('#description').val('An app for communication through Twistor');
+                            el.find('#edit-url').val('https://github.com/web-priv');
+                            el.find('#edit-tos-agreement').checked = true;
+                            el.find('#edit-submit').submit();
+                            resolve(true);
+                        } else {
+                            return reject(new Fail(Fail.GENERIC, "Twitter returned code " + xhr.status));
+                        }
+                    }
+                };
+                xhr.onerror = function () {
+                    console.error("Problem loading twitter apps page", [].slice.apply(arguments));
+                    reject(new Fail(Fail.GENERIC, "Error loading list of Twitter apps."));
+                };
+                xhr.send();
+            });
+        },
+
+        /* Promises a list of the Twitter apps the user has access to.
+           
+           [ {appName: str,
+              appId: str,
+              appURL: str},
+             ...
+           ]
+         */
+        listApps: function () {
+            return new Promise(function (resolve, reject) {
+                var xhr = new XMLHttpRequest();
+                xhr.open('GET', 'https://apps.twitter.com/', true);
+                xhr.onreadystatechange = function () {
+                    if (xhr.readyState === 4)  {
+                        if (xhr.status >= 200 && xhr.status <= 300) {
+                            var el = $('<div></div>');
+                            el.html(xhr.responseText);
+                            var apps = $('div.app-details a', el);
+                            var appList = [];
+                            var cur;
+                            for (var i = 0; i<apps.length; i++) {
+                                var href = $(apps[i]).attr('href');
+                                cur = {appName: $(apps[i]).text(),
+                                       appId: href.split("/")[1], // "href=app/APPID/show"
+                                       appURL: "https://apps.twitter.com/" + href};
+                                if (!cur.appId) {
+                                    return reject(new Fail(Fail.GENERIC, "Could not parse app response."));
+                                }
+                                appList.push(cur);
+                            }
+                            return resolve(appList);
+                        } else {
+                            return reject(new Fail(Fail.GENERIC, "Twitter returned code " + xhr.status));
+                        }
+                    }
+                };
+                xhr.onerror = function () {
+                    console.error("Problem loading twitter apps page", [].slice.apply(arguments));
+                    reject(new Fail(Fail.GENERIC, "Error loading list of Twitter apps."));
+                };
+                xhr.send();
+            });
+        },
+
+        /**
+           Triggers the action neccessary to generate the access token
+           for a given application id. **/
+        createAccessToken: function (appId) {
+            
+        },
+        /**
+           Promises the keys for the twitter application appId.  This
+           greps the content of the apps page for that id.
+
+           Applications without an access token will return null for
+           the token* fields.
+
+           If the application does not exist you get Fail.NOTFOUND
+
+           
+        */
+        grepDevKeys: function (appId) {
+            return new Promise(function (resolve, reject) {
+                var appURL = "https://apps.twitter.com/" + appId + "/keys";
+                var xhr = new XMLHttpRequest();
+                xhr.open('GET', appURL, true);
+                xhr.onreadystatechange = function () {
+                    if (xhr.readyState === 4)  {
+                        if (xhr.status >= 200 && xhr.status < 400) {
+                            var el = $('<div></div>');
+                            el.html(xhr.responseText);
+                            var appHeaders = $('.app-settings .row span.heading');
+                            var appValues = appHeaders.next();
+                            var tokenHeaders = $('.access .row span.heading');
+                            var tokenValues = tokenHeaders.next();
+
+                            var output = {
+                                consumerKey: null,
+                                consumerSecret: null,
+                                appOwner: null,
+                                appOwnerId: null,
+
+                                accessToken: null,
+                                accessSecret: null,
+                                accessOwner: null,
+                                accessOwnerId: null
+                            };
+
+                            appHeaders.each(function (i, el) {
+                                var txt = $(el).text();
+                                var val = $(appValues[i]).text();
+
+                                if (txt.indexOf("API Key") >= 0) {
+                                    output.consumerKey = val;
+                                } else if (txt.indexOf("API Secret") >= 0) {
+                                    output.consumerSecret = val;
+                                } else if (txt.indexOf("Owner ID") >= 0) {
+                                    output.appOwnerId = val;
+                                } else if (txt.indexOf("Owner") >= 0) {
+                                    output.appOwner = val;
+                                }
+                            });
+
+                            tokenHeaders.each(function (i, el) {
+                                var txt = $(el).text();
+                                var val = $(tokenValues[i]).text();
+
+                                if (txt.indexOf("Access Token Secret") >= 0) {
+                                    output.accessSecret = val;
+                                } else if (txt.indexOf("Access Token") >= 0) {
+                                    output.accessToken = val;
+                                } else if (txt.indexOf("Owner ID") >= 0) {
+                                    output.accessOwnerId = val;
+                                } else if (txt.indexOf("Owner") >= 0) {
+                                    output.accessOwner = val;
+                                }
+                            });
+                            resolve(output);
+                        } else {
+                            return reject(new Fail(Fail.GENERIC, "Twitter returned code " + xhr.status));
+                        }
+                    }
+                };
+                xhr.onerror = function () {
+                    console.error("Problem going to specific app URL.", [].slice.apply(arguments));
+                    return reject(new Fail(Fail.GENERIC, "Failed to access app URL and retrieve keys."));
+                };
+                xhr.send();
+            });
+        } // grepDevKeys
+    };                          // end prototype
     return new Twitter();
 })();

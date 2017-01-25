@@ -107,7 +107,7 @@ function stepButtonClick(evt) {
     }
     evt.preventDefault();
 }
-p
+
 /** initializes the DOM for a step just before showing it **/
 function initStep(className, stepNo) {
     "use strict";
@@ -230,8 +230,7 @@ function loadPage() {
     $doc.find("#twitter-app-validate").click(function (evt) {
         evt.preventDefault();
         var $btn = $(evt.target);
-        $btn.prop("disabled", true);
-        updateStatus("Validating name...");
+
         function localValidate(name) {
             if (!name) {
                 throw new Error("Invalid name.");
@@ -242,11 +241,36 @@ function loadPage() {
             }
             return name;
         }
+
+        function createApp(appName) {
+            return Twitter.createApp(appName);
+        }
+
         new Promise(function (resolve) {
+            $btn.prop("disabled", true);
+            updateStatus("Validating name...");
             resolve(localValidate($doc.find("input[name='twitter-app-name']").val()));
         }).then(function (name) {
-            //getDevKeys on the app.
-            //create twitter app
+            return Twitter.listApps().then(function (apps) {
+                var selectedApp = apps.filter(function (app) {
+                    return app.appName === name;
+                });
+                if (selectedApp.length < 1) {
+                    return createApp(name);
+                } else {
+                    return selectedApp[0];
+                }
+            });
+        }).then(function (app) {
+            // application has been created.
+            // check for dev tokens.
+            updateStatus("got apps listed");
+            console.log("check for dev tokens", app);
+            $btn.removeProp("disabled");
+        }).catch(function (err) {
+            updateStatus("" + err, true);
+            console.error("ERROR", err);
+            $btn.removeProp("disabled");
         });
     });
     showPage("main");

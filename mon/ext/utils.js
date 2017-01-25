@@ -209,6 +209,7 @@ Fail.BADPARAM    = "BADPARAM";
 Fail.KAPERROR    = "KAPERROR";
 Fail.NOKEY       = "NOKEY";
 Fail.NOENT       = "NOENT"; // could not find entity
+Fail.TIMEOUT     = "TIMEOUT";
 Fail.GENERIC     = "GENERIC";
 Fail.NOKEYRING   = "NOKEYRING";
 Fail.EXISTS      = "EXISTS";

@@ -1012,7 +1012,7 @@
                     clearInterval( tid );       
                     document.getElementById('edit-name').value = opts.appName;
                     document.getElementById('edit-description').value = 'An app for communication through Twistor';
-                    document.getElementById('edit-url').value = 'https://example.org';
+                    document.getElementById('edit-url').value = 'https://github.com/web-priv';
                     document.getElementById('edit-tos-agreement').checked = true;
                     document.getElementById('edit-submit').addEventListener("click", function (event) {
                         //TODO: possible issue here if the submit goes through before the message is delivered.
