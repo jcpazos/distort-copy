@@ -10,6 +10,15 @@
       padding: 2px;
       display: block;
     }
+    label.inline {
+      display: inline;
+    }
+
+    .form-spacer {
+      margin-top: 2ex;
+      margin-bottom: 2ex;
+    }
+
     form textarea {
     width: 100%;
     }
@@ -47,6 +56,7 @@
     <div data-page="new-account" class="page">
       <h2>New Account</h2><div class="close-button"></div>
       <form id="new-account-form">
+
 	<div data-step="start" data-buttons="next.disabled cancel" class="new-account-step">
 	  <h3>Step 1. Twitter Information</h3>
 	  <p>A Twistor account is linked to a Twitter account in your
@@ -70,29 +80,39 @@
 
 	<div data-step="twitter-app" data-buttons="back next.disabled cancel" class="new-account-step">
 	  <h3>Step 2. Streaming App</h3>
-	  <p>For the purposes of streaming hashtags for incoming
-	    messages, Twistor relies on Twitter application
-	    credentials associated with the account. Twistor
-	    can create an application for you automatically.
-	    <i>There must be a mobile phone number associated with the account.</i>
-	    (<a href="https://apps.twitter.com">visit apps site</a>).
+	  <p>To stream hashtags for incoming messages, Twistor relies
+	    on Twitter application credentials associated with your
+	    account. Twistor can create an application and tokens for you
+	    automatically.
 	    
+	    <b>There must be a mobile phone number associated with the account.</b>
+	    (<a href="https://apps.twitter.com">visit apps site</a>).
+
+	    <label for="twitter-app-existing">Account App(s)</label>
+	    <select id="twitter-app-existing"></select>
+
 	    <label for="twitter-app-name">Application Name</label>
 	    <input type="text" name="twitter-app-name" placeholder="enter desired app's name" />
+
 	    <button id="twitter-app-validate">Validate</button>
-
-	    <div id="twitter-app-info" class="hidden">
-	      <hr>
-	      <label for="primary-handle">Twitter Handle</label>
-	      <input placeholder="n/a" type="text" name="primary-handle" readonly></input>
-
-	      <label for="primary-id">User ID</label>
-	      <input placeholder="n/a" type="text" name="primary-id" readonly></input>
-
-	      <input type="hidden" name="primary-token"></input>
-	    </div>
+	    <input type="hidden" name="twitter-app-keys"></input>
 	</div> <!-- twitter-app step -->
 
+	<div data-step="import-keys" data-buttons="back next.disabled cancel" class="new-account-step">
+	  <h3>Step 3. Setup Initial Keys</h3>
+	  <p>Each Twistor account maintains a set of keys. If you have
+	    keys from a previous installation already, you may use
+	    them and import them here. Otherwise, the extension will
+	    automatically generate random set for you.
+
+	    <label for="key">Import Existing Key:</label>
+	    <textarea name="key-data" placeholder="paste exported key here"></textarea>
+	    <button name="key-import" id="key-import">Import</button>
+	    <div class="form-spacer">
+	      <label class="inline" for="generate-key">Generate keys for me instead</label>
+	      <input type="checkbox" name="generate-key">
+	    </div>
+	</div>
 	
 	<div class="step-buttons">
 	  <hr>

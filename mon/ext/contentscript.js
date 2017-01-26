@@ -114,7 +114,6 @@
     /* We get notified when the privacy indicator toggles */
     var protectedKeyid = null; // keyid
 
-
     function injectScriptURL(url, isDebug) {
         var injectScript = null;
 
@@ -989,17 +988,40 @@
             });
         },
 
+        /**
+           Perform "Create my access token" button in the UI.
+
+           The context will be closed if the submission goes through. The
+           caller on the background side should get a Fail.MAIMED error.
+
+           This may fail with Fail.TIMEOUT if the document does not
+           finish loading in time.
+        */
         generate_keys: function() {
             return new Promise(function (resolve, reject) {
-                console.log('contentscript creating app'); 
-                var tid = setInterval( function () {
-                    if ( document.readyState !== 'complete' ) {
+                var triesLeft = 5;
+                function waitForDocument() {
+                    if (document.readyState !== "complete") {
+                        triesLeft--;
+                        if (triesLeft <= 0) {
+                            return reject(Fail.TIMEOUT, "Document did not load.");
+                        }
+                        console.debug("document not ready yet.");
+                        setTimeout(waitForDocument, 500);
                         return;
                     }
-                    clearInterval( tid );       
-                    document.getElementById('edit-submit-owner-token').submit();
-                    return resolve(true);
-                }, 100 );      
+                    if (!document.getElementById("edit-submit-owner-token")) {
+                        return reject(new Fail(Fail.GENERIC, "Different page expected."));
+                    }
+
+                    var evt = document.createEvent("MouseEvents");
+                    evt.initMouseEvent("click", true, true, null, 1, 0, 0, 0, 0,
+                                       false, false, false, false, 0, null);
+
+                    document.getElementById('edit-submit-owner-token').dispatchEvent(evt);
+                    //resolve(true);
+                }
+                waitForDocument();
             });          
         },
 

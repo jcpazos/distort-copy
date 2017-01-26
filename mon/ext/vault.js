@@ -68,6 +68,11 @@ window.Vault = (function () {
             return newkey;
         },
 
+        /** turns importData text into an ECCKeyPair */
+        parseImportData: function (importData) {
+            return ECCKeyPair.fromStore(JSON.parse(importData));
+        },
+
         newAccount: function (userid, importData) {
             var keyobj = (importData === undefined) ? new ECCKeyPair() : ECCKeyPair.fromStore(JSON.parse(importData));
 

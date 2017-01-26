@@ -7,7 +7,7 @@ var $ = BG.$;
 var Vault = BG.Vault;
 var Twitter = BG.Twitter;
 var $doc = $(document);
-
+var Fail = BG.Fail;
 
 /**
    Displays the error/status text in the Options UI.
@@ -42,6 +42,32 @@ function updateStatus(msg, isError, timeoutMs) {
     $status.text("" + msg);
 }
 updateStatus.serial = 0;
+
+/** enables controls based on names given as arguments.  inputs,
+    buttons, textareas
+
+    { name: true || false }
+*/
+function enableByName(opts) {
+    "use strict";
+
+    var name, val, $elts;
+
+    for (name in opts) {
+        if (opts.hasOwnProperty(name)) {
+            val = opts[name];
+            $elts = $doc.find("" +
+                              "button[name='" + name + "']," +
+                              "input[name='" + name + "']," +
+                              "textarea[name='" + name + "']");
+            if (!val) {
+                $elts.prop("disabled", true);
+            } else {
+                $elts.removeProp("disabled");
+            }
+        }
+    }
+}
 
 // Saves options to chrome.storage.sync.
 function save_options() {
@@ -100,6 +126,20 @@ function stepButtonClick(evt) {
                 showStep(stepClass, "start");
                 break;
             case "next":
+                showStep(stepClass, "import-keys");
+                break;
+            default:
+                showPage("main");
+                break;
+            }
+            break;
+            
+        case "import-keys":
+            switch(bName) {
+            case "back":
+                showStep(stepClass, "twitter-app");
+                break;
+            case "next":
                 showStep(stepClass, "review");
                 break;
             default:
@@ -107,6 +147,7 @@ function stepButtonClick(evt) {
                 break;
             }
             break;
+            
         case "review":
             break;
         default: //unknown step
@@ -120,14 +161,38 @@ function stepButtonClick(evt) {
 function initStep(className, stepNo) {
     "use strict";
     var $stepDiv = $doc.find("." + className + "[data-step='" + stepNo + "']");
+    var $elt;
+    
     switch(className + "." + stepNo) {
     case "new-account-step.start":
         $stepDiv.find("#twitter-info").hide();
         break;
     case "new-account-step.twitter-app":
-        $stepDiv.find("#twitter-app-info").hide();
+        $stepDiv.find("#twitter-app-existing").html("<option value='new'>Create a new Application</option>");
+        $stepDiv.find("#twitter-app-existing").prop("disabled", true);
+        $stepDiv.find("input[name='twitter-app-name']").removeAttr("readonly");
+        $stepDiv.find("input[name='twitter-app-name']").val("");
+        Twitter.listApps().then(function (apps) {
+            var i, app;
+            for (i = 0; i < apps.length; i++) {
+                app = apps[i];
+                $elt = $("<option></option>");
+                $elt.attr("value", app.appName);
+                $elt.text(app.appName);
+                $stepDiv.find("#twitter-app-existing").append($elt);
+            }
+        }).catch(function (err) {
+            updateStatus("Could not initialize list of apps.", true);
+            console.error(err);
+        }).then(function () {
+            $stepDiv.find("#twitter-app-existing").removeAttr("disabled");
+        });
+        break;
+    case "new-account-step.import-keys":
+        refreshImportKeys();
         break;
     default:
+        console.error("no initialization for step '" + className + "." + stepNo);
     }
 }
 
@@ -191,6 +256,19 @@ function loadAccounts() {
     $select.removeAttr("disabled");
 }
 
+function refreshImportKeys() {
+    "use strict";
+
+    var $elt = $doc.find("input[name='generate-key']");
+    if ($elt.prop("checked")) {
+        // nothing to validate if keys are generated
+        enableByName({"next": true, "key-import": false});
+    } else {
+        // we need to validate the syntax
+        enableByName({"next": false, "key-import": true});
+    }
+}
+
 function loadPage() {
     "use strict";
 
@@ -235,10 +313,23 @@ function loadPage() {
         });
     });
 
+    $doc.find("#twitter-app-existing").change(function (evt) {
+        var val = $(evt.target).val();
+        console.log("existing app changed", val);
+        if (val === "new") {
+            $doc.find("input[name='twitter-app-name']").removeAttr("readonly");
+        } else {
+            $doc.find("input[name='twitter-app-name'").val(val);
+            $doc.find("input[name='twitter-app-name'").attr("readonly", true);
+        }
+    });
+
     $doc.find("#twitter-app-validate").click(function (evt) {
         evt.preventDefault();
         var $btn = $(evt.target);
 
+        $doc.find(".step-buttons button[name='next']").prop("disabled", true);
+        
         function localValidate(name) {
             if (!name) {
                 throw new Error("Invalid name.");
@@ -249,11 +340,6 @@ function loadPage() {
             }
             return name;
         }
-
-        function createApp(appName) {
-            return Twitter.createApp(appName);
-        }
-
         new Promise(function (resolve) {
             $btn.prop("disabled", true);
             updateStatus("Validating name...");
@@ -264,7 +350,8 @@ function loadPage() {
                     return app.appName === name;
                 });
                 if (selectedApp.length < 1) {
-                    return createApp(name);
+                    updateStatus("Creating application...", false, -1);
+                    return Twitter.createApp(name);
                 } else {
                     return selectedApp[0];
                 }
@@ -272,16 +359,72 @@ function loadPage() {
         }).then(function (app) {
             // application has been created.
             // check for dev tokens.
-            updateStatus("got apps listed");
-            console.log("check for dev tokens", app);
-            return Twitter.grepDevKeys(app.appId);
+            updateStatus("Obtaining developer keys for app...");
+            return Twitter.grepDevKeys(app.appId).then(function (keys) {
+                if (!keys.hasAccessToken) {
+                    updateStatus("No access token defined on the app. creating one.");
+                    return Twitter.createAccessToken(keys.appId);
+                }
+                return keys;
+            });
         }).then(function (keys) {
-            
+            updateStatus("Keys received.");
+            console.log("display keys", keys);
+
+            var primaryHandle = $doc.find("input[name='primary-handle']").val();
+            var primaryId = $doc.find("input[name='primary-id']").val();
+            if (keys.appOwner !== primaryHandle || keys.appOwnerId !== primaryId) {
+                throw new Error("The application is owned by a different user: '" +
+                                keys.appOwner + "/" + keys.appOwnerId + "'");
+            }
+            if (keys.accessOwner !== primaryHandle || keys.accessOwnerId !== primaryId) {
+                throw new Error("The access token is owner by a different user: '" +
+                                keys.accessOwner + "/" + keys.accessOwnerId);
+            }
+
+            $doc.find("input[name='twitter-app-id']").val(keys.appId);
+
+            //save if for the end
+            $doc.find("input[name='twitter-app-keys']").data("keys", keys);
+
+            // allow user to proceed
+            $doc.find(".step-buttons button[name='next']").removeProp("disabled");
             $btn.removeProp("disabled");
         }).catch(function (err) {
             updateStatus("Error: " + err.message + ".", true, -1);
             console.error("ERROR", err);
             $btn.removeProp("disabled");
+        });
+    });
+
+    $doc.find("input[name='generate-key']").change(function () {
+        refreshImportKeys();
+    });
+
+    $doc.find("#key-import").click(function (evt) {
+        evt.preventDefault();
+        enableByName({"next": false,
+                      "key-import": false});
+        new Promise(function (resolve, reject) {
+            var importData = $doc.find("textarea[name='key-data']").val();
+            if (importData) {
+                importData = importData.trim();
+                var bracket = importData.indexOf("{");
+                importData = importData.substr(bracket);
+                var key = Vault.parseImportData(importData);
+                resolve(key);
+            } else {
+                reject(new Fail(Fail.BADPARAM, "Invalid key input"));
+            }
+        }).then(function (importedKey) {
+            updateStatus("key imported:", importedKey.toStore());
+            enableByName({"next": true});
+        }).catch(function (err) {
+            updateStatus("Error importing key: " + err.message);
+            console.error(err);
+        }).then(function () {
+            //once operation is complete, allow the import to happen again
+            enableByName({"key-import": true});
         });
     });
     showPage("main");

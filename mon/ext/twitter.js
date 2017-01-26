@@ -119,6 +119,11 @@ var Twitter = (function () {
             wait for the user to confirm the creation. If the creation
             fails, or if the tab is closed before creation could
             complete this errors out with GENERIC.
+
+            This could be done with AJAX, but we'd have to
+            reverse/replicate the hidden CSRF token scheme twitter
+            uses to authorize requests coming in. It's simpler, and
+            less sneaky to let the user confirm.
         */
         createApp: function (appName) {
             var that = this;
@@ -170,32 +175,6 @@ var Twitter = (function () {
                     tryAgain();
                 });
             });
-            // // try via ajax
-            // return new Promise(function (resolve, reject) {
-            //     var xhr = new XMLHttpRequest();
-            //     xhr.open('GET', 'https://apps.twitter.com/app/new', true);
-            //     xhr.onreadystatechange = function () {
-            //         if (xhr.readyState === 4)  {
-            //             if (xhr.status >= 200 && xhr.status < 400) {
-            //                 var el = $('<div></div>');
-            //                 el.html(xhr.responseText);
-            //                 el.find('#edit-name').val(appName);
-            //                 el.find('#description').val('An app for communication through Twistor');
-            //                 el.find('#edit-url').val('https://github.com/web-priv');
-            //                 el.find('#edit-tos-agreement').checked = true;
-            //                 el.find('#edit-submit').submit();
-            //                 resolve(true);
-            //             } else {
-            //                 return reject(new Fail(Fail.GENERIC, "Twitter returned code " + xhr.status));
-            //             }
-            //         }
-            //     };
-            //     xhr.onerror = function () {
-            //         console.error("Problem loading twitter apps page", [].slice.apply(arguments));
-            //         reject(new Fail(Fail.GENERIC, "Error loading list of Twitter apps."));
-            //     };
-            //     xhr.send();
-            // });
         },
 
         /* Promises a list of the Twitter apps the user has access to.
@@ -243,10 +222,57 @@ var Twitter = (function () {
         },
 
         /**
-           Triggers the action neccessary to generate the access token
-           for a given application id. **/
+           Generates a usable access token for the given appId.
+
+           Newly created application start without access tokens.
+           They are needed to perform REST API calls. This
+           bootstrapping needs only be done once per application.
+        **/
         createAccessToken: function (appId) {
-            
+            var that = this;
+            var originalTabId = -1;
+
+            return API.openContext("https://apps.twitter.com/app/" + appId + "/keys").then(function (ctx) {
+                originalTabId = ctx.tabId;
+
+                return ctx.callCS("generate_keys", {}).then(function () {
+                    return ctx;
+                }).catch(function (err) {
+                    if (err.code === Fail.MAIMED) {
+                        console.log("app creation tab closed early. checking if operation completed.");
+                        return ctx;
+                    } else {
+                        throw err;
+                    }
+                });
+            }).then(function () {
+                return new Promise(function (resolve, reject) {
+                    var triesLeft = 3;
+                    var retryMs = 3000;
+
+                    function tryAgain() {
+                        if (triesLeft <= 0) {
+                            return reject(new Fail(Fail.GENERIC, "Could not create access keys for app " + appId));
+                        }
+
+                        that.grepDevKeys(appId).then(function (keys) {
+                            if (!keys.hasAccessToken) {
+                                triesLeft--;
+                                setTimeout(tryAgain, retryMs);
+                                console.log("AppId " + appId + " has no access keys yet. Rechecking in " + retryMs + "ms.");
+                                return;
+                            }
+                            API.closeContextTab(originalTabId);
+                            resolve(keys);
+                        }).catch(function (err) {
+                            // if an error occurred, the open tab is
+                            // left behind to help diagnosis.
+                            reject(err);
+                        });
+                    }
+                    tryAgain();
+                });
+            });
         },
 
 
@@ -263,7 +289,7 @@ var Twitter = (function () {
         */
         grepDevKeys: function (appId) {
             return new Promise(function (resolve, reject) {
-                var appURL = "https://apps.twitter.com/" + appId + "/keys";
+                var appURL = "https://apps.twitter.com/app/" + appId + "/keys";
                 var xhr = new XMLHttpRequest();
                 xhr.open('GET', appURL, true);
                 xhr.onreadystatechange = function () {
@@ -271,12 +297,14 @@ var Twitter = (function () {
                         if (xhr.status >= 200 && xhr.status < 400) {
                             var el = $('<div></div>');
                             el.html(xhr.responseText);
-                            var appHeaders = $('.app-settings .row span.heading');
+                            var appHeaders = el.find('.app-settings .row span.heading');
                             var appValues = appHeaders.next();
-                            var tokenHeaders = $('.access .row span.heading');
+                            var tokenHeaders = el.find('.access .row span.heading');
                             var tokenValues = tokenHeaders.next();
 
                             var output = {
+                                appId: appId,
+
                                 consumerKey: null,
                                 consumerSecret: null,
                                 appOwner: null,
@@ -285,7 +313,9 @@ var Twitter = (function () {
                                 accessToken: null,
                                 accessSecret: null,
                                 accessOwner: null,
-                                accessOwnerId: null
+                                accessOwnerId: null,
+
+                                hasAccessToken: false
                             };
 
                             appHeaders.each(function (i, el) {
@@ -317,6 +347,24 @@ var Twitter = (function () {
                                     output.accessOwner = val;
                                 }
                             });
+
+                            if (!!output.accessSecret &&
+                                !!output.accessToken &&
+                                !!output.accessOwnerId &&
+                                !!output.accessOwner) {
+                                
+                                output.hasAccessToken = true;
+                            }
+
+                            // assertion/sanity
+                            // either all falsey or all truthy
+                            var truths = [!output.accessSecret, !output.accessToken,
+                                          !output.accessOwnerId, !output.accessOwner];
+                            if (truths.indexOf(true) >= 0 && truths.indexOf(false) >= 0) {
+                                console.error("Unexpected state of token generated:", output);
+                                return reject(new Fail(Fail.GENERIC, "Partial access token obtained. Unexpected error."));
+                            }
+
                             resolve(output);
                         } else {
                             return reject(new Fail(Fail.GENERIC, "Twitter returned code " + xhr.status));
