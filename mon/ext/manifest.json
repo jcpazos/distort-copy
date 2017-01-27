@@ -24,8 +24,8 @@
 	"scripts": ["jquery-1.11.3.min.js",
 		    "sjcl.js",
 		    "utils.js",
-		    "vault.js",
 		    "keyclasses.js",
+		    "vault.js",
 		    "ui.js",
 		    "twitter.js",
 		    "background.js"
