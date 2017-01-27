@@ -304,6 +304,7 @@ var Twitter = (function () {
 
                             var output = {
                                 appId: appId,
+                                appName: el.find("#page-title").text(),
 
                                 consumerKey: null,
                                 consumerSecret: null,
