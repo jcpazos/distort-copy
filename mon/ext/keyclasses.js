@@ -1003,7 +1003,7 @@ Friendship.prototype.verifyInvite = function (msg) {
 
     var convkey = AESKey.fromHex(this.fEnc.decryptText(atob(msg.payload.convkey)));
     return {convid: convid, convkey: convkey};
-},
+};
 
 
 Friendship.prototype.toStore = function () {
