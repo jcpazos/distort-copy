@@ -10,6 +10,7 @@
       padding: 2px;
       display: block;
     }
+
     label.inline {
       display: inline;
     }
@@ -113,11 +114,25 @@
 	      <input type="checkbox" name="generate-key">
 	    </div>
 	</div>
-	
+
+	<div data-step="review" data-buttons="back finish cancel" class="new-account-step">
+	  <h3>Last step. Review Changes</h3>
+	  <p>Review your chosen settings, and hit 'Finish' to complete the account creation.</p>
+
+	  <span class="bullet">Twitter account:</span> <span class="user-setting" name="primary-handle"></span>
+	  <br />
+
+	  <span class="bullet">Twitter App:</span> <span class="user-setting" name="twitter-app-name"></span>
+	  <br />
+
+	  <span class="bullet">Keys:</span> <span class="user-setting" name="key-data"></span>
+	</div>
+
 	<div class="step-buttons">
 	  <hr>
 	  <button name="back">Back</button>
 	  <button name="next">Next</button>
+	  <button name="finish">Finish</button>
 	  <button name="cancel">Cancel</button>
 	</div>
 
