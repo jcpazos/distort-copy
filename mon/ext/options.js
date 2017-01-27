@@ -84,6 +84,23 @@ function save_options() {
     });
 }
 
+/**
+   assumes the contents of the new account form is valid.
+   parses the input fields and produces a suitable object
+   for creating an Account object
+*/
+function readAccountForm() {
+    "use strict";
+    var opts = {};
+    opts.primaryId = $doc.find("input[name='primary-id']").val();
+    opts.primaryHandle = $doc.find("input[name='primary-handle']").val();
+    opts.primaryApp = $doc.find("input[name='twitter-app-keys']").data("keys");
+    // null if a new key is to be generated
+    opts.key = $doc.find("textarea[name='key-data']").data("key");
+    opts.groups = [];
+    return opts;
+}
+
 function showPage(pageName) {
     "use strict";
     
@@ -140,6 +157,9 @@ function stepButtonClick(evt) {
                 showStep(stepClass, "twitter-app");
                 break;
             case "next":
+                if ($doc.find("input[name='generate-key']").prop("checked")) {
+                    $doc.find("textarea[name='key-data']").data("key", null);
+                }
                 showStep(stepClass, "review");
                 break;
             default:
@@ -149,12 +169,49 @@ function stepButtonClick(evt) {
             break;
             
         case "review":
+            switch (bName) {
+            case "back":
+                showStep(stepClass, "import-keys");
+                break;
+            case "next":
+                showStep(stepClass, "review");
+                break;
+            case "finish":
+                enableByName({"back": false, "finish": false, "cancel": false});
+                updateStatus("Creating account...");
+
+                Vault.newAccount(readAccountForm())
+                    .then(function () {
+                        showPage("main");
+                    }).catch(function (err) {
+                        console.error(err);
+                        updateStatus("Creation failed: " + err.message);
+                        enableByName({"back": true, "cancel": true});
+                    });
+                break;
+            }
             break;
         default: //unknown step
             console.error("unknown step:", stepClass, stepNo);
         }
     }
     evt.preventDefault();
+}
+
+function refreshReview() {
+    "use strict";
+    var opts = readAccountForm();
+    $doc.find(".user-setting[name='primary-handle']")
+        .text(opts.primaryHandle);
+    $doc.find(".user-setting[name='twitter-app-name']")
+        .text(opts.primaryApp.appName);
+    if (opts.key === null) {
+        $doc.find(".user-setting[name='key-data']")
+            .text("A new key will be generated.");
+    } else {
+        $doc.find(".user-setting[name='key-data']")
+            .text("Imported Key");
+    }
 }
 
 /** initializes the DOM for a step just before showing it **/
@@ -190,6 +247,9 @@ function initStep(className, stepNo) {
         break;
     case "new-account-step.import-keys":
         refreshImportKeys();
+        break;
+    case "new-account-step.review":
+        refreshReview();
         break;
     default:
         console.error("no initialization for step '" + className + "." + stepNo);
@@ -293,7 +353,7 @@ function loadPage() {
     });
 
     $doc.find("#connect-twitter").click(function () {
-        $doc.find(".step-buttons button[name='next']").prop("disabled", true);
+        enableByName({next: false});
         updateStatus("Connecting to twitter...");
         Twitter.getUserInfo().then(function (twitterInfo) {
             if (twitterInfo.twitterId === null ||
@@ -306,7 +366,15 @@ function loadPage() {
             $doc.find("input[name='primary-id']").val(twitterInfo.twitterId);
             $doc.find("input[name='primary-token']").val(twitterInfo.token);
             $doc.find("#twitter-info").show();
-            $doc.find(".step-buttons button[name='next']").removeProp("disabled");
+
+            if (Vault.accountExists(twitterInfo.twitterUser)) {
+                updateStatus("There is an account with that name. Login to Twitter" +
+                             " under a different user, or delete the account.",
+                             true);
+                return;
+            }
+
+            enableByName({"next": true});
         }).catch(function (err) {
             updateStatus(err, true);
             throw err;
@@ -315,7 +383,7 @@ function loadPage() {
 
     $doc.find("#twitter-app-existing").change(function (evt) {
         var val = $(evt.target).val();
-        console.log("existing app changed", val);
+
         if (val === "new") {
             $doc.find("input[name='twitter-app-name']").removeAttr("readonly");
         } else {
@@ -369,7 +437,6 @@ function loadPage() {
             });
         }).then(function (keys) {
             updateStatus("Keys received.");
-            console.log("display keys", keys);
 
             var primaryHandle = $doc.find("input[name='primary-handle']").val();
             var primaryId = $doc.find("input[name='primary-id']").val();
@@ -418,6 +485,8 @@ function loadPage() {
             }
         }).then(function (importedKey) {
             updateStatus("key imported:", importedKey.toStore());
+            // save the key for later
+            $doc.find("textarea[name='key-data']").data("key", importedKey.toStore());
             enableByName({"next": true});
         }).catch(function (err) {
             updateStatus("Error importing key: " + err.message);
