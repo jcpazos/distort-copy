@@ -214,6 +214,14 @@ function refreshReview() {
     }
 }
 
+/* displays details on the given account */
+function showAccountDetails(accountName) {
+    "use strict";
+    $doc.find("table.accounts tbody tr.selected").removeClass("selected");
+    $doc.find("table.accounts tbody tr[data-username='" + accountName + "']").addClass("selected");
+    $doc.find(".username").text(accountName + "!");
+}
+
 /** initializes the DOM for a step just before showing it **/
 function initStep(className, stepNo) {
     "use strict";
@@ -282,7 +290,7 @@ function showStep(className, stepNo) {
     $stepDiv.show();
 }
 
-function loadAccounts() {
+function refreshAccounts() {
     "use strict";
 
     var users = Vault.getAccountNames();
@@ -294,26 +302,27 @@ function loadAccounts() {
         $doc.find(".has-accounts").show();
     }
 
-    var i;
-    var $select = $doc.find("#userselect");
-    var $opt;
-    if (users.length < 1) {
-        $select.attr("disabled", true);
-        $select.html("<option value=''>N/A</option>");
-        return;
-    }
-    $select.html("");
+    var i, $row;
+    var $body = $doc.find("table.accounts tbody");
+    $body.html("");
+
     var defaultUser = Vault.getUsername();
     for (i = 0; i < users.length; i++) {
-        $opt = $("<option></option>");
-        $opt.attr("value", users[i]);
-        $opt.text(users[i]);
+        $row = $("<tr></tr>");
+        $row.attr("data-username", users[i]);
+        $("<td></td>").text("@" + users[i]).appendTo($row);
         if (users[i] === defaultUser) {
-            $opt.attr("selected", true);
+            $("<td>active</td>").appendTo($row);
+        } else {
+            $("<td>inactive</b>").appendTo($row);
         }
-        $select.append($opt);
+        $("<td class='account-delete'>delete</td>").attr("data-username", users[i]).appendTo($row);
+        $row.appendTo($body);
     }
-    $select.removeAttr("disabled");
+    $body.append('<tr><td><a class="new-account">new...</a></td></tr>');
+    if (defaultUser) {
+        showAccountDetails(defaultUser);
+    }
 }
 
 function refreshImportKeys() {
@@ -332,7 +341,7 @@ function refreshImportKeys() {
 function loadPage() {
     "use strict";
 
-    loadAccounts();
+    refreshAccounts();
     
     // Use default value color = 'red' and likesColor = true.
     chrome.storage.sync.get({
@@ -343,9 +352,29 @@ function loadPage() {
         document.getElementById('like').checked = items.likesColor;
     });
 
-    $doc.find("#new-account").click(function () {
+    $doc.find(".new-account").click(function () {
         showStep("new-account-step", "start");
         showPage("new-account");
+    });
+
+    $doc.find("table.accounts tbody tr").click(function (evt) {
+        evt.preventDefault();
+        var $row = $(evt.target).closest("tr");
+        var username = $row.attr("data-username");
+        if (!username) {
+            return;
+        }
+        showAccountDetails(username);
+    });
+
+    $doc.find(".account-delete").click(function (evt) {
+        evt.preventDefault();
+        var username = $(evt.target).closest("tr").attr("data-username");
+        if (username) {
+            Vault.deleteAccount(username).then(function () {
+                showPage("main");
+            });
+        }
     });
 
     $doc.find(".step-buttons button").click(function (evt) {

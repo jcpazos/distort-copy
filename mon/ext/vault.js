@@ -48,7 +48,11 @@ window.Vault = (function () {
             var k;
             for (k in opts) {
                 if (opts.hasOwnProperty(k)) {
-                    this.db[k] = opts[k];
+                    if (opts[k] !== undefined) {
+                        this.db[k] = opts[k];
+                    } else {
+                        delete this.db[k];
+                    }
                 }
             }
             return this._save();
@@ -134,6 +138,35 @@ window.Vault = (function () {
         accountExists: function (priHandle) {
             var users = this.get("usernames");
             return users.indexOf(priHandle) >= 0;
+        },
+
+        deleteAccount: function (userid) {
+            var that = this;
+            return new Promise(function (resolve) {
+                var sk = "account." + btoa(userid);
+                var settings  = {};
+
+                if (!that.get(sk)) {
+                    return resolve(null);
+                }
+
+                var users = that.get("usernames");
+                var index = users.indexOf(userid);
+                if (index >= 0) {
+                    users.splice(index, 1);
+                }
+
+                settings[sk] = undefined; //deletes
+                if (users.length > 0) {
+                    settings.username = users[0];
+                } else {
+                    settings.username = undefined;
+                }
+
+                return that.set(settings).then(function () {
+                    return userid;
+                });
+            });
         },
 
         getAccount: function (userid) {

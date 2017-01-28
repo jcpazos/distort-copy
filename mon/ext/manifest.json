@@ -1,9 +1,9 @@
 {
-    "name": "Beeswax Privacy Monitor",
+    "name": "Twistor Anonymous Messaging",
     "version": "0.1",
     "manifest_version": 2,
 
-    "description": "Beeswax Privacy Monitor",
+    "description": "Communicate anonymously with the world",
 
     "icons" : {
 	"16": "logo/logo16.png",
