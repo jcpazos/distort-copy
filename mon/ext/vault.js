@@ -18,12 +18,12 @@
 **/
 
 /*jshint
-  es5: true
+  esversion: 5
 */
 
 /*global
-  chrome, Promise, ECCKeyPair
-
+  Promise, ECCKeyPair,
+  KeyLoader, Fail,
   CryptoCtx
 */
 
@@ -36,6 +36,10 @@ window.Vault = (function () {
 
     Vault.prototype = {
 
+        /*
+          reads the key given from the in-memory db.
+          Note: returns a shallow copy of the value retrieved.
+        */
         get: function (opt) {
             return this.db[opt];
         },
@@ -44,15 +48,19 @@ window.Vault = (function () {
             var k;
             for (k in opts) {
                 if (opts.hasOwnProperty(k)) {
-                    this.db[k] = opts[k];
+                    if (opts[k] !== undefined) {
+                        this.db[k] = opts[k];
+                    } else {
+                        delete this.db[k];
+                    }
                 }
             }
-            this._save();
+            return this._save();
         },
 
         reset: function () {
             this.db = this._defaults();
-            this._save();
+            return this._save();
         },
 
         regenKeys: function (userid) {
@@ -73,26 +81,40 @@ window.Vault = (function () {
             return ECCKeyPair.fromStore(JSON.parse(importData));
         },
 
-        newAccount: function (userid, importData) {
-            var keyobj = (importData === undefined) ? new ECCKeyPair() : ECCKeyPair.fromStore(JSON.parse(importData));
+        /**
+           Promises a new Account object.
+           The account is saved in the database.
 
-            var inStore = keyobj.toStore();
-            var sk = "identity." + btoa(userid);
-            var settings = {};
+           This will set the currently active account to the newly
+           created account.
+        */
+        newAccount: function (acctOpts) {
+            var that = this;
+
+            return new Promise(function () {
+                var acct = new Account(acctOpts);
+                var userid = acct.id;
+
+                var inStore = acct.toStore();
+                var sk = "account." + btoa(userid);
+                var settings = {};
             
-            if (this.get(sk)) {
-                console.error("user already exists");
-                return null;
-            }
-            var users = this.get("usernames");
-            users.push(userid);
-            settings.users = users;
-            settings[sk] = inStore;
-            if (users.length === 1) {
-                settings.username = userid;
-            }
-            this.set(settings);
-            return keyobj;
+                if (that.get(sk)) {
+                    console.error("user already exists");
+                    return null;
+                }
+
+                var users = that.get("usernames");
+                users.push(userid);
+
+                settings[sk] = inStore;
+                if (users.length === 1) {
+                    settings.username = userid;
+                }
+                return that.set(settings).then(function () {
+                    return acct;
+                });
+            });
         },
 
         getAccountNames: function () {
@@ -108,6 +130,43 @@ window.Vault = (function () {
         // set default username
         setUsername: function (userid) {
             this.set({"username": userid});
+        },
+
+        /** checks if there exists an account with the
+            given username
+        */
+        accountExists: function (priHandle) {
+            var users = this.get("usernames");
+            return users.indexOf(priHandle) >= 0;
+        },
+
+        deleteAccount: function (userid) {
+            var that = this;
+            return new Promise(function (resolve) {
+                var sk = "account." + btoa(userid);
+                var settings  = {};
+
+                if (!that.get(sk)) {
+                    return resolve(null);
+                }
+
+                var users = that.get("usernames");
+                var index = users.indexOf(userid);
+                if (index >= 0) {
+                    users.splice(index, 1);
+                }
+
+                settings[sk] = undefined; //deletes
+                if (users.length > 0) {
+                    settings.username = users[0];
+                } else {
+                    settings.username = undefined;
+                }
+
+                return that.set(settings).then(function () {
+                    return userid;
+                });
+            });
         },
 
         getAccount: function (userid) {
@@ -133,6 +192,7 @@ window.Vault = (function () {
 
         _save: function () {
             localStorage.settings = JSON.stringify(this.db);
+            return Promise.resolve(true);
         },
 
         _load: function () {
@@ -149,6 +209,79 @@ window.Vault = (function () {
             }
         }
     };
+
+    function GroupStats(opts) {
+        this.name = opts.name || null;
+        this.joinedOn = opts.joinedOn || null;
+        this.lastReceivedOn = opts.lastReceivedOn || null;
+        this.numReceived = opts.numReceived || 0;
+        this.numSent = opts.numSent || 0;
+    }
+
+    GroupStats.prototype = {
+        toStore: function () {
+            return {
+                'typ': "grp",
+                name: this.name,
+                joinedOn: this.joinedOn,
+                lastReceivedOn: this.lastReceivedOn,
+                numReceived: this.numReceived,
+                numSent: this.numSent
+            };
+        }
+    };
+    GroupStats.fromStore = function (obj) {
+        if (obj.typ !== "grp") {
+            return null;
+        }
+        return new GroupStats(obj);
+    };
+    KeyLoader.registerClass("grp", GroupStats);
+
+    function Account(opts) {
+        this.primaryId = opts.primaryId || null;
+        this.primaryHandle = opts.primaryHandle || null;
+        this.primaryApp = opts.primaryApp || null;
+
+        this.key = opts.key || new ECCKeyPair();
+
+        // array of group stats names
+        this.groups = opts.groups || [];
+    }
+
+    Account.prototype = {
+        /* canonical unique id in twistor database */
+        get id() {
+            return this.primaryHandle;
+        },
+        toStore: function () {
+            return { 'typ': "acct",
+                     primaryId: this.primaryId,
+                     primaryHandle: this.primaryHandle,
+                     primaryApp: this.primaryApp,
+                     key: this.key.toStore(),
+                     groups: this.groups.map(function (grp) { return grp.toStore(); }),
+                   };
+        }
+    };
+    Account.fromStore = function (obj) {
+        if (obj.typ !== "acct") {
+            return null;
+        }
+        if (obj.key) {
+            obj.key = KeyLoader.fromStore(obj.key);
+        } else {
+            obj.key = null;
+        }
+        if (obj.groups) {
+            obj.groups = obj.groups.map(KeyLoader.fromStore);
+        } else {
+            obj.groups = [];
+        }
+        return new Account(obj);
+    };
+
+    KeyLoader.registerClass("acct", Account);
 
     return new Vault();
 })();

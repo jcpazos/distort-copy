@@ -1,9 +1,9 @@
 {
-    "name": "Beeswax Privacy Monitor",
+    "name": "Twistor Anonymous Messaging",
     "version": "0.1",
     "manifest_version": 2,
 
-    "description": "Beeswax Privacy Monitor",
+    "description": "Communicate anonymously with the world",
 
     "icons" : {
 	"16": "logo/logo16.png",
@@ -24,8 +24,8 @@
 	"scripts": ["jquery-1.11.3.min.js",
 		    "sjcl.js",
 		    "utils.js",
-		    "vault.js",
 		    "keyclasses.js",
+		    "vault.js",
 		    "ui.js",
 		    "twitter.js",
 		    "background.js"

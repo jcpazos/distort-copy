@@ -84,6 +84,23 @@ function save_options() {
     });
 }
 
+/**
+   assumes the contents of the new account form is valid.
+   parses the input fields and produces a suitable object
+   for creating an Account object
+*/
+function readAccountForm() {
+    "use strict";
+    var opts = {};
+    opts.primaryId = $doc.find("input[name='primary-id']").val();
+    opts.primaryHandle = $doc.find("input[name='primary-handle']").val();
+    opts.primaryApp = $doc.find("input[name='twitter-app-keys']").data("keys");
+    // null if a new key is to be generated
+    opts.key = $doc.find("textarea[name='key-data']").data("key");
+    opts.groups = [];
+    return opts;
+}
+
 function showPage(pageName) {
     "use strict";
     
@@ -140,6 +157,9 @@ function stepButtonClick(evt) {
                 showStep(stepClass, "twitter-app");
                 break;
             case "next":
+                if ($doc.find("input[name='generate-key']").prop("checked")) {
+                    $doc.find("textarea[name='key-data']").data("key", null);
+                }
                 showStep(stepClass, "review");
                 break;
             default:
@@ -149,12 +169,57 @@ function stepButtonClick(evt) {
             break;
             
         case "review":
+            switch (bName) {
+            case "back":
+                showStep(stepClass, "import-keys");
+                break;
+            case "next":
+                showStep(stepClass, "review");
+                break;
+            case "finish":
+                enableByName({"back": false, "finish": false, "cancel": false});
+                updateStatus("Creating account...");
+
+                Vault.newAccount(readAccountForm())
+                    .then(function () {
+                        showPage("main");
+                    }).catch(function (err) {
+                        console.error(err);
+                        updateStatus("Creation failed: " + err.message);
+                        enableByName({"back": true, "cancel": true});
+                    });
+                break;
+            }
             break;
         default: //unknown step
             console.error("unknown step:", stepClass, stepNo);
         }
     }
     evt.preventDefault();
+}
+
+function refreshReview() {
+    "use strict";
+    var opts = readAccountForm();
+    $doc.find(".user-setting[name='primary-handle']")
+        .text(opts.primaryHandle);
+    $doc.find(".user-setting[name='twitter-app-name']")
+        .text(opts.primaryApp.appName);
+    if (opts.key === null) {
+        $doc.find(".user-setting[name='key-data']")
+            .text("A new key will be generated.");
+    } else {
+        $doc.find(".user-setting[name='key-data']")
+            .text("Imported Key");
+    }
+}
+
+/* displays details on the given account */
+function showAccountDetails(accountName) {
+    "use strict";
+    $doc.find("table.accounts tbody tr.selected").removeClass("selected");
+    $doc.find("table.accounts tbody tr[data-username='" + accountName + "']").addClass("selected");
+    $doc.find(".username").text(accountName + "!");
 }
 
 /** initializes the DOM for a step just before showing it **/
@@ -191,6 +256,9 @@ function initStep(className, stepNo) {
     case "new-account-step.import-keys":
         refreshImportKeys();
         break;
+    case "new-account-step.review":
+        refreshReview();
+        break;
     default:
         console.error("no initialization for step '" + className + "." + stepNo);
     }
@@ -222,7 +290,7 @@ function showStep(className, stepNo) {
     $stepDiv.show();
 }
 
-function loadAccounts() {
+function refreshAccounts() {
     "use strict";
 
     var users = Vault.getAccountNames();
@@ -234,26 +302,27 @@ function loadAccounts() {
         $doc.find(".has-accounts").show();
     }
 
-    var i;
-    var $select = $doc.find("#userselect");
-    var $opt;
-    if (users.length < 1) {
-        $select.attr("disabled", true);
-        $select.html("<option value=''>N/A</option>");
-        return;
-    }
-    $select.html("");
+    var i, $row;
+    var $body = $doc.find("table.accounts tbody");
+    $body.html("");
+
     var defaultUser = Vault.getUsername();
     for (i = 0; i < users.length; i++) {
-        $opt = $("<option></option>");
-        $opt.attr("value", users[i]);
-        $opt.text(users[i]);
+        $row = $("<tr></tr>");
+        $row.attr("data-username", users[i]);
+        $("<td></td>").text("@" + users[i]).appendTo($row);
         if (users[i] === defaultUser) {
-            $opt.attr("selected", true);
+            $("<td>active</td>").appendTo($row);
+        } else {
+            $("<td>inactive</b>").appendTo($row);
         }
-        $select.append($opt);
+        $("<td class='account-delete'>delete</td>").attr("data-username", users[i]).appendTo($row);
+        $row.appendTo($body);
     }
-    $select.removeAttr("disabled");
+    $body.append('<tr><td><a class="new-account">new...</a></td></tr>');
+    if (defaultUser) {
+        showAccountDetails(defaultUser);
+    }
 }
 
 function refreshImportKeys() {
@@ -272,7 +341,7 @@ function refreshImportKeys() {
 function loadPage() {
     "use strict";
 
-    loadAccounts();
+    refreshAccounts();
     
     // Use default value color = 'red' and likesColor = true.
     chrome.storage.sync.get({
@@ -283,9 +352,29 @@ function loadPage() {
         document.getElementById('like').checked = items.likesColor;
     });
 
-    $doc.find("#new-account").click(function () {
+    $doc.find(".new-account").click(function () {
         showStep("new-account-step", "start");
         showPage("new-account");
+    });
+
+    $doc.find("table.accounts tbody tr").click(function (evt) {
+        evt.preventDefault();
+        var $row = $(evt.target).closest("tr");
+        var username = $row.attr("data-username");
+        if (!username) {
+            return;
+        }
+        showAccountDetails(username);
+    });
+
+    $doc.find(".account-delete").click(function (evt) {
+        evt.preventDefault();
+        var username = $(evt.target).closest("tr").attr("data-username");
+        if (username) {
+            Vault.deleteAccount(username).then(function () {
+                showPage("main");
+            });
+        }
     });
 
     $doc.find(".step-buttons button").click(function (evt) {
@@ -293,7 +382,7 @@ function loadPage() {
     });
 
     $doc.find("#connect-twitter").click(function () {
-        $doc.find(".step-buttons button[name='next']").prop("disabled", true);
+        enableByName({next: false});
         updateStatus("Connecting to twitter...");
         Twitter.getUserInfo().then(function (twitterInfo) {
             if (twitterInfo.twitterId === null ||
@@ -306,7 +395,15 @@ function loadPage() {
             $doc.find("input[name='primary-id']").val(twitterInfo.twitterId);
             $doc.find("input[name='primary-token']").val(twitterInfo.token);
             $doc.find("#twitter-info").show();
-            $doc.find(".step-buttons button[name='next']").removeProp("disabled");
+
+            if (Vault.accountExists(twitterInfo.twitterUser)) {
+                updateStatus("There is an account with that name. Login to Twitter" +
+                             " under a different user, or delete the account.",
+                             true);
+                return;
+            }
+
+            enableByName({"next": true});
         }).catch(function (err) {
             updateStatus(err, true);
             throw err;
@@ -315,7 +412,7 @@ function loadPage() {
 
     $doc.find("#twitter-app-existing").change(function (evt) {
         var val = $(evt.target).val();
-        console.log("existing app changed", val);
+
         if (val === "new") {
             $doc.find("input[name='twitter-app-name']").removeAttr("readonly");
         } else {
@@ -369,7 +466,6 @@ function loadPage() {
             });
         }).then(function (keys) {
             updateStatus("Keys received.");
-            console.log("display keys", keys);
 
             var primaryHandle = $doc.find("input[name='primary-handle']").val();
             var primaryId = $doc.find("input[name='primary-id']").val();
@@ -418,6 +514,8 @@ function loadPage() {
             }
         }).then(function (importedKey) {
             updateStatus("key imported:", importedKey.toStore());
+            // save the key for later
+            $doc.find("textarea[name='key-data']").data("key", importedKey.toStore());
             enableByName({"next": true});
         }).catch(function (err) {
             updateStatus("Error importing key: " + err.message);

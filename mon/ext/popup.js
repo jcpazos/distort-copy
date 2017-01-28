@@ -486,7 +486,6 @@ function sethooks() {
     $doc.find("#contextselect").change(onCtxChange);
     $doc.find("#clearlog").click(onClearLog);
     $doc.find("#exportuser").click(onExportUser);
-    $doc.find("#newuser").click(onNewUser);
 
     UI.setLogHook(function (txt) {
         var $log = $doc.find("#messagelog");
