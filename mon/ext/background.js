@@ -677,7 +677,7 @@ CryptoCtx.prototype = {
         "use strict";
         
         var that = this;
-        var account = Vault.getAccount(keyringObj.username);
+        var account = Vault.getAccountKP(keyringObj.username);
         console.log("Keyring", keyringObj.name, "open.", keyringObj);
         if (!account) {
             // FIXME: existence check insufficient. should verify key hasn't changed.
@@ -783,7 +783,7 @@ CryptoCtx.prototype = {
             if (that.kr === null) {
                 return reject(new Fail(Fail.NOKEYRING, "Keyring not open."));
             }
-            var account = Vault.getAccount(that.kr.username);
+            var account = Vault.getAccountKP(that.kr.username);
             var randomHex = Utils.randomStr128();
             var encodedUser = encodeURIComponent(that.kr.username);
             var encodedPrefix = encodeURIComponent(prefix);
@@ -1463,7 +1463,7 @@ CryptoCtx.prototype = {
         if (that.kr === null) {
             return new Fail(Fail.NOKEYRING, "Keyring not open.");
         }
-        var ident = Vault.getAccount(that.kr.username);
+        var ident = Vault.getAccountKP(that.kr.username);
 
         return Promise.resolve(ident.decryptMessage(ct));
 
@@ -1572,7 +1572,7 @@ _extends(DistributeTask, PeriodicTask, {
         //
 
         var checkTime = Date.now();
-        var ident = Vault.getAccount(that.username);
+        var ident = Vault.getAccountKP(that.username);
 
         if (!ident) {
             throw new Fail(Fail.NOIDENT, "No identity attached with username", that.username);
@@ -2012,7 +2012,7 @@ BGAPI.prototype.postKeys = function (username) {
 
     console.debug("postKeys:", username);
 
-    var ident = Vault.getAccount(username);
+    var ident = Vault.getAccountKP(username);
     var ts = Date.now();
 
     if (!ident) {
@@ -2089,7 +2089,7 @@ BGAPI.prototype.postTweets = function (username, messages) {
 
     console.debug("[BGAPI] postTweets:", username);
     
-    var ident = Vault.getAccount(username);
+    var ident = Vault.getAccountKP(username);
     var ts = Date.now();
 
     if (!ident) {
@@ -2612,7 +2612,7 @@ BGAPI.prototype.checkTwitter = function (username) {
     return this.fetchTwitter(username).then(function (twitterKeyContainer) {
         var twitterKey = twitterKeyContainer.key;
         var stale = twitterKeyContainer.expiration < checkTime;
-        var ident = Vault.getAccount(username);
+        var ident = Vault.getAccountKP(username);
 
         if (!ident) {
             throw new Fail(Fail.NOIDENT, "No identity attached with username", username);
@@ -2774,7 +2774,7 @@ BGAPI.prototype.regenKeys = function () {
             console.log("new set of keys.");
             // Invalidate AES keys and friendships involving ourself.
             // TODO(rjsumi): Better error reporting.
-            API._invalidate({[Vault.getUsername()]: Vault.getAccount(Vault.getUsername())});
+            API._invalidate({[Vault.getUsername()]: Vault.getAccountKP(Vault.getUsername())});
             resolve();
         } else {
             console.log("could not regen");

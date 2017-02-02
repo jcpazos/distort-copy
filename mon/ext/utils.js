@@ -222,6 +222,7 @@ Fail.REFUSED     = "REFUSED";
 Fail.NOIDENT     = "NOIDENT"; // could not resolve the recipient's identity */
 Fail.STALE       = "STALE"; // stale key
 Fail.PUBSUB      = "PUBSUB"; // fail to authenticate or to post to the pub/sub service
+Fail.NOTIMPL     = "NOTIMPL"; // not implemented
 Fail.toRPC = function (err) {
     "use strict";
 

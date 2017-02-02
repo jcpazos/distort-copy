@@ -34,6 +34,8 @@ window.Vault = (function () {
         this._load();
     }
 
+    Vault.ACCOUNT_PREFIX = "account.";
+
     Vault.prototype = {
 
         /*
@@ -96,7 +98,7 @@ window.Vault = (function () {
                 var userid = acct.id;
 
                 var inStore = acct.toStore();
-                var sk = "account." + btoa(userid);
+                var sk = Vault.ACCOUNT_PREFIX + btoa(userid);
                 var settings = {};
             
                 if (that.get(sk)) {
@@ -104,13 +106,17 @@ window.Vault = (function () {
                     return null;
                 }
 
+                // shallow copy
                 var users = that.get("usernames");
                 users.push(userid);
 
                 settings[sk] = inStore;
+
+                // single user -- set default username
                 if (users.length === 1) {
                     settings.username = userid;
                 }
+
                 resolve(that.set(settings).then(function () {
                     return acct;
                 }));
@@ -124,12 +130,12 @@ window.Vault = (function () {
 
         // default username
         getUsername: function () {
-            return this.get("username");
+            return this.get('username');
         },
         
         // set default username
         setUsername: function (userid) {
-            this.set({"username": userid});
+            this.set({'username': userid});
         },
 
         /** checks if there exists an account with the
@@ -143,7 +149,7 @@ window.Vault = (function () {
         deleteAccount: function (userid) {
             var that = this;
             return new Promise(function (resolve) {
-                var sk = "account." + btoa(userid);
+                var sk = Vault.ACCOUNT_PREFIX + btoa(userid);
                 var settings  = {};
 
                 if (!that.get(sk)) {
@@ -169,6 +175,20 @@ window.Vault = (function () {
             });
         },
 
+        /** deprecated */
+        getAccountKP: function (userid) {
+            var accnt = this.getAccount(userid);
+            if (accnt) {
+                return accnt.key;
+            }
+            return null;
+        },
+
+        /** Returns an Account object, or null.
+
+            the value is a copy of the last saved settings for the
+            identified account.
+        */
         getAccount: function (userid) {
             if (userid === "" || userid === undefined) {
                 userid = this.get("username");
@@ -178,12 +198,34 @@ window.Vault = (function () {
                 return null;
             }
 
-            var identity = this.get("identity." + btoa(userid));
+            var identity = this.get(Vault.ACCOUNT_PREFIX + btoa(userid));
             if (!identity) {
                 return null;
             }
-            var kp = ECCKeyPair.fromStore(identity);
+
+            var kp = Account.fromStore(identity);
             return kp;
+        },
+
+        /**
+           Accounts are mutable. After changes to an Account's
+           settings, call saveAccount to persist changes.
+
+           promises null when complete.
+        */
+        saveAccount: function (acct) {
+            var id = acct.id;
+            if (!this.accountExists(id)) {
+                throw new Fail(Fail.NOENT, "invalid account name");
+            }
+            var inStore = acct.toStore();
+            var sk = Vault.ACCOUNT_PREFIX + btoa(id);
+            var settings = {};
+
+            settings[sk] = inStore;
+            return this.set(settings).then(function () {
+                return null;
+            });
         },
 
         _defaults: function () {
@@ -214,8 +256,10 @@ window.Vault = (function () {
         this.name = opts.name || null;
         this.joinedOn = opts.joinedOn || null;
         this.lastReceivedOn = opts.lastReceivedOn || null;
+        this.lastSentOn = opts.lastSentOn || null;
         this.numReceived = opts.numReceived || 0;
         this.numSent = opts.numSent || 0;
+        this.txPeriodMs = 15*60*1000;
     }
 
     GroupStats.prototype = {
@@ -226,7 +270,8 @@ window.Vault = (function () {
                 joinedOn: this.joinedOn,
                 lastReceivedOn: this.lastReceivedOn,
                 numReceived: this.numReceived,
-                numSent: this.numSent
+                numSent: this.numSent,
+                txPeriodMs: this.hourlyRate
             };
         }
     };
@@ -245,7 +290,7 @@ window.Vault = (function () {
 
         this.key = opts.key || new ECCKeyPair();
 
-        // array of group stats names
+        // array of GroupStats
         this.groups = opts.groups || [];
     }
 
@@ -254,6 +299,12 @@ window.Vault = (function () {
         get id() {
             return this.primaryHandle;
         },
+
+        joinGroup: function (groupName) {
+            // todo -- check group doesn't exist
+            throw new Fail(Fail.NOTIMPL);
+        },
+
         toStore: function () {
             return { 'typ': "acct",
                      primaryId: this.primaryId,

@@ -8,6 +8,7 @@ var Vault = BG.Vault;
 var Twitter = BG.Twitter;
 var $doc = $(document);
 var Fail = BG.Fail;
+var U = BG.Utils;
 
 /**
    Displays the error/status text in the Options UI.
@@ -226,12 +227,42 @@ function refreshReview() {
     }
 }
 
+/** updates the view in the groups table */
+function refreshGroupStats() {
+    "use strict";
+
+    var defaultUser = Vault.getUsername();
+    if (!defaultUser) {
+        return;
+    }
+
+    var acnt = Vault.getAccount(defaultUser);
+    if (!acnt) {
+        return null;
+    }
+
+    var i, $row, $stat;
+    var $body = $doc.find("table.groups tbody");
+    $body.html("");
+
+    for (i = 0; i < acnt.groups.length; i++) {
+        $row = $(getTemplate("group-stats"));
+        $row.find("[data-username]").attr("data-username", acnt.id);
+        $row.find(".groupname").text(acnt.groups[i]);
+        $stat = $row.find(".groupstatus");
+        $row.appendTo($body);
+    }
+    $body.append($(getTemplate("join-group-row")));
+}
+
 /* displays details on the given account */
 function showAccountDetails(accountName) {
     "use strict";
     $doc.find("table.accounts tbody tr.selected").removeClass("selected");
     $doc.find("table.accounts tbody tr[data-username='" + accountName + "']").addClass("selected");
     $doc.find(".username").text(accountName);
+
+    refreshGroupStats();
 }
 
 /** initializes the DOM for a step just before showing it **/
@@ -327,7 +358,9 @@ function refreshAccounts() {
         $row.find(".account-status").text(users[i] === defaultUser ? "active" : "inactive");
         $row.appendTo($body);
     }
-    $body.append('<tr><td><a class="new-account">new...</a></td></tr>');
+    $row = $(getTemplate("new-user-row"));
+    $body.append($row);
+
     if (defaultUser) {
         showAccountDetails(defaultUser);
     }
@@ -349,16 +382,16 @@ function refreshImportKeys() {
 function loadPage() {
     "use strict";
     
-    // Use default value color = 'red' and likesColor = true.
-    chrome.storage.sync.get({
-        favoriteColor: 'red',
-        likesColor: true
-    }, function(items) {
-        document.getElementById('color').value = items.favoriteColor;
-        document.getElementById('like').checked = items.likesColor;
-    });
+    // // Use default value color = 'red' and likesColor = true.
+    // chrome.storage.sync.get({
+    //     favoriteColor: 'red',
+    //     likesColor: true
+    // }, function(items) {
+    //     document.getElementById('color').value = items.favoriteColor;
+    //     document.getElementById('like').checked = items.likesColor;
+    // });
 
-    $doc.find(".new-account").click(function () {
+    $doc.find("div.page[data-page='main']").on("click", ".new-account", function () {
         showStep("new-account-step", "start");
         showPage("new-account");
     });
@@ -376,7 +409,7 @@ function loadPage() {
     /* rows are added dynamically, so we delegate the event for future
        additions to the table
     */
-    $doc.find(".accounts").on("click", ".action-trigger", function (evt) {
+    $doc.find("table").on("click", ".action-trigger", function (evt) {
         evt.preventDefault();
         var $trigger = $(this);
         var actionName = $trigger.attr("data-action");
@@ -385,7 +418,7 @@ function loadPage() {
         $confirm.addClass("confirming");
     });
 
-    $doc.find(".accounts").on("click", ".action-cancel", function (evt) {
+    $doc.find("table").on("click", ".action-cancel", function (evt) {
         evt.preventDefault();
         var $cancel = $(this);
         var $confirm = $cancel.closest(".action-confirm");

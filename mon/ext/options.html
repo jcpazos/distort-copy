@@ -37,36 +37,36 @@
 	 color: red;
      }
 
-     table.accounts {
+     table.simpletable {
 	 width: 100%;
 	 border-collapse: collapse;
 	 text-align: left;
 	 margin-bottom: 10px;
      }
 
-     table.accounts thead {
+     table.simpletable thead {
 	 display:table-header-group;
      }
 
-     table.accounts th {
+     table.simpletable th {
 	 border-bottom: 2px solid #6678b1;
 	 font-weight: normal;
 	 color: #039;
 	 padding: 10px 8px;
      }
 
-     table.accounts td {
+     table.simpletable td {
 	 padding: 5px 8px 5px;
      }
 
-     table.accounts tbody td {
+     table.simpletable tbody td {
 	 color: #669;
      }
-     table.accounts tbody tr:hover {
+     table.simpletable tbody tr:hover {
 	 color: #009;
 	 background-color: #ddf;
      }
-     table.accounts tbody tr.selected {
+     table.simpletable tbody tr.selected {
 	 font-weight: bold;
      }
 
@@ -104,16 +104,49 @@
 
   </style>
 
+  <script type="text/template" data-name="join-group-row">
+   <tr><td><a class="join-group">join...</a></td></tr>
+  </script>
+
+  <script type="text/template" data-name="group-stats">
+  <tr data-groupname="" data-username="">
+      <td class="groupname"></td>
+      <td class="groupstatus">
+	  <span class="bullet">Joined On:</span><span data-field="joinedOn"></span>
+	  <br />
+	  <span class="bullet">Last delivery:</span><span data-field="lastReceivedOn"></span>
+	  <br />
+	  <span class="bullet"># Received:</span><span data-field="numReceived"></span>
+	  <br />
+	  <span class="bullet"># Sent:</span><span data-field="numSent"></span>
+      </td>
+      <td class="actions group-leave">
+	  <span class="action-trigger" data-action="leave">Leave</span>
+	  <span class="action-confirm" data-action="leave">
+	      <span>Sure?</span>
+              <span class="action-button action-cancel">NO</span>
+	      <span class="action-button leave-yes">YES</span>
+	  </span>
+      </td>
+  </tr>
+  </script>
+
+  <script type="text/template" data-name="new-user-row">
+   <tr><td><a class="new-account">new...</a></td></tr>
+  </script>
+
   <script type="text/template" data-name="user-row">
       <tr data-username="">
 	  <td class="user" />
 	  <td class="account-status" />
 	  <td class="actions account-delete">
-	    <span class="action-trigger" data-action="delete">Delete</span>
+	    <span class="action-trigger" data-action="delete">
+                <i title="Delete user" class="fa fa-trash-o"></i>
+            </span>
 	    <span class="action-confirm" data-action="delete" data-username="">
 		  <span>Sure?</span>
-		  <span class="action-button action-cancel">NO</span>
 		  <span class="action-button delete-yes">YES</span>
+                  <span class="action-button action-cancel">NO</span>
 	    </span>
 	  </td>
       </tr>
@@ -132,7 +165,7 @@
 	</div>
 
 	<div class="section has-accounts">
-	  <table class="accounts">
+	  <table class="simpletable accounts">
 	    <thead>
 	      <tr>
 		<th>Name</th>
@@ -145,10 +178,23 @@
 	  </table>
 	</div>
 
-	<h2>Selected Account: <span class="username"></span></h2>
 	<div class="section has-accounts">
-      </div>
-    </div>
+	    <h2>Anonymity Groups (<span class="username"></span>)</h2>
+	    <table class="groups simpletable">
+	    <thead>
+		<tr>
+		    <th>Group</th>
+		    <th>Stats</th>
+		    <th>Actions</th>
+		</tr>
+	    </thead>
+	    <tbody>
+	    </tbody>
+	    </table>
+	</div>
+      </div> <!-- groups section -->
+
+    </div> <!-- main page -->
 
     <div data-page="new-account" class="page">
       <h2>New Account</h2><div class="close-button"></div>
