@@ -69,6 +69,14 @@ function enableByName(opts) {
     }
 }
 
+/**
+   returns a template string based on the data-name attribute of the template
+*/
+function getTemplate(templateName) {
+    "use strict";
+    return $doc.find("script[type='text/template'][data-name='" + templateName + "']").html();
+}
+
 // Saves options to chrome.storage.sync.
 function save_options() {
     "use strict";
@@ -105,6 +113,11 @@ function showPage(pageName) {
     "use strict";
     
     $doc.find(".page").hide();
+
+    if (pageName === "main") {
+        refreshAccounts();
+    }
+
     $doc.find(".page[data-page='" + pageName + "']").show();
 }
 
@@ -180,14 +193,13 @@ function stepButtonClick(evt) {
                 enableByName({"back": false, "finish": false, "cancel": false});
                 updateStatus("Creating account...");
 
-                Vault.newAccount(readAccountForm())
-                    .then(function () {
-                        showPage("main");
-                    }).catch(function (err) {
-                        console.error(err);
-                        updateStatus("Creation failed: " + err.message);
-                        enableByName({"back": true, "cancel": true});
-                    });
+                Vault.newAccount(readAccountForm()).then(function () {
+                    showPage("main");
+                }).catch(function (err) {
+                    console.error(err);
+                    updateStatus("Creation failed: " + err.message);
+                    enableByName({"back": true, "cancel": true});
+                });
                 break;
             }
             break;
@@ -219,7 +231,7 @@ function showAccountDetails(accountName) {
     "use strict";
     $doc.find("table.accounts tbody tr.selected").removeClass("selected");
     $doc.find("table.accounts tbody tr[data-username='" + accountName + "']").addClass("selected");
-    $doc.find(".username").text(accountName + "!");
+    $doc.find(".username").text(accountName);
 }
 
 /** initializes the DOM for a step just before showing it **/
@@ -306,17 +318,13 @@ function refreshAccounts() {
     var $body = $doc.find("table.accounts tbody");
     $body.html("");
 
+
     var defaultUser = Vault.getUsername();
     for (i = 0; i < users.length; i++) {
-        $row = $("<tr></tr>");
-        $row.attr("data-username", users[i]);
-        $("<td></td>").text("@" + users[i]).appendTo($row);
-        if (users[i] === defaultUser) {
-            $("<td>active</td>").appendTo($row);
-        } else {
-            $("<td>inactive</b>").appendTo($row);
-        }
-        $("<td class='account-delete'>delete</td>").attr("data-username", users[i]).appendTo($row);
+        $row = $(getTemplate("user-row"));
+        $row.find("[data-username]").attr("data-username", users[i]);
+        $row.find(".user").text("@" + users[i]);
+        $row.find(".account-status").text(users[i] === defaultUser ? "active" : "inactive");
         $row.appendTo($body);
     }
     $body.append('<tr><td><a class="new-account">new...</a></td></tr>');
@@ -340,8 +348,6 @@ function refreshImportKeys() {
 
 function loadPage() {
     "use strict";
-
-    refreshAccounts();
     
     // Use default value color = 'red' and likesColor = true.
     chrome.storage.sync.get({
@@ -367,16 +373,39 @@ function loadPage() {
         showAccountDetails(username);
     });
 
-    $doc.find(".account-delete").click(function (evt) {
+    /* rows are added dynamically, so we delegate the event for future
+       additions to the table
+    */
+    $doc.find(".accounts").on("click", ".action-trigger", function (evt) {
         evt.preventDefault();
-        var username = $(evt.target).closest("tr").attr("data-username");
-        if (username) {
-            Vault.deleteAccount(username).then(function () {
-                showPage("main");
-            });
-        }
+        var $trigger = $(this);
+        var actionName = $trigger.attr("data-action");
+        var $confirm = $trigger.parent().find(".action-confirm[data-action='" + actionName + "']");
+        $trigger.addClass("confirming");
+        $confirm.addClass("confirming");
     });
 
+    $doc.find(".accounts").on("click", ".action-cancel", function (evt) {
+        evt.preventDefault();
+        var $cancel = $(this);
+        var $confirm = $cancel.closest(".action-confirm");
+        var actionName = $confirm.attr("data-action");
+        var $trigger = $confirm.parent().find(".action-trigger[data-action='" + actionName + "']");
+        $trigger.removeClass("confirming");
+        $confirm.removeClass("confirming");
+    });
+    
+    $doc.find(".accounts").on("click", ".account-delete .delete-yes", function (evt) {
+        evt.preventDefault();
+        var $deleteLink = $(this);
+        var username = $deleteLink.closest("[data-username]").attr("data-username");
+        Vault.deleteAccount(username).then( () => {
+            showPage("main");
+        }).catch(err => {
+            console.log("cannot delete account", err);
+        });
+    });
+    
     $doc.find(".step-buttons button").click(function (evt) {
         return stepButtonClick(evt);
     });

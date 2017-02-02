@@ -91,7 +91,7 @@ window.Vault = (function () {
         newAccount: function (acctOpts) {
             var that = this;
 
-            return new Promise(function () {
+            return new Promise(function (resolve) {
                 var acct = new Account(acctOpts);
                 var userid = acct.id;
 
@@ -111,9 +111,9 @@ window.Vault = (function () {
                 if (users.length === 1) {
                     settings.username = userid;
                 }
-                return that.set(settings).then(function () {
+                resolve(that.set(settings).then(function () {
                     return acct;
-                });
+                }));
             });
         },
 

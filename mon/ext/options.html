@@ -1,76 +1,122 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>My Test Extension Options</title>
-  <style>
-    body: {padding: 10px;}
-    no-accounts {display: none;}
-    .hidden {display: none;}
-    label {
-      padding: 2px;
-      display: block;
-    }
+    <title>My Test Extension Options</title>
+    <style>
+     body: {padding: 10px;}
+     no-accounts {display: none;}
+     .hidden {display: none;}
+     label {
+	 padding: 2px;
+	 display: block;
+     }
 
-    label.inline {
-      display: inline;
-    }
+     label.inline {
+	 display: inline;
+     }
 
-    .form-spacer {
-      margin-top: 2ex;
-      margin-bottom: 2ex;
-    }
+     .form-spacer {
+	 margin-top: 2ex;
+	 margin-bottom: 2ex;
+     }
 
-    form textarea {
-    width: 100%;
-    }
-    .section {
-    top-margin: 10px;
-    }
+     form textarea {
+	 width: 100%;
+     }
+     .section {
+	 top-margin: 10px;
+     }
 
-    #status {
-      margin-top: 20px;
-      min-height: 15px;
-    }
+     #status {
+	 margin-top: 20px;
+	 min-height: 15px;
+     }
 
-    #status.error {
-      color: red;
-    }
+     #status.error {
+	 color: red;
+     }
 
-    table.accounts {
-    width: 100%;
-    border-collapse: collapse;
-    text-align: left;
-    margin-bottom: 10px;
-    }
+     table.accounts {
+	 width: 100%;
+	 border-collapse: collapse;
+	 text-align: left;
+	 margin-bottom: 10px;
+     }
 
-    table.accounts thead {
-    display:table-header-group;
-    }
+     table.accounts thead {
+	 display:table-header-group;
+     }
 
-    table.accounts th {
-      border-bottom: 2px solid #6678b1;
-      font-weight: normal;
-      color: #039;
-      padding: 10px 8px;
-    }
+     table.accounts th {
+	 border-bottom: 2px solid #6678b1;
+	 font-weight: normal;
+	 color: #039;
+	 padding: 10px 8px;
+     }
 
-    table.accounts td {
-      padding: 5px 8px 5px;
-    }
+     table.accounts td {
+	 padding: 5px 8px 5px;
+     }
 
-    table.accounts tbody td {
-      color: #669;
-    }
-    table.accounts tbody tr:hover {
-      color: #009;
-      background-color: #ddf;
-    }
-    table.accounts tbody tr.selected {
-      font-weight: bold;
-    }
+     table.accounts tbody td {
+	 color: #669;
+     }
+     table.accounts tbody tr:hover {
+	 color: #009;
+	 background-color: #ddf;
+     }
+     table.accounts tbody tr.selected {
+	 font-weight: bold;
+     }
+
+     span.bullet {
+	 display: inline-block;
+	 min-width: 150px;
+	 margin-top: 5px;
+     }
+
+     .action-confirm {
+         display: none;
+     }
+
+     .action-confirm.confirming {
+         display: initial;
+     }
+
+     .action-trigger.confirming {
+         display: none;
+     }
+
+     td.actions {
+         text-align: right;
+     }
+
+     .action-button {
+         margin-left: 3px;
+         margin-right: 3px;
+     }
+
+     .action-button:hover {
+         text-decoration: underline;
+     }
 }
 
   </style>
+
+  <script type="text/template" data-name="user-row">
+      <tr data-username="">
+	  <td class="user" />
+	  <td class="account-status" />
+	  <td class="actions account-delete">
+	    <span class="action-trigger" data-action="delete">Delete</span>
+	    <span class="action-confirm" data-action="delete" data-username="">
+		  <span>Sure?</span>
+		  <span class="action-button action-cancel">NO</span>
+		  <span class="action-button delete-yes">YES</span>
+	    </span>
+	  </td>
+      </tr>
+  </script>
 </head>
 
 <body>
@@ -99,7 +145,7 @@
 	</div>
 
 	<h2>Selected Account: <span class="username"></span></h2>
-
+	<div class="section has-accounts">
       </div>
     </div>
 
