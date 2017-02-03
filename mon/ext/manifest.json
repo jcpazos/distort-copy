@@ -21,7 +21,7 @@
 	"default_popup": "popup.html"
     },
     "background": {
-	"scripts": ["jquery-1.11.3.min.js",
+	"scripts": ["lib/jquery-1.11.3.min.js",
 		    "sjcl.js",
 		    "utils.js",
 		    "keyclasses.js",
