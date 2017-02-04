@@ -18,9 +18,10 @@
 **/
 
 /*global
-  chrome, Promise, performance, $,
+  chrome, Promise, performance,
   ECCPubKey, AESKey, KeyLoader, Friendship,
   UI, Utils, Vault, Twitter,
+  Emitter,
   getHost, Fail, assertType, OneOf, KH_TYPE, MSG_TYPE, _extends
 */
 
@@ -37,6 +38,11 @@ var bgCallSerial = 0;
 
 var API;
 var streamerManager;
+
+/**
+   Global event emitter/listener object
+*/
+var Events = new Emitter();
 
 function KAP(kapEngine, myName, myIdent, otherName, otherIdent) {
     "use strict";
@@ -1958,6 +1964,8 @@ function BGAPI() {
     this.validateTasks = {};
     this.distributeTasks = {};
 
+    Events.on('account:updated', this.accountUpdated, this);
+
     window.setTimeout(function () {
         var initialUser = Vault.getUsername();
         API.accountChanged(initialUser);
@@ -1985,6 +1993,17 @@ BGAPI.prototype._stopBackgroundTasks = function () {
     }
 };
 
+/**
+   The settings of the given account have been updated.
+*/
+BGAPI.prototype.accountUpdated = function (account) {
+    "use strict";
+};
+
+/**
+   The active account in the extension is changed to a different
+   one. or null if all accounts are deactivated/deleted.
+*/
 BGAPI.prototype.accountChanged = function (username) {
     "use strict";
 
@@ -3631,4 +3650,3 @@ var KeyCache = (function () {
 
 API = new BGAPI();
 streamerManager = new StreamerManager();
-

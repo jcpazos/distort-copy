@@ -18,13 +18,12 @@
 **/
 
 /*jshint
-  esversion: 5
+  esversion: 6
 */
 
 /*global
   Promise, ECCKeyPair,
-  KeyLoader, Fail,
-  CryptoCtx
+  KeyLoader, Fail
 */
 
 window.Vault = (function () {
@@ -188,6 +187,10 @@ window.Vault = (function () {
 
             the value is a copy of the last saved settings for the
             identified account.
+
+            *Watch out for aliasing*
+
+            FIXME keep one object for each account.
         */
         getAccount: function (userid) {
             if (userid === "" || userid === undefined) {
@@ -205,27 +208,6 @@ window.Vault = (function () {
 
             var kp = Account.fromStore(identity);
             return kp;
-        },
-
-        /**
-           Accounts are mutable. After changes to an Account's
-           settings, call saveAccount to persist changes.
-
-           promises null when complete.
-        */
-        saveAccount: function (acct) {
-            var id = acct.id;
-            if (!this.accountExists(id)) {
-                throw new Fail(Fail.NOENT, "invalid account name");
-            }
-            var inStore = acct.toStore();
-            var sk = Vault.ACCOUNT_PREFIX + btoa(id);
-            var settings = {};
-
-            settings[sk] = inStore;
-            return this.set(settings).then(function () {
-                return null;
-            });
         },
 
         _defaults: function () {
@@ -249,6 +231,28 @@ window.Vault = (function () {
                 console.error("Could not load settings string. Starting fresh.", settings);
                 this.db = this._defaults();
             }
+        },
+
+        /**
+           Accounts are mutable. After changes to an Account's
+           settings, call saveAccount to persist changes.
+
+           promises null when complete.
+        */
+        _saveAccount: function (acct) {
+            var id = acct.id;
+            if (!this.accountExists(id)) {
+                throw new Fail(Fail.NOENT, "invalid account name");
+            }
+
+            var inStore = acct.toStore();
+            var sk = Vault.ACCOUNT_PREFIX + btoa(id);
+            var settings = {};
+
+            settings[sk] = inStore;
+            return this.set(settings).then(function () {
+                return null;
+            });
         }
     };
 
@@ -300,9 +304,34 @@ window.Vault = (function () {
             return this.primaryHandle;
         },
 
+        /**
+           Promises a GroupStats for the newly joined group.
+
+           Resulting account is saved in the process.
+        **/
         joinGroup: function (groupName) {
-            // todo -- check group doesn't exist
-            throw new Fail(Fail.NOTIMPL);
+            return new Promise(resolve => {
+                this.groups.forEach(function (grp) {
+                    if (grp.name === groupName) {
+                        throw new Fail(Fail.EXISTS, "Already joined that group.");
+                    }
+                });
+
+                var groupStats = new GroupStats({
+                    name: groupName,
+                    joinedOn: Date.now(),
+                    lastReceivedOn: 0,
+                    lastSentOn: 0,
+                    numReceived: 0,
+                    numSent: 0
+                });
+
+                this.groups.push(groupStats);
+
+                this._saveAccount().then(() => {
+                    resolve(groupStats);
+                });
+            });
         },
 
         toStore: function () {
