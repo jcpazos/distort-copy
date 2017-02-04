@@ -8,7 +8,9 @@ var Vault = BG.Vault;
 var Twitter = BG.Twitter;
 var $doc = $(document);
 var Fail = BG.Fail;
-var U = BG.Utils;
+
+// lib/twitter-text.js
+var TT = window.twttr;
 
 /**
    Displays the error/status text in the Options UI.
@@ -220,7 +222,7 @@ function refreshReview() {
         .text(opts.primaryApp.appName);
     if (opts.key === null) {
         $doc.find(".user-setting[name='key-data']")
-            .text("A new key will be generated.");
+            .text("New keys will be generated.");
     } else {
         $doc.find(".user-setting[name='key-data']")
             .text("Imported Key");
@@ -242,7 +244,7 @@ function refreshGroupStats() {
     }
 
     var i, $row, $stat;
-    var $body = $doc.find("table.groups tbody");
+    var $body = $doc.find(".groups .tbody");
     $body.html("");
 
     for (i = 0; i < acnt.groups.length; i++) {
@@ -256,14 +258,20 @@ function refreshGroupStats() {
 }
 
 /* displays details on the given account */
-function showAccountDetails(accountName) {
+function selectAccount(accountName) {
     "use strict";
-    $doc.find("table.accounts tbody tr.selected").removeClass("selected");
-    $doc.find("table.accounts tbody tr[data-username='" + accountName + "']").addClass("selected");
+    $doc.find(".accounts .row.selected").removeClass("selected");
+    $doc.find(".accounts .row[data-username='" + accountName + "']").addClass("selected");
     $doc.find(".username").text(accountName);
 
     refreshGroupStats();
 }
+
+function getSelectedUsername() {
+    "use strict";
+    return $doc.find(".accounts .row.selected").attr("data-username");
+}
+
 
 /** initializes the DOM for a step just before showing it **/
 function initStep(className, stepNo) {
@@ -346,14 +354,14 @@ function refreshAccounts() {
     }
 
     var i, $row;
-    var $body = $doc.find("table.accounts tbody");
+    var $body = $doc.find(".accounts .tbody");
     $body.html("");
 
 
     var defaultUser = Vault.getUsername();
     for (i = 0; i < users.length; i++) {
         $row = $(getTemplate("user-row"));
-        $row.find("[data-username]").attr("data-username", users[i]);
+        $row.attr("data-username", users[i]).find('[data-username]').attr("data-username", users[i]);
         $row.find(".user").text("@" + users[i]);
         $row.find(".account-status").text(users[i] === defaultUser ? "active" : "inactive");
         $row.appendTo($body);
@@ -362,7 +370,7 @@ function refreshAccounts() {
     $body.append($row);
 
     if (defaultUser) {
-        showAccountDetails(defaultUser);
+        selectAccount(defaultUser);
     }
 }
 
@@ -377,6 +385,73 @@ function refreshImportKeys() {
         // we need to validate the syntax
         enableByName({"next": false, "key-import": true});
     }
+}
+
+/**
+   promises to make the user join a group
+*/
+function joinNewGroup(userid, groupName) {
+    "use strict";
+
+    return new Promise(function (resolve) {
+        if (!userid) {
+            throw new Fail(Fail.BADPARAM, "Invalid userid. Could not determine selected element?");
+        }
+
+        groupName = groupName.trim();
+
+        if (!groupName) {
+            throw new Fail(Fail.BADPARAM, "Invalid group name.");
+        }
+
+        var hashtags = TT.txt.extractHashtagsWithIndices(groupName);
+        if (hashtags.length === 0) {
+            throw new Fail(Fail.BADPARAM, "Invalid group name.");
+        }
+
+        var first = hashtags[0];
+        if (first.indices[0] !== 0 || first.indices[1] !== groupName.length) {
+            throw new Fail(Fail.BADPARAM, "Enter just the hashtag.");
+        }
+
+        /* curated */
+        groupName = first.hashtag;
+
+        resolve(groupName);
+    });
+}
+
+/**
+   promises to make the user leave the group
+*/
+function leaveGroup(userid, groupName) {
+    "use strict";
+}
+
+/**
+   closes a confirmation block
+
+   (removes class 'confirming' from trigger and confirmation section)
+*/
+function cancelConfirmation($elt) {
+    "use strict";
+
+    var $confirm = $elt.closest(".action-confirm");
+    var actionName = $confirm.attr("data-action");
+    var $trigger = $confirm.parent().find(".action-trigger[data-action='" + actionName + "']");
+    $trigger.removeClass("confirming");
+    $confirm.removeClass("confirming");
+}
+
+/**
+   Toggles a confirmation dialog with the given trigger
+*/
+function triggerConfirmation($trigger) {
+    "use strict";
+    var actionName = $trigger.attr("data-action");
+    var $confirm = $trigger.parent().find(".action-confirm[data-action='" + actionName + "']");
+    $trigger.addClass("confirming");
+    $confirm.addClass("confirming");
 }
 
 function loadPage() {
@@ -396,43 +471,37 @@ function loadPage() {
         showPage("new-account");
     });
 
-    $doc.find("table.accounts tbody tr").click(function (evt) {
+    $doc.find(".accounts").on("click", ".tbody .row", function (evt) {
         evt.preventDefault();
-        var $row = $(evt.target).closest("tr");
+        var $row = $(evt.target).closest(".row");
         var username = $row.attr("data-username");
         if (!username) {
             return;
         }
-        showAccountDetails(username);
+        selectAccount(username);
     });
 
     /* rows are added dynamically, so we delegate the event for future
        additions to the table
     */
-    $doc.find("table").on("click", ".action-trigger", function (evt) {
+    $doc.find(".tbody").on("click", ".action-trigger", function (evt) {
         evt.preventDefault();
-        var $trigger = $(this);
-        var actionName = $trigger.attr("data-action");
-        var $confirm = $trigger.parent().find(".action-confirm[data-action='" + actionName + "']");
-        $trigger.addClass("confirming");
-        $confirm.addClass("confirming");
+        triggerConfirmation($(this));
     });
 
-    $doc.find("table").on("click", ".action-cancel", function (evt) {
+    $doc.find(".tbody").on("click", ".action-cancel", function (evt) {
         evt.preventDefault();
         var $cancel = $(this);
-        var $confirm = $cancel.closest(".action-confirm");
-        var actionName = $confirm.attr("data-action");
-        var $trigger = $confirm.parent().find(".action-trigger[data-action='" + actionName + "']");
-        $trigger.removeClass("confirming");
-        $confirm.removeClass("confirming");
+        cancelConfirmation($cancel);
     });
     
     $doc.find(".accounts").on("click", ".account-delete .delete-yes", function (evt) {
         evt.preventDefault();
         var $deleteLink = $(this);
         var username = $deleteLink.closest("[data-username]").attr("data-username");
+
         Vault.deleteAccount(username).then( () => {
+            cancelConfirmation($deleteLink);
             showPage("main");
         }).catch(err => {
             console.log("cannot delete account", err);
@@ -441,6 +510,33 @@ function loadPage() {
     
     $doc.find(".step-buttons button").click(function (evt) {
         return stepButtonClick(evt);
+    });
+
+    $doc.find(".groups").on("click", "a.join-group", function () {
+        if (document.forms["new-group-form"]) {
+            document.forms["new-group-form"].reset();
+        }
+    });
+
+    $doc.find(".groups").on("click", ".action-join", function (evt) {
+        evt.preventDefault();
+        $doc.find("form[name='new-group-form']").submit();
+    });
+
+    $doc.find(".groups").on("submit", "form[name='new-group-form']", function (evt) {
+        evt.preventDefault();
+        var $groupNameInput = $(this).find("input[name='new-group-name']");
+        var groupName = $groupNameInput.val();
+
+        // selected username
+        var username = getSelectedUsername();
+
+        joinNewGroup(username, groupName).then(function () {
+            updateStatus(`Added user ${username} to group ${groupName}`);
+            cancelConfirmation($groupNameInput);
+        }).catch(err => {
+            updateStatus(err.message, true);
+        });
     });
 
     $doc.find("#connect-twitter").click(function () {

@@ -3,8 +3,25 @@
 <head>
     <title>My Test Extension Options</title>
     <link rel="stylesheet" href="css/font-awesome.min.css">
+    <script src="lib/twitter-text.js"></script>
     <style>
-     body: {padding: 10px;}
+     body: {
+         padding: 10px;
+     }
+
+     @media (min-width: 30em) {
+         .row { width: 100%; display: table; table-layout: fixed; }
+         .col { display: table-cell; }
+     }
+
+     body: {
+         padding: 10px;
+     }
+
+     div.container {
+         width: 600px;
+     }
+
      no-accounts {display: none;}
      .hidden {display: none;}
      label {
@@ -37,37 +54,52 @@
 	 color: red;
      }
 
-     table.simpletable {
+     .simpletable {
 	 width: 100%;
 	 border-collapse: collapse;
 	 text-align: left;
 	 margin-bottom: 10px;
+         table-layout: fixed;
      }
 
-     table.simpletable thead {
+     .simpletable .thead {
 	 display:table-header-group;
      }
 
-     table.simpletable th {
+     .simpletable .thead .col {
 	 border-bottom: 2px solid #6678b1;
 	 font-weight: normal;
 	 color: #039;
 	 padding: 10px 8px;
      }
 
-     table.simpletable td {
+     .simpletable .tbody .col {
+         vertical-align: middle;
+     }
+     .simpletable .col {
 	 padding: 5px 8px 5px;
      }
 
-     table.simpletable tbody td {
+     .simpletable .tbody .col {
 	 color: #669;
+         height: 24px;
      }
-     table.simpletable tbody tr:hover {
+
+     .simpletable .tbody .row:hover {
 	 color: #009;
 	 background-color: #ddf;
      }
-     table.simpletable tbody tr.selected {
+     .simpletable .tbody .row.bland {
+         color: #009;
+         background-color: inherit;
+     }
+
+     .simpletable .tbody .row.selected {
 	 font-weight: bold;
+     }
+
+     .col.actions {
+         text-align: right;
      }
 
      span.bullet {
@@ -88,10 +120,6 @@
          display: none;
      }
 
-     td.actions {
-         text-align: right;
-     }
-
      .action-button {
          margin-left: 3px;
          margin-right: 3px;
@@ -99,103 +127,125 @@
 
      .action-button:hover {
          text-decoration: underline;
+         font-weight: bold;
      }
 }
 
   </style>
 
   <script type="text/template" data-name="join-group-row">
-   <tr><td><a class="join-group">join...</a></td></tr>
+    <div class="row">
+      <div class="col" style="width: 50%">
+	<span class="action-trigger" data-action="join-group">
+	  <a class="join-group">join...</a>
+        </span>
+	<span class="action-confirm" data-action="join-group" data-username="">
+	  <form name="new-group-form">
+	    <input placeholder="enter group name, e.g. #twistor" type="text" name="new-group-name"></input>
+	    <!-- actions -->
+	    <i title="Save" class="action-button action-join fa fa-check"></i>
+	    <i title="Close" class="action-button action-cancel fa fa-close"></i>
+	  </form>
+	</span>
+      </div>
+    </div>
   </script>
 
   <script type="text/template" data-name="group-stats">
-  <tr data-groupname="" data-username="">
-      <td class="groupname"></td>
-      <td class="groupstatus">
-	  <span class="bullet">Joined On:</span><span data-field="joinedOn"></span>
-	  <br />
-	  <span class="bullet">Last delivery:</span><span data-field="lastReceivedOn"></span>
-	  <br />
-	  <span class="bullet"># Received:</span><span data-field="numReceived"></span>
-	  <br />
-	  <span class="bullet"># Sent:</span><span data-field="numSent"></span>
-      </td>
-      <td class="actions group-leave">
-	  <span class="action-trigger" data-action="leave">Leave</span>
-	  <span class="action-confirm" data-action="leave">
-	      <span>Sure?</span>
-              <span class="action-button action-cancel">NO</span>
-	      <span class="action-button leave-yes">YES</span>
-	  </span>
-      </td>
-  </tr>
+    <div class="row" data-groupname="" data-username="">
+      <div class="col groupname" style="width: 20%;"></div>
+      <div class="col groupstatus" style="width: 60%;">
+	<span class="bullet">Joined On:</span><span data-field="joinedOn"></span>
+	<br />
+	<span class="bullet">Last delivery:</span><span data-field="lastReceivedOn"></span>
+	<br />
+	<span class="bullet"># Received:</span><span data-field="numReceived"></span>
+	<br />
+	<span class="bullet"># Sent:</span><span data-field="numSent"></span>
+      </div>
+      <div class="col" class="actions group-leave">
+	<span class="action-trigger" data-action="leave">Leave</span>
+	<span class="action-confirm" data-action="leave">
+	  <span>Sure?</span>
+          <span class="action-button action-cancel">NO</span>
+	  <span class="action-button leave-yes">YES</span>
+	</span>
+      </div>
+    </div>
   </script>
 
   <script type="text/template" data-name="new-user-row">
-   <tr><td><a class="new-account">new...</a></td></tr>
+    <div class="row bland">
+      <div class="col">
+	<a class="new-account">new...</a>
+      </div>
+    </div>
   </script>
 
   <script type="text/template" data-name="user-row">
-      <tr data-username="">
-	  <td class="user" />
-	  <td class="account-status" />
-	  <td class="actions account-delete">
-	    <span class="action-trigger" data-action="delete">
-                <i title="Delete user" class="fa fa-trash-o"></i>
-            </span>
-	    <span class="action-confirm" data-action="delete" data-username="">
-		  <span>Sure?</span>
-		  <span class="action-button delete-yes">YES</span>
-                  <span class="action-button action-cancel">NO</span>
-	    </span>
-	  </td>
-      </tr>
+    <div class="row" data-username="">
+      <div class="col user" />
+      <div class="col account-status" />
+      <div class="col actions account-delete">
+	<span class="action-trigger" data-action="delete">
+          <i title="Delete user" class="action-button fa fa-trash-o"></i>
+        </span>
+	<span class="action-confirm" data-action="delete" data-username="">
+	  <span>Sure?</span>
+	  <span class="action-button delete-yes">YES</span>
+          <span class="action-button action-cancel">NO</span>
+	</span>
+      </div>
+    </div>
   </script>
 </head>
 
 <body>
   <div class="container">
+
+    <!-- MAIN PAGE / ACCOUNTS / GROUPS -->
     <div data-page="main" class="page">
       <div class="section">
 	<h2>Accounts</h2>
+      </div>
 
-	<div class="section no-accounts">
-	  <h3 class="no-accounts">There are no accounts configured yet.</h3>
-	  <button class="new-account">Add account</button>
+      <div class="section no-accounts">
+	<h3 class="no-accounts">There are no accounts configured yet.</h3>
+	<button class="new-account">Add account</button>
+      </div>
+
+      <div class="section has-accounts">
+	<div class="simpletable accounts">
+	  <div class="thead">
+	    <div class="row">
+	      <div class="col">Name</div>
+	      <div class="col">Status</div>
+	      <div class="col">Actions</div>
+	    </div>
+	  </div>
+	  <!-- rows added dynamically -->
+          <div class="tbody"></div>
 	</div>
+      </div>
 
-	<div class="section has-accounts">
-	  <table class="simpletable accounts">
-	    <thead>
-	      <tr>
-		<th>Name</th>
-		<th>Status</th>
-		<th></th>
-	      </tr>
-	    </thead>
-	    <tbody>
-	    </tbody>
-	  </table>
+      <div class="section has-accounts">
+	<h2>Anonymity Groups (<span class="username"></span>)</h2>
+	<div class="groups simpletable">
+	  <div class="thead">
+	    <div class="row">
+	      <div class="col" style="width: 20%;">Group</div>
+	      <div class="col" style="width: 60%;">Stats</div>
+	      <div class="col">Actions</div>
+	    </div>
+	  </div>
+
+	  <!-- rows dynamically added to this -->
+	  <div class="tbody"></div>
 	</div>
-
-	<div class="section has-accounts">
-	    <h2>Anonymity Groups (<span class="username"></span>)</h2>
-	    <table class="groups simpletable">
-	    <thead>
-		<tr>
-		    <th>Group</th>
-		    <th>Stats</th>
-		    <th>Actions</th>
-		</tr>
-	    </thead>
-	    <tbody>
-	    </tbody>
-	    </table>
-	</div>
-      </div> <!-- groups section -->
-
+      </div> <!-- anon groups section -->
     </div> <!-- main page -->
 
+    <!-- NEW-ACCOUNT WIZARD PAGE -->
     <div data-page="new-account" class="page">
       <h2>New Account</h2><div class="close-button"></div>
       <form id="new-account-form">
