@@ -18,367 +18,706 @@
 **/
 
 /*global
-  Promise, Fail, $,
-  API
+  Promise, Fail, $, Utils,_extends,
+  API,
+
+  ECCPubKey,
+
+  CryptoCtx
 */
 
 /*exported Twitter */
 
-var Twitter = (function () {
+var Twitter = (function (module) {
     "use strict";
-    
-    function Twitter() {}
 
-    Twitter.prototype = {
-        
-        /*
-          getUserInfo:
-          
-          Promises the current Twitter ID, handle, and token if there is
-          an active Twitter session open.
+    function StreamerManager() {
+        this.streamers = {};
+    }
 
-          {
+    //returns a streamerID that identifies the new Streamer in the list for removal when necessary
+    StreamerManager.prototype.addStreamer = function (hashtag, klass, accountCredentials) {
+        var streamer;
+        if (klass === Streamer.TWEET_STREAMER) {
+            streamer = new TweetStreamer(hashtag, Utils.randomStr128(), accountCredentials);
+        } else if (klass === Streamer.PKEY_STREAMER) {
+            streamer = new PKeyStreamer(Utils.randomStr128(), accountCredentials);
+        }
+        this.streamers[streamer.streamerID] = streamer;
+        return streamer;
+    };
+
+
+    StreamerManager.prototype.removeStreamer = function(streamerID) {
+        console.log("removing streamer ", streamerID);
+        if (!streamerID) {
+            return;
+        }
+        this.streamers[streamerID].abort();
+        delete this.streamers[streamerID];
+    };
+
+    function Streamer(hashtag, streamerID, accountCredentials) {
+
+        var nonceGenerator = function(length) {
+            var text = "";
+            var possible = "abcdef0123456789";
+            for(var i = 0; i < length; i++) {
+                text += possible.charAt(Math.floor(Math.random() * possible.length));
+            }
+            return text;
+        };
+
+        this._callbacks = {sendTweet:[]};
+        this.streamerID = streamerID;
+
+        var url = 'https://stream.twitter.com/1.1/statuses/filter.json';
+
+        //setup the oauth string
+        this.tpost = new XMLHttpRequest();
+        var consumerKey = accountCredentials.consumerKey;
+        var consumerSecret = accountCredentials.consumerSecret;
+        var accessToken = accountCredentials.accessToken;
+        var accessSecret = accountCredentials.accessSecret;
+        var signingKey = consumerSecret + "&" + accessSecret;
+
+        var SIGNATURE_METHOD = "HMAC-SHA1";
+        var SIGNATURE_METHOD_URL = "%26oauth_signature_method%3DHMAC-SHA1";
+
+        var OAUTH_VERSION = "1.0";
+        var OAUTH_VERSION_URL = "%26oauth_version%3D1.0";
+
+        var STREAM_BASE_STRING = "POST&https%3A%2F%2Fstream.twitter.com%2F1.1%2Fstatuses%2Ffilter.json&" +
+            encodeURIComponent("oauth_consumer_key=" + consumerKey);
+        var NONCE_LENGTH = 32;
+
+        var oauth_nonce = encodeURIComponent(nonceGenerator(NONCE_LENGTH));
+        var oauth_nonce_url = "%26oauth_nonce%3D" + oauth_nonce;
+
+        var oauth_timestamp = encodeURIComponent(parseInt((new Date().getTime())/1000));
+        var oauth_timestamp_url = "%26oauth_timestamp%3D" + oauth_timestamp;
+
+        var signature_base_string = (
+            STREAM_BASE_STRING + oauth_nonce_url + SIGNATURE_METHOD_URL +
+                oauth_timestamp_url + "%26oauth_token%3D" + accessToken +
+                OAUTH_VERSION_URL + "%26track%3D" + encodeURIComponent(encodeURIComponent(hashtag))
+        );
+
+        var oauth_signature = Utils.hmac_sha1(signingKey, signature_base_string);
+
+        var header_string = 'OAuth oauth_consumer_key="' + consumerKey + '", ' +
+            'oauth_nonce="' + oauth_nonce + '", ' +
+            'oauth_signature="' + encodeURIComponent(oauth_signature) + '", ' +
+            'oauth_signature_method="' + SIGNATURE_METHOD + '", ' +
+            'oauth_timestamp="' + oauth_timestamp + '", ' +
+            'oauth_token="' + accessToken + '", ' +
+            'oauth_version="' + OAUTH_VERSION + '"';
+
+        //console.log("header string, ", header_string);
+        //console.log("getting stream");
+
+        this.tpost.open("POST", url, true);
+        this.tpost.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+        this.tpost.setRequestHeader("Authorization", header_string);
+        this.postData = "track=" + hashtag;
+        this.index = 0;
+        this.stream_buffer = '';
+        this.tweets = [];
+
+        return this;
+    }
+
+    Streamer.TWEET_STREAMER = 'TweetStreamer';
+    Streamer.PKEY_STREAMER  = 'PKeyStreamer';
+
+    Streamer.prototype.sendTweet = function(tweet) {
+        this._callbacks.sendTweet[0](tweet);
+    };
+
+    Streamer.prototype.addListener = function(functionName, handler) {
+        this._callbacks[functionName].push(handler);
+    };
+
+    Streamer.prototype.send = function() {
+        this.tpost.send(this.postData);
+    };
+
+    Streamer.prototype.abort = function() {
+        this.tpost.abort();
+    };
+
+    Streamer.prototype.setupTpost = function() {
+        throw new Fail(Fail.GENERIC, "run() must be implemented by subclasses");
+    };
+
+    module.Streamer = Streamer;
+
+    function TweetStreamer(hashtag, streamerID, accountCredentials) {
+        TweetStreamer.__super__.constructor.call(this, hashtag, streamerID, accountCredentials);
+
+        this.tpost.onreadystatechange = (function () {
+            if (this.tpost.readyState > 2)  {
+                if (this.tpost.status >= 200 && this.tpost.status <= 400) {
+                    //start at the index we left off
+                    //console.log('responseText ', this.tpost.responseText);
+                    this.stream_buffer = this.tpost.responseText.substr(this.index);
+
+                    //remove possible leading whitespace from tpost.responseText
+                    this.stream_buffer = this.stream_buffer.replace(/^\s+/g, "");
+
+                    //check if we received multiple tweets in one process chunk
+                    while (this.stream_buffer.length !== 0 &&
+                           this.stream_buffer[0] !== '\n' &&
+                           this.stream_buffer[0] !== '\r') {
+                        var curr_index = this.stream_buffer.indexOf('\n');
+                        this.index += curr_index + 1;
+                        var json = this.stream_buffer.substr(0, curr_index);
+                        if (json.length > 0) {
+                            try {
+                                var tweet = JSON.parse(json);
+                                console.log(tweet);
+                                if (tweet.quoted_status) {
+                                    var keyb16kString = tweet.quoted_status.text;
+                                    var tagb16kString = tweet.text;
+
+                                    //Take out the hashtag and the link to the original tweet
+                                    tagb16kString = tagb16kString.substr(0, tagb16kString.indexOf(" "));
+                                    var b64String = tagb16kString + ":" + keyb16kString;
+
+                                    this.tweets.push(tweet.text);
+                                    console.log('tweet: ' + b64String);
+                                    this.sendTweet(b64String);
+                                }
+                            } catch (error) {
+                                console.error("ERR: ", error);
+                            }
+                        }
+                        this.stream_buffer = this.stream_buffer.substr(curr_index+1);
+                    }
+                    //If the current this.tpost buffer is too big, make a new one;
+                    if (this.tweets.length >= 3000) {
+                        //context and streamerManager keep the ID of the first streamer
+                        var tmp_streamer = new TweetStreamer(hashtag, Utils.randomStr128());
+                        tmp_streamer.send();
+                        tmp_streamer._callbacks = this._callbacks;
+                        this.abort();
+                        this.tpost = tmp_streamer;
+                    }
+                } else {
+                    console.error("Failed to stream tweets, closing connection: ",
+                                  this.tpost.status,
+                                  this.tpost.responseText);
+                    this.abort();
+                }
+            }
+        }).bind(this);
+
+        this.tpost.onerror = function () {
+            console.error("Problem streaming tweets.", [].slice.apply(arguments));
+            //return reject(new Fail(Fail.GENERIC, "Failed to stream tweets."));
+        };
+    }
+
+    _extends(TweetStreamer, Streamer, {
+
+    });
+
+    module.TweetStreamer = TweetStreamer;
+
+    function PKeyStreamer(streamerID, accountCredentials) {
+        PKeyStreamer.__super__.constructor.call(this, "encryptkey,keysig,signkey", streamerID, accountCredentials);
+        function parseKey(sign, encrypt, expiration, signature, timestamp, twitterId, username) {
+            //we found both keys, persist them
+            var minified = {
+                encrypt: encrypt,
+                sign: sign
+            };
+            var key = ECCPubKey.unminify(minified);
+
+            var signedMessage = username + twitterId + encrypt + sign + timestamp + expiration;
+            if (!key.verifySignature(signedMessage, signature)) {
+                console.error("Failed to verify signature: ", sign, encrypt, signature);
+                throw new Fail(Fail.GENERIC, "verification failed");
+            }
+            return {key:  key,
+                    ts: Number(timestamp),
+                    expiration: Number(expiration)};
+        }
+
+        var users = {};
+        this.tpost.onreadystatechange = (function () {
+            if (this.tpost.readyState > 2)  {
+                if (this.tpost.status >= 200 && this.tpost.status <= 400) {
+                    //parse pkey info and save into database
+                    //start at the index we left off
+                    //console.log('responseText ', this.tpost.responseText);
+                    this.stream_buffer = this.tpost.responseText.substr(this.index);
+                    //remove possible leading whitespace from tpost.responseText
+                    this.stream_buffer = this.stream_buffer.replace(/^\s+/g, "");
+                    while (this.stream_buffer.length !== 0 &&
+                           this.stream_buffer[0] !== '\n' &&
+                           this.stream_buffer[0] !== '\r') {
+                        var curr_index = this.stream_buffer.indexOf('\n');
+                        this.index += this.stream_buffer.indexOf('\n')+1;
+                        var toks;
+
+                        //list.push(tpost.stream_buffer.substr(0,curr_index));
+
+                        var json = this.stream_buffer.substr(0, curr_index);
+
+                        if (json.length > 0) {
+                            try {
+                                var tweet = JSON.parse(json);
+                                console.log('tweet: ' + tweet.text);
+
+                                //0 is sign, 1 is encrypt, 2 is expiration, 3 is signature, 4 is timestamp
+                                if (!users[tweet.user.id_str]) {
+                                    users[tweet.user.id_str] = [undefined, undefined, undefined, undefined, undefined];
+                                }
+                                var username = tweet.user.screen_name;
+                                var userID = tweet.user.id_str;
+
+
+                                if (tweet.text.includes('#signkey')) {
+                                    toks = tweet.text.split(/\s+/);
+                                    if (toks.length === 3 &&
+                                        users[userID][0] === undefined && Number(toks[1])) {
+
+                                        users[tweet.user.id_str][0] = toks[2];
+                                        users[tweet.user.id_str][4] = toks[1];
+
+                                    } else {
+                                        console.warn("#signkey tweet for user", username, "is malformed:", tweet);
+                                    }
+                                } else if (tweet.text.includes('#encryptkey')) {
+                                    toks = tweet.text.split(/\s+/);
+                                    if (toks.length === 3 &&
+                                        users[userID][1] === undefined && Number(toks[1])) {
+
+                                        users[tweet.user.id_str][1] = toks[2];
+
+                                    } else {
+                                        console.warn("#encryptkey tweet for user", username, "is malformed:", tweet);
+                                    }
+                                } else if (tweet.text.includes('#keysig')) {
+                                    toks = tweet.text.split(/\s+/);
+                                    if (toks.length === 4 && users[userID][3] === undefined &&
+                                        Number(toks[1]) && Number(toks[2])) {
+
+                                        users[tweet.user.id_str][2] = toks[2];
+                                        users[tweet.user.id_str][3] = toks[3];
+
+                                    } else {
+                                        console.warn("#keysig tweet for user", username, "is malformed:", tweet);
+                                    }
+                                }
+
+                                //check if we have all the user info needed
+                                var userDone = true;
+                                for (var i=0; i<4; i++){
+                                    var userInfo = users[userID];
+                                    if (userInfo[i] === undefined) {
+                                        userDone = false;
+                                    }
+                                }
+
+                                if (userDone) {
+                                    var storageName = CryptoCtx.globalKeyName(username, "@");
+
+                                    var pubKeyContainer = parseKey(users[userID][0], users[userID][1],
+                                                                   users[userID][2], users[userID][3],
+                                                                   users[userID][4], userID, username);
+                                    var pubKey = pubKeyContainer.key;
+                                    var stale = pubKeyContainer.expiration < Date.now();
+                                    if (stale) {
+                                        throw new Fail(Fail.STALE, "Found only a stale key for " + username);
+                                    } else {
+                                        delete users[tweet.user.id_str];
+                                        /*jshint loopfunc: true */
+                                        API.storeKey(storageName, pubKey).then(function () {
+                                            console.log('stored key for username ', username);
+                                        });
+                                    }
+                                }
+                            } catch (error) {
+                                console.error("ERR: ", error);
+                            }
+                        }
+                        this.stream_buffer = this.stream_buffer.substr(curr_index+1);
+                    }
+
+                    if (this.tpost.length >= 10000) {
+                        //context and streamerManager keep the ID of the first streamer
+                        var tmp_streamer = new PKeyStreamer(Utils.randomStr128());
+                        tmp_streamer.send();
+                        tmp_streamer._callbacks = this._callbacks;
+                        this.abort();
+                        this.tpost = tmp_streamer;
+                    }
+
+                } else {
+                    console.error("Failed to stream public keys, closing connection: ",
+                                  this.tpost.status, this.tpost.responseText);
+                    this.abort();
+                }
+            }
+        }).bind(this);
+
+        this.tpost.onerror = function () {
+            console.error("Problem streaming public keys.", [].slice.apply(arguments));
+            //return reject(new Fail(Fail.GENERIC, "Failed to stream public keys."));
+        };
+    }
+
+    _extends(PKeyStreamer, Streamer, {
+
+    });
+
+    module.PkeyStreamer = PKeyStreamer;
+
+
+    /*
+      getUserInfo:
+
+      Promises the current Twitter ID, handle, and token if there is
+      an active Twitter session open.
+
+      {
           token: <str tok>,
           twitterId: <str id>,
           twitterUser: <str username>,
-          }
+      }
 
-          twitterId and twitterUser are null if the user is not logged in to Twitter
-        */
-        getUserInfo: function() {
-            return new Promise(function (resolve, reject) {
-                // fetch the user's twitter homepage
-                var preq = new XMLHttpRequest();
-                preq.open("GET", "https://twitter.com", true);
-                preq.onerror = function () {
-                    console.error("Problem loading twitter homepage", [].slice.apply(arguments));
-                    reject(new Error("error loading twitter homepage"));
-                };
+      twitterId and twitterUser are null if the user is not logged in to Twitter
+    */
+    module.getUserInfo = function getUserInfo() {
+        return new Promise(function (resolve, reject) {
+            // fetch the user's twitter homepage
+            var preq = new XMLHttpRequest();
+            preq.open("GET", "https://twitter.com", true);
+            preq.onerror = function () {
+                console.error("Problem loading twitter homepage", [].slice.apply(arguments));
+                reject(new Error("error loading twitter homepage"));
+            };
 
-                preq.onload = function () {
-                    // parse the response
-                    var parser = new DOMParser();
-                    var xmlDoc = parser.parseFromString(preq.responseText, "text/html");
+            preq.onload = function () {
+                // parse the response
+                var parser = new DOMParser();
+                var xmlDoc = parser.parseFromString(preq.responseText, "text/html");
 
-                    // The token is present regardless of login status
-                    var tokens = xmlDoc.getElementsByName("authenticity_token");
-                    if (tokens.length < 1) {
-                        return reject(new Fail(Fail.GENERIC, "Could not find auth token"));
-                    }
+                // The token is present regardless of login status
+                var tokens = xmlDoc.getElementsByName("authenticity_token");
+                if (tokens.length < 1) {
+                    return reject(new Fail(Fail.GENERIC, "Could not find auth token"));
+                }
 
-                    // the value of the token is always the same so just look at the first
-                    // this may be null
-                    var token = tokens[0].getAttribute("value");
-                    if (token === null) {
-                        return reject(new Fail(Fail.GENERIC, "token format changed?"));
-                    }
-                    
-                    var currentUsers = xmlDoc.getElementsByClassName("current-user");
-                    if (currentUsers === null || currentUsers.length !== 1) {
-                        return resolve({token: token,
-                                        twitterId: null,
-                                        twitterUser: null});
-                    }
+                // the value of the token is always the same so just look at the first
+                // this may be null
+                var token = tokens[0].getAttribute("value");
+                if (token === null) {
+                    return reject(new Fail(Fail.GENERIC, "token format changed?"));
+                }
 
-                    var accountGroups = currentUsers[0].getElementsByClassName("account-group");
-                    if (accountGroups === null || accountGroups.length !== 1) {
-                        console.error("account-group userid fetch failed due to changed format.");
-                        return reject(new Fail(Fail.GENERIC, "account-group userid fetch failed due to changed format."));
-                    }
+                var currentUsers = xmlDoc.getElementsByClassName("current-user");
+                if (currentUsers === null || currentUsers.length !== 1) {
+                    return resolve({token: token,
+                                    twitterId: null,
+                                    twitterUser: null});
+                }
 
-                    var accountElement = accountGroups[0];
-                    var twitterId = accountElement.getAttribute("data-user-id");
-                    var twitterUser = accountElement.getAttribute("data-screen-name");
+                var accountGroups = currentUsers[0].getElementsByClassName("account-group");
+                if (accountGroups === null || accountGroups.length !== 1) {
+                    console.error("account-group userid fetch failed due to changed format.");
+                    return reject(new Fail(Fail.GENERIC, "account-group userid fetch failed due to changed format."));
+                }
 
-                    if (twitterId === null || twitterUser === null) {
-                        return reject(new Fail(Fail.GENERIC, "failed to extract ID or username."));
-                    }
+                var accountElement = accountGroups[0];
+                var twitterId = accountElement.getAttribute("data-user-id");
+                var twitterUser = accountElement.getAttribute("data-screen-name");
 
-                    resolve(
-                        {token: token,
-                         twitterId: twitterId,
-                         twitterUser: twitterUser
-                        });
-                };
+                if (twitterId === null || twitterUser === null) {
+                    return reject(new Fail(Fail.GENERIC, "failed to extract ID or username."));
+                }
 
-                //send the profile request
-                preq.send();
-            });
-        },
+                resolve(
+                    {token: token,
+                     twitterId: twitterId,
+                     twitterUser: twitterUser
+                    });
+            };
 
-        /** promises a new application to be created. the output format is similar to
-            listApps.
+            //send the profile request
+            preq.send();
+        });
+    };                          // getUserInfo
 
-            {
+    /** promises a new application to be created. the output format is similar to
+        listApps.
+
+        {
             appName: str,
             appId: str,
             appURL: str
-            }
+        }
 
-            This will open a new tab to the proper twitter page, and
-            wait for the user to confirm the creation. If the creation
-            fails, or if the tab is closed before creation could
-            complete this errors out with GENERIC.
+        This will open a new tab to the proper twitter page, and
+        wait for the user to confirm the creation. If the creation
+        fails, or if the tab is closed before creation could
+        complete this errors out with GENERIC.
 
-            This could be done with AJAX, but we'd have to
-            reverse/replicate the hidden CSRF token scheme twitter
-            uses to authorize requests coming in. It's simpler, and
-            less sneaky to let the user confirm.
-        */
-        createApp: function (appName) {
-            var that = this;
+        This could be done with AJAX, but we'd have to
+        reverse/replicate the hidden CSRF token scheme twitter
+        uses to authorize requests coming in. It's simpler, and
+        less sneaky to let the user confirm.
+    */
+    module.createApp =  function createApp(appName) {
+        var originalTabId = -1;
 
-            var originalTabId = -1;
+        return API.openContext("https://apps.twitter.com/app/new").then(function (ctx) {
+            originalTabId = ctx.tabId;
 
-            return API.openContext("https://apps.twitter.com/app/new").then(function (ctx) {
-                originalTabId = ctx.tabId;
-
-                return ctx.callCS("create_twitter_app", {appName: appName}).then(function () {
+            return ctx.callCS("create_twitter_app", {appName: appName}).then(function () {
+                return ctx;
+            }).catch(function (err) {
+                if (err.code === Fail.MAIMED) {
+                    console.log("app creation tab closed early. checking if operation completed.");
                     return ctx;
-                }).catch(function (err) {
-                    if (err.code === Fail.MAIMED) {
-                        console.log("app creation tab closed early. checking if operation completed.");
-                        return ctx;
-                    } else {
-                        throw err;
-                    }
-                });
-            }).then(function () {
-                return new Promise(function (resolve, reject) {
-                    var triesLeft = 3;
-                    var retryMs = 2000;
-
-                    function tryAgain() {
-                        if (triesLeft <= 0) {
-                            return reject(new Fail(Fail.GENERIC, "App creation failed."));
-                        }
-
-                        // check if newly created app available
-                        that.listApps().then(function (apps) {
-                            var selectedApp = apps.filter(function (app) {
-                                return app.appName === appName;
-                            });
-                            if (selectedApp.length < 1) {
-                                triesLeft--;
-                                setTimeout(tryAgain, retryMs);
-                                console.log("New app not available yet. Trying again in " + retryMs + "ms.");
-                                return;
-                            }
-                            API.closeContextTab(originalTabId);
-                            resolve(selectedApp[0]);
-                        }).catch(function (err) {
-                            // if an error occurred, the open tab is
-                            // left behind to help diagnosis.
-                            reject(err);
-                        });
-                    }
-                    tryAgain();
-                });
+                } else {
+                    throw err;
+                }
             });
-        },
-
-        /* Promises a list of the Twitter apps the user has access to.
-           
-           [ {appName: str,
-              appId: str,
-              appURL: str},
-             ...
-           ]
-         */
-        listApps: function () {
+        }).then(function () {
             return new Promise(function (resolve, reject) {
-                var xhr = new XMLHttpRequest();
-                xhr.open('GET', 'https://apps.twitter.com/', true);
-                xhr.onreadystatechange = function () {
-                    if (xhr.readyState === 4)  {
-                        if (xhr.status >= 200 && xhr.status <= 300) {
-                            var el = $('<div></div>');
-                            el.html(xhr.responseText);
-                            var apps = $('div.app-details a', el);
-                            var appList = [];
-                            var cur;
-                            for (var i = 0; i<apps.length; i++) {
-                                var href = $(apps[i]).attr('href');
-                                cur = {appName: $(apps[i]).text(),
-                                       appId: href.split("/")[1], // "href=app/APPID/show"
-                                       appURL: "https://apps.twitter.com/" + href};
-                                if (!cur.appId) {
-                                    return reject(new Fail(Fail.GENERIC, "Could not parse app response."));
-                                }
-                                appList.push(cur);
-                            }
-                            return resolve(appList);
-                        } else {
-                            return reject(new Fail(Fail.GENERIC, "Twitter returned code " + xhr.status));
-                        }
+                var triesLeft = 3;
+                var retryMs = 2000;
+
+                function tryAgain() {
+                    if (triesLeft <= 0) {
+                        return reject(new Fail(Fail.GENERIC, "App creation failed."));
                     }
-                };
-                xhr.onerror = function () {
-                    console.error("Problem loading twitter apps page", [].slice.apply(arguments));
-                    reject(new Fail(Fail.GENERIC, "Error loading list of Twitter apps."));
-                };
-                xhr.send();
+
+                    // check if newly created app available
+                    module.listApps().then(function (apps) {
+                        var selectedApp = apps.filter(function (app) {
+                            return app.appName === appName;
+                        });
+                        if (selectedApp.length < 1) {
+                            triesLeft--;
+                            setTimeout(tryAgain, retryMs);
+                            console.log("New app not available yet. Trying again in " + retryMs + "ms.");
+                            return;
+                        }
+                        API.closeContextTab(originalTabId);
+                        resolve(selectedApp[0]);
+                    }).catch(function (err) {
+                        // if an error occurred, the open tab is
+                        // left behind to help diagnosis.
+                        reject(err);
+                    });
+                }
+                tryAgain();
             });
-        },
+        });
+    };                          // createApp
 
-        /**
-           Generates a usable access token for the given appId.
+    /* Promises a list of the Twitter apps the user has access to.
+       [ {
+          appName: str,
+          appId: str,
+          appURL: str},
+          ...
+       ]
+    */
+    module.listApps = function listApps() {
+        return new Promise(function (resolve, reject) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', 'https://apps.twitter.com/', true);
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState === 4)  {
+                    if (xhr.status >= 200 && xhr.status <= 300) {
+                        var el = $('<div></div>');
+                        el.html(xhr.responseText);
+                        var apps = $('div.app-details a', el);
+                        var appList = [];
+                        var cur;
+                        for (var i = 0; i<apps.length; i++) {
+                            var href = $(apps[i]).attr('href');
+                            cur = {appName: $(apps[i]).text(),
+                                   appId: href.split("/")[1], // "href=app/APPID/show"
+                                   appURL: "https://apps.twitter.com/" + href};
+                            if (!cur.appId) {
+                                return reject(new Fail(Fail.GENERIC, "Could not parse app response."));
+                            }
+                            appList.push(cur);
+                        }
+                        return resolve(appList);
+                    } else {
+                        return reject(new Fail(Fail.GENERIC, "Twitter returned code " + xhr.status));
+                    }
+                }
+            };
+            xhr.onerror = function () {
+                console.error("Problem loading twitter apps page", [].slice.apply(arguments));
+                reject(new Fail(Fail.GENERIC, "Error loading list of Twitter apps."));
+            };
+            xhr.send();
+        });
+    };                          // listApps
 
-           Newly created application start without access tokens.
-           They are needed to perform REST API calls. This
-           bootstrapping needs only be done once per application.
-        **/
-        createAccessToken: function (appId) {
-            var that = this;
-            var originalTabId = -1;
+    /**
+       Generates a usable access token for the given appId.
 
-            return API.openContext("https://apps.twitter.com/app/" + appId + "/keys").then(function (ctx) {
-                originalTabId = ctx.tabId;
+       Newly created application start without access tokens.
+       They are needed to perform REST API calls. This
+       bootstrapping needs only be done once per application.
+    **/
+    module.createAccessToken = function createAccessToken(appId) {
+        var that = this;
+        var originalTabId = -1;
 
-                return ctx.callCS("generate_keys", {}).then(function () {
+        return API.openContext("https://apps.twitter.com/app/" + appId + "/keys").then(function (ctx) {
+            originalTabId = ctx.tabId;
+
+            return ctx.callCS("generate_keys", {}).then(function () {
+                return ctx;
+            }).catch(function (err) {
+                if (err.code === Fail.MAIMED) {
+                    console.log("app creation tab closed early. checking if operation completed.");
                     return ctx;
-                }).catch(function (err) {
-                    if (err.code === Fail.MAIMED) {
-                        console.log("app creation tab closed early. checking if operation completed.");
-                        return ctx;
-                    } else {
-                        throw err;
-                    }
-                });
-            }).then(function () {
-                return new Promise(function (resolve, reject) {
-                    var triesLeft = 3;
-                    var retryMs = 3000;
-
-                    function tryAgain() {
-                        if (triesLeft <= 0) {
-                            return reject(new Fail(Fail.GENERIC, "Could not create access keys for app " + appId));
-                        }
-
-                        that.grepDevKeys(appId).then(function (keys) {
-                            if (!keys.hasAccessToken) {
-                                triesLeft--;
-                                setTimeout(tryAgain, retryMs);
-                                console.log("AppId " + appId + " has no access keys yet. Rechecking in " + retryMs + "ms.");
-                                return;
-                            }
-                            API.closeContextTab(originalTabId);
-                            resolve(keys);
-                        }).catch(function (err) {
-                            // if an error occurred, the open tab is
-                            // left behind to help diagnosis.
-                            reject(err);
-                        });
-                    }
-                    tryAgain();
-                });
+                } else {
+                    throw err;
+                }
             });
-        },
-
-
-        /**
-           Promises the keys for the twitter application appId.  This
-           greps the content of the apps page for that id.
-
-           Applications without an access token will return null for
-           the token* fields.
-
-           If the application does not exist you get Fail.NOTFOUND
-
-           
-        */
-        grepDevKeys: function (appId) {
+        }).then(function () {
             return new Promise(function (resolve, reject) {
-                var appURL = "https://apps.twitter.com/app/" + appId + "/keys";
-                var xhr = new XMLHttpRequest();
-                xhr.open('GET', appURL, true);
-                xhr.onreadystatechange = function () {
-                    if (xhr.readyState === 4)  {
-                        if (xhr.status >= 200 && xhr.status < 400) {
-                            var el = $('<div></div>');
-                            el.html(xhr.responseText);
-                            var appHeaders = el.find('.app-settings .row span.heading');
-                            var appValues = appHeaders.next();
-                            var tokenHeaders = el.find('.access .row span.heading');
-                            var tokenValues = tokenHeaders.next();
+                var triesLeft = 3;
+                var retryMs = 3000;
 
-                            var output = {
-                                appId: appId,
-                                appName: el.find("#page-title").text(),
-
-                                consumerKey: null,
-                                consumerSecret: null,
-                                appOwner: null,
-                                appOwnerId: null,
-
-                                accessToken: null,
-                                accessSecret: null,
-                                accessOwner: null,
-                                accessOwnerId: null,
-
-                                hasAccessToken: false
-                            };
-
-                            appHeaders.each(function (i, el) {
-                                var txt = $(el).text();
-                                var val = $(appValues[i]).text();
-
-                                if (txt.indexOf("API Key") >= 0) {
-                                    output.consumerKey = val;
-                                } else if (txt.indexOf("API Secret") >= 0) {
-                                    output.consumerSecret = val;
-                                } else if (txt.indexOf("Owner ID") >= 0) {
-                                    output.appOwnerId = val;
-                                } else if (txt.indexOf("Owner") >= 0) {
-                                    output.appOwner = val;
-                                }
-                            });
-
-                            tokenHeaders.each(function (i, el) {
-                                var txt = $(el).text();
-                                var val = $(tokenValues[i]).text();
-
-                                if (txt.indexOf("Access Token Secret") >= 0) {
-                                    output.accessSecret = val;
-                                } else if (txt.indexOf("Access Token") >= 0) {
-                                    output.accessToken = val;
-                                } else if (txt.indexOf("Owner ID") >= 0) {
-                                    output.accessOwnerId = val;
-                                } else if (txt.indexOf("Owner") >= 0) {
-                                    output.accessOwner = val;
-                                }
-                            });
-
-                            if (!!output.accessSecret &&
-                                !!output.accessToken &&
-                                !!output.accessOwnerId &&
-                                !!output.accessOwner) {
-                                
-                                output.hasAccessToken = true;
-                            }
-
-                            // assertion/sanity
-                            // either all falsey or all truthy
-                            var truths = [!output.accessSecret, !output.accessToken,
-                                          !output.accessOwnerId, !output.accessOwner];
-                            if (truths.indexOf(true) >= 0 && truths.indexOf(false) >= 0) {
-                                console.error("Unexpected state of token generated:", output);
-                                return reject(new Fail(Fail.GENERIC, "Partial access token obtained. Unexpected error."));
-                            }
-
-                            resolve(output);
-                        } else {
-                            return reject(new Fail(Fail.GENERIC, "Twitter returned code " + xhr.status));
-                        }
+                function tryAgain() {
+                    if (triesLeft <= 0) {
+                        return reject(new Fail(Fail.GENERIC, "Could not create access keys for app " + appId));
                     }
-                };
-                xhr.onerror = function () {
-                    console.error("Problem going to specific app URL.", [].slice.apply(arguments));
-                    return reject(new Fail(Fail.GENERIC, "Failed to access app URL and retrieve keys."));
-                };
-                xhr.send();
+
+                    that.grepDevKeys(appId).then(function (keys) {
+                        if (!keys.hasAccessToken) {
+                            triesLeft--;
+                            setTimeout(tryAgain, retryMs);
+                            console.log("AppId " + appId + " has no access keys yet. Rechecking in " + retryMs + "ms.");
+                            return;
+                        }
+                        API.closeContextTab(originalTabId);
+                        resolve(keys);
+                    }).catch(function (err) {
+                        // if an error occurred, the open tab is
+                        // left behind to help diagnosis.
+                        reject(err);
+                    });
+                }
+                tryAgain();
             });
-        } // grepDevKeys
-    };                          // end prototype
-    return new Twitter();
-})();
+        });
+    };                          // createAccessToken
+
+
+    /**
+       Promises the keys for the twitter application appId.  This
+       greps the content of the apps page for that id.
+
+       Applications without an access token will return null for
+       the token* fields.
+
+       If the application does not exist you get Fail.NOTFOUND
+    */
+    module.grepDevKeys = function grepDevKeys(appId) {
+        return new Promise(function (resolve, reject) {
+            var appURL = "https://apps.twitter.com/app/" + appId + "/keys";
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', appURL, true);
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState === 4)  {
+                    if (xhr.status >= 200 && xhr.status < 400) {
+                        var el = $('<div></div>');
+                        el.html(xhr.responseText);
+                        var appHeaders = el.find('.app-settings .row span.heading');
+                        var appValues = appHeaders.next();
+                        var tokenHeaders = el.find('.access .row span.heading');
+                        var tokenValues = tokenHeaders.next();
+
+                        var output = {
+                            appId: appId,
+                            appName: el.find("#page-title").text(),
+
+                            consumerKey: null,
+                            consumerSecret: null,
+                            appOwner: null,
+                            appOwnerId: null,
+
+                            accessToken: null,
+                            accessSecret: null,
+                            accessOwner: null,
+                            accessOwnerId: null,
+
+                            hasAccessToken: false
+                        };
+
+                        appHeaders.each(function (i, el) {
+                            var txt = $(el).text();
+                            var val = $(appValues[i]).text();
+
+                            if (txt.indexOf("API Key") >= 0) {
+                                output.consumerKey = val;
+                            } else if (txt.indexOf("API Secret") >= 0) {
+                                output.consumerSecret = val;
+                            } else if (txt.indexOf("Owner ID") >= 0) {
+                                output.appOwnerId = val;
+                            } else if (txt.indexOf("Owner") >= 0) {
+                                output.appOwner = val;
+                            }
+                        });
+
+                        tokenHeaders.each(function (i, el) {
+                            var txt = $(el).text();
+                            var val = $(tokenValues[i]).text();
+
+                            if (txt.indexOf("Access Token Secret") >= 0) {
+                                output.accessSecret = val;
+                            } else if (txt.indexOf("Access Token") >= 0) {
+                                output.accessToken = val;
+                            } else if (txt.indexOf("Owner ID") >= 0) {
+                                output.accessOwnerId = val;
+                            } else if (txt.indexOf("Owner") >= 0) {
+                                output.accessOwner = val;
+                            }
+                        });
+
+                        if (!!output.accessSecret &&
+                            !!output.accessToken &&
+                            !!output.accessOwnerId &&
+                            !!output.accessOwner) {
+                            output.hasAccessToken = true;
+                        }
+
+                        // assertion/sanity
+                        // either all falsey or all truthy
+                        var truths = [!output.accessSecret, !output.accessToken,
+                                      !output.accessOwnerId, !output.accessOwner];
+                        if (truths.indexOf(true) >= 0 && truths.indexOf(false) >= 0) {
+                            console.error("Unexpected state of token generated:", output);
+                            return reject(new Fail(Fail.GENERIC, "Partial access token obtained. Unexpected error."));
+                        }
+
+                        resolve(output);
+                    } else {
+                        return reject(new Fail(Fail.GENERIC, "Twitter returned code " + xhr.status));
+                    }
+                }
+            };
+            xhr.onerror = function () {
+                console.error("Problem going to specific app URL.", [].slice.apply(arguments));
+                return reject(new Fail(Fail.GENERIC, "Failed to access app URL and retrieve keys."));
+            };
+            xhr.send();
+        });
+    };
+    return module;
+})(window.Twitter || {});
