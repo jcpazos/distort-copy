@@ -125,7 +125,7 @@ window.Emitter = (function() {
             });
 
             // remove all dead callbacks.
-            this._listeners[eventName] = (this._listeneres[eventName] || []).filter(function (listener) {
+            this._listeners[eventName] = (this._listeners[eventName] || []).filter(function (listener) {
                 return (listener.cb !== that._tombstone);
             });
 

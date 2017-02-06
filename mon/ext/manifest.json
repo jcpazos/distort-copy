@@ -24,7 +24,7 @@
 	"scripts": ["lib/jquery-1.11.3.min.js",
 		    "sjcl.js",
 		    "utils.js",
-                    "emitter.js",
+		    "emitter.js",
 		    "keyclasses.js",
 		    "vault.js",
 		    "ui.js",
