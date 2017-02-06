@@ -23,7 +23,9 @@
 
 /*global
   Promise, ECCKeyPair,
-  KeyLoader, Fail
+  KeyLoader, Fail,
+
+  Events
 */
 
 window.Vault = (function () {
@@ -251,6 +253,7 @@ window.Vault = (function () {
 
             settings[sk] = inStore;
             return this.set(settings).then(function () {
+                Events.emit('account:updated', acct);
                 return null;
             });
         }

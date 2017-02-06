@@ -1998,6 +1998,7 @@ BGAPI.prototype._stopBackgroundTasks = function () {
 */
 BGAPI.prototype.accountUpdated = function (account) {
     "use strict";
+    console.log("Account updated:", account.id);
 };
 
 /**
