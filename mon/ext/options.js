@@ -9,6 +9,9 @@ var Twitter = BG.Twitter;
 var $doc = $(document);
 var Fail = BG.Fail;
 
+// lib/twitter-text.js
+var TT = window.twttr;
+
 /**
    Displays the error/status text in the Options UI.
 
@@ -69,6 +72,14 @@ function enableByName(opts) {
     }
 }
 
+/**
+   returns a template string based on the data-name attribute of the template
+*/
+function getTemplate(templateName) {
+    "use strict";
+    return $doc.find("script[type='text/template'][data-name='" + templateName + "']").html();
+}
+
 // Saves options to chrome.storage.sync.
 function save_options() {
     "use strict";
@@ -105,6 +116,11 @@ function showPage(pageName) {
     "use strict";
     
     $doc.find(".page").hide();
+
+    if (pageName === "main") {
+        refreshAccounts();
+    }
+
     $doc.find(".page[data-page='" + pageName + "']").show();
 }
 
@@ -180,14 +196,13 @@ function stepButtonClick(evt) {
                 enableByName({"back": false, "finish": false, "cancel": false});
                 updateStatus("Creating account...");
 
-                Vault.newAccount(readAccountForm())
-                    .then(function () {
-                        showPage("main");
-                    }).catch(function (err) {
-                        console.error(err);
-                        updateStatus("Creation failed: " + err.message);
-                        enableByName({"back": true, "cancel": true});
-                    });
+                Vault.newAccount(readAccountForm()).then(function () {
+                    showPage("main");
+                }).catch(function (err) {
+                    console.error(err);
+                    updateStatus("Creation failed: " + err.message);
+                    enableByName({"back": true, "cancel": true});
+                });
                 break;
             }
             break;
@@ -207,20 +222,56 @@ function refreshReview() {
         .text(opts.primaryApp.appName);
     if (opts.key === null) {
         $doc.find(".user-setting[name='key-data']")
-            .text("A new key will be generated.");
+            .text("New keys will be generated.");
     } else {
         $doc.find(".user-setting[name='key-data']")
             .text("Imported Key");
     }
 }
 
-/* displays details on the given account */
-function showAccountDetails(accountName) {
+/** updates the view in the groups table */
+function refreshGroupStats() {
     "use strict";
-    $doc.find("table.accounts tbody tr.selected").removeClass("selected");
-    $doc.find("table.accounts tbody tr[data-username='" + accountName + "']").addClass("selected");
-    $doc.find(".username").text(accountName + "!");
+
+    var defaultUser = Vault.getUsername();
+    if (!defaultUser) {
+        return;
+    }
+
+    var acnt = Vault.getAccount(defaultUser);
+    if (!acnt) {
+        return null;
+    }
+
+    var i, $row, $stat;
+    var $body = $doc.find(".groups .tbody");
+    $body.html("");
+
+    for (i = 0; i < acnt.groups.length; i++) {
+        $row = $(getTemplate("group-stats"));
+        $row.find("[data-username]").attr("data-username", acnt.id);
+        $row.find(".groupname").text(acnt.groups[i]);
+        $stat = $row.find(".groupstatus");
+        $row.appendTo($body);
+    }
+    $body.append($(getTemplate("join-group-row")));
 }
+
+/* displays details on the given account */
+function selectAccount(accountName) {
+    "use strict";
+    $doc.find(".accounts .row.selected").removeClass("selected");
+    $doc.find(".accounts .row[data-username='" + accountName + "']").addClass("selected");
+    $doc.find(".username").text(accountName);
+
+    refreshGroupStats();
+}
+
+function getSelectedUsername() {
+    "use strict";
+    return $doc.find(".accounts .row.selected").attr("data-username");
+}
+
 
 /** initializes the DOM for a step just before showing it **/
 function initStep(className, stepNo) {
@@ -303,25 +354,23 @@ function refreshAccounts() {
     }
 
     var i, $row;
-    var $body = $doc.find("table.accounts tbody");
+    var $body = $doc.find(".accounts .tbody");
     $body.html("");
+
 
     var defaultUser = Vault.getUsername();
     for (i = 0; i < users.length; i++) {
-        $row = $("<tr></tr>");
-        $row.attr("data-username", users[i]);
-        $("<td></td>").text("@" + users[i]).appendTo($row);
-        if (users[i] === defaultUser) {
-            $("<td>active</td>").appendTo($row);
-        } else {
-            $("<td>inactive</b>").appendTo($row);
-        }
-        $("<td class='account-delete'>delete</td>").attr("data-username", users[i]).appendTo($row);
+        $row = $(getTemplate("user-row"));
+        $row.attr("data-username", users[i]).find('[data-username]').attr("data-username", users[i]);
+        $row.find(".user").text("@" + users[i]);
+        $row.find(".account-status").text(users[i] === defaultUser ? "active" : "inactive");
         $row.appendTo($body);
     }
-    $body.append('<tr><td><a class="new-account">new...</a></td></tr>');
+    $row = $(getTemplate("new-user-row"));
+    $body.append($row);
+
     if (defaultUser) {
-        showAccountDetails(defaultUser);
+        selectAccount(defaultUser);
     }
 }
 
@@ -338,47 +387,156 @@ function refreshImportKeys() {
     }
 }
 
-function loadPage() {
+/**
+   promises to make the user join a group
+*/
+function joinNewGroup(userid, groupName) {
     "use strict";
 
-    refreshAccounts();
-    
-    // Use default value color = 'red' and likesColor = true.
-    chrome.storage.sync.get({
-        favoriteColor: 'red',
-        likesColor: true
-    }, function(items) {
-        document.getElementById('color').value = items.favoriteColor;
-        document.getElementById('like').checked = items.likesColor;
-    });
+    return new Promise(function (resolve) {
+        if (!userid) {
+            throw new Fail(Fail.BADPARAM, "Invalid userid. Could not determine selected element?");
+        }
 
-    $doc.find(".new-account").click(function () {
+        groupName = groupName.trim();
+
+        if (!groupName) {
+            throw new Fail(Fail.BADPARAM, "Invalid group name.");
+        }
+
+        var hashtags = TT.txt.extractHashtagsWithIndices(groupName);
+        if (hashtags.length === 0) {
+            throw new Fail(Fail.BADPARAM, "Invalid group name.");
+        }
+
+        var first = hashtags[0];
+        if (first.indices[0] !== 0 || first.indices[1] !== groupName.length) {
+            throw new Fail(Fail.BADPARAM, "Enter just the hashtag.");
+        }
+
+        /* curated */
+        groupName = first.hashtag;
+
+        resolve(groupName);
+    });
+}
+
+/**
+   promises to make the user leave the group
+*/
+function leaveGroup(userid, groupName) {
+    "use strict";
+}
+
+/**
+   closes a confirmation block
+
+   (removes class 'confirming' from trigger and confirmation section)
+*/
+function cancelConfirmation($elt) {
+    "use strict";
+
+    var $confirm = $elt.closest(".action-confirm");
+    var actionName = $confirm.attr("data-action");
+    var $trigger = $confirm.parent().find(".action-trigger[data-action='" + actionName + "']");
+    $trigger.removeClass("confirming");
+    $confirm.removeClass("confirming");
+}
+
+/**
+   Toggles a confirmation dialog with the given trigger
+*/
+function triggerConfirmation($trigger) {
+    "use strict";
+    var actionName = $trigger.attr("data-action");
+    var $confirm = $trigger.parent().find(".action-confirm[data-action='" + actionName + "']");
+    $trigger.addClass("confirming");
+    $confirm.addClass("confirming");
+}
+
+function loadPage() {
+    "use strict";
+    
+    // // Use default value color = 'red' and likesColor = true.
+    // chrome.storage.sync.get({
+    //     favoriteColor: 'red',
+    //     likesColor: true
+    // }, function(items) {
+    //     document.getElementById('color').value = items.favoriteColor;
+    //     document.getElementById('like').checked = items.likesColor;
+    // });
+
+    $doc.find("div.page[data-page='main']").on("click", ".new-account", function () {
         showStep("new-account-step", "start");
         showPage("new-account");
     });
 
-    $doc.find("table.accounts tbody tr").click(function (evt) {
+    $doc.find(".accounts").on("click", ".tbody .row", function (evt) {
         evt.preventDefault();
-        var $row = $(evt.target).closest("tr");
+        var $row = $(evt.target).closest(".row");
         var username = $row.attr("data-username");
         if (!username) {
             return;
         }
-        showAccountDetails(username);
+        selectAccount(username);
     });
 
-    $doc.find(".account-delete").click(function (evt) {
+    /* rows are added dynamically, so we delegate the event for future
+       additions to the table
+    */
+    $doc.find(".tbody").on("click", ".action-trigger", function (evt) {
         evt.preventDefault();
-        var username = $(evt.target).closest("tr").attr("data-username");
-        if (username) {
-            Vault.deleteAccount(username).then(function () {
-                showPage("main");
-            });
+        triggerConfirmation($(this));
+    });
+
+    $doc.find(".tbody").on("click", ".action-cancel", function (evt) {
+        evt.preventDefault();
+        var $cancel = $(this);
+        cancelConfirmation($cancel);
+    });
+    
+    $doc.find(".accounts").on("click", ".account-delete .delete-yes", function (evt) {
+        evt.preventDefault();
+        var $deleteLink = $(this);
+        var username = $deleteLink.closest("[data-username]").attr("data-username");
+
+        Vault.deleteAccount(username).then( () => {
+            cancelConfirmation($deleteLink);
+            showPage("main");
+        }).catch(err => {
+            console.log("cannot delete account", err);
+        });
+    });
+    
+    $doc.find(".step-buttons button").click(function (evt) {
+        return stepButtonClick(evt);
+    });
+
+    $doc.find(".groups").on("click", "a.join-group", function () {
+        if (document.forms["new-group-form"]) {
+            document.forms["new-group-form"].reset();
         }
     });
 
-    $doc.find(".step-buttons button").click(function (evt) {
-        return stepButtonClick(evt);
+    $doc.find(".groups").on("click", ".action-join", function (evt) {
+        evt.preventDefault();
+        $doc.find("form[name='new-group-form']").submit();
+    });
+
+    $doc.find(".groups").on("submit", "form[name='new-group-form']", function (evt) {
+        evt.preventDefault();
+        var $groupNameInput = $(this).find("input[name='new-group-name']");
+        var groupName = $groupNameInput.val();
+
+        // selected username
+        var username = getSelectedUsername();
+
+        joinNewGroup(username, groupName).then(function () {
+            updateStatus(`Added user ${username} to group ${groupName}`);
+            cancelConfirmation($groupNameInput);
+        }).catch(err => {
+            updateStatus(err.message, true);
+        });
     });
 
     $doc.find("#connect-twitter").click(function () {

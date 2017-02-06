@@ -1,108 +1,251 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>My Test Extension Options</title>
-  <style>
-    body: {padding: 10px;}
-    no-accounts {display: none;}
-    .hidden {display: none;}
-    label {
-      padding: 2px;
-      display: block;
-    }
+    <title>My Test Extension Options</title>
+    <link rel="stylesheet" href="css/font-awesome.min.css">
+    <script src="lib/twitter-text.js"></script>
+    <style>
+     body: {
+         padding: 10px;
+     }
 
-    label.inline {
-      display: inline;
-    }
+     @media (min-width: 30em) {
+         .row { width: 100%; display: table; table-layout: fixed; }
+         .col { display: table-cell; }
+     }
 
-    .form-spacer {
-      margin-top: 2ex;
-      margin-bottom: 2ex;
-    }
+     body: {
+         padding: 10px;
+     }
 
-    form textarea {
-    width: 100%;
-    }
-    .section {
-    top-margin: 10px;
-    }
+     div.container {
+         width: 600px;
+     }
 
-    #status {
-      margin-top: 20px;
-      min-height: 15px;
-    }
+     no-accounts {display: none;}
+     .hidden {display: none;}
+     label {
+	 padding: 2px;
+	 display: block;
+     }
 
-    #status.error {
-      color: red;
-    }
+     label.inline {
+	 display: inline;
+     }
 
-    table.accounts {
-    width: 100%;
-    border-collapse: collapse;
-    text-align: left;
-    margin-bottom: 10px;
-    }
+     .form-spacer {
+	 margin-top: 2ex;
+	 margin-bottom: 2ex;
+     }
 
-    table.accounts thead {
-    display:table-header-group;
-    }
+     form textarea {
+	 width: 100%;
+     }
+     .section {
+	 top-margin: 10px;
+     }
 
-    table.accounts th {
-      border-bottom: 2px solid #6678b1;
-      font-weight: normal;
-      color: #039;
-      padding: 10px 8px;
-    }
+     #status {
+	 margin-top: 20px;
+	 min-height: 15px;
+     }
 
-    table.accounts td {
-      padding: 5px 8px 5px;
-    }
+     #status.error {
+	 color: red;
+     }
 
-    table.accounts tbody td {
-      color: #669;
-    }
-    table.accounts tbody tr:hover {
-      color: #009;
-      background-color: #ddf;
-    }
-    table.accounts tbody tr.selected {
-      font-weight: bold;
-    }
+     .simpletable {
+	 width: 100%;
+	 border-collapse: collapse;
+	 text-align: left;
+	 margin-bottom: 10px;
+         table-layout: fixed;
+     }
+
+     .simpletable .thead {
+	 display:table-header-group;
+     }
+
+     .simpletable .thead .col {
+	 border-bottom: 2px solid #6678b1;
+	 font-weight: normal;
+	 color: #039;
+	 padding: 10px 8px;
+     }
+
+     .simpletable .tbody .col {
+         vertical-align: middle;
+     }
+     .simpletable .col {
+	 padding: 5px 8px 5px;
+     }
+
+     .simpletable .tbody .col {
+	 color: #669;
+         height: 24px;
+     }
+
+     .simpletable .tbody .row:hover {
+	 color: #009;
+	 background-color: #ddf;
+     }
+     .simpletable .tbody .row.bland {
+         color: #009;
+         background-color: inherit;
+     }
+
+     .simpletable .tbody .row.selected {
+	 font-weight: bold;
+     }
+
+     .col.actions {
+         text-align: right;
+     }
+
+     span.bullet {
+	 display: inline-block;
+	 min-width: 150px;
+	 margin-top: 5px;
+     }
+
+     .action-confirm {
+         display: none;
+     }
+
+     .action-confirm.confirming {
+         display: initial;
+     }
+
+     .action-trigger.confirming {
+         display: none;
+     }
+
+     .action-button {
+         margin-left: 3px;
+         margin-right: 3px;
+     }
+
+     .action-button:hover {
+         text-decoration: underline;
+         font-weight: bold;
+     }
 }
 
   </style>
+
+  <script type="text/template" data-name="join-group-row">
+    <div class="row">
+      <div class="col" style="width: 50%">
+	<span class="action-trigger" data-action="join-group">
+	  <a class="join-group">join...</a>
+        </span>
+	<span class="action-confirm" data-action="join-group" data-username="">
+	  <form name="new-group-form">
+	    <input placeholder="enter group name, e.g. #twistor" type="text" name="new-group-name"></input>
+	    <!-- actions -->
+	    <i title="Save" class="action-button action-join fa fa-check"></i>
+	    <i title="Close" class="action-button action-cancel fa fa-close"></i>
+	  </form>
+	</span>
+      </div>
+    </div>
+  </script>
+
+  <script type="text/template" data-name="group-stats">
+    <div class="row" data-groupname="" data-username="">
+      <div class="col groupname" style="width: 20%;"></div>
+      <div class="col groupstatus" style="width: 60%;">
+	<span class="bullet">Joined On:</span><span data-field="joinedOn"></span>
+	<br />
+	<span class="bullet">Last delivery:</span><span data-field="lastReceivedOn"></span>
+	<br />
+	<span class="bullet"># Received:</span><span data-field="numReceived"></span>
+	<br />
+	<span class="bullet"># Sent:</span><span data-field="numSent"></span>
+      </div>
+      <div class="col" class="actions group-leave">
+	<span class="action-trigger" data-action="leave">Leave</span>
+	<span class="action-confirm" data-action="leave">
+	  <span>Sure?</span>
+          <span class="action-button action-cancel">NO</span>
+	  <span class="action-button leave-yes">YES</span>
+	</span>
+      </div>
+    </div>
+  </script>
+
+  <script type="text/template" data-name="new-user-row">
+    <div class="row bland">
+      <div class="col">
+	<a class="new-account">new...</a>
+      </div>
+    </div>
+  </script>
+
+  <script type="text/template" data-name="user-row">
+    <div class="row" data-username="">
+      <div class="col user" />
+      <div class="col account-status" />
+      <div class="col actions account-delete">
+	<span class="action-trigger" data-action="delete">
+          <i title="Delete user" class="action-button fa fa-trash-o"></i>
+        </span>
+	<span class="action-confirm" data-action="delete" data-username="">
+	  <span>Sure?</span>
+	  <span class="action-button delete-yes">YES</span>
+          <span class="action-button action-cancel">NO</span>
+	</span>
+      </div>
+    </div>
+  </script>
 </head>
 
 <body>
   <div class="container">
+
+    <!-- MAIN PAGE / ACCOUNTS / GROUPS -->
     <div data-page="main" class="page">
       <div class="section">
 	<h2>Accounts</h2>
-
-	<div class="section no-accounts">
-	  <h3 class="no-accounts">There are no accounts configured yet.</h3>
-	  <button class="new-account">Add account</button>
-	</div>
-
-	<div class="section has-accounts">
-	  <table class="accounts">
-	    <thead>
-	      <tr>
-		<th>Name</th>
-		<th>Status</th>
-		<th></th>
-	      </tr>
-	    </thead>
-	    <tbody>
-	    </tbody>
-	  </table>
-	</div>
-
-	<h2>Selected Account: <span class="username"></span></h2>
-
       </div>
-    </div>
 
+      <div class="section no-accounts">
+	<h3 class="no-accounts">There are no accounts configured yet.</h3>
+	<button class="new-account">Add account</button>
+      </div>
+
+      <div class="section has-accounts">
+	<div class="simpletable accounts">
+	  <div class="thead">
+	    <div class="row">
+	      <div class="col">Name</div>
+	      <div class="col">Status</div>
+	      <div class="col">Actions</div>
+	    </div>
+	  </div>
+	  <!-- rows added dynamically -->
+          <div class="tbody"></div>
+	</div>
+      </div>
+
+      <div class="section has-accounts">
+	<h2>Anonymity Groups (<span class="username"></span>)</h2>
+	<div class="groups simpletable">
+	  <div class="thead">
+	    <div class="row">
+	      <div class="col" style="width: 20%;">Group</div>
+	      <div class="col" style="width: 60%;">Stats</div>
+	      <div class="col">Actions</div>
+	    </div>
+	  </div>
+
+	  <!-- rows dynamically added to this -->
+	  <div class="tbody"></div>
+	</div>
+      </div> <!-- anon groups section -->
+    </div> <!-- main page -->
+
+    <!-- NEW-ACCOUNT WIZARD PAGE -->
     <div data-page="new-account" class="page">
       <h2>New Account</h2><div class="close-button"></div>
       <form id="new-account-form">
