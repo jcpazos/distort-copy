@@ -99,7 +99,7 @@ window.Emitter = (function() {
            first, before finishing the last. in other words, no
            queueing.
         */
-        function (eventName /*, args... */ ) {
+        emit: function (eventName /*, args... */ ) {
 
             var args = Array.prototype.slice.call(arguments, 1);
             var that = this;
