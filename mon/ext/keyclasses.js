@@ -60,7 +60,13 @@ KeyLoader.registerClass = function (typId, klass) {
 KeyLoader.fromStore = function (obj) {
     "use strict";
 
-    var typ = obj.typ;
+    var typ;
+
+    if (!obj) {
+        return null;
+    }
+
+    typ = obj.typ;
     if (!typ || KeyLoader.classes[typ] === undefined) {
         return null;
     }
