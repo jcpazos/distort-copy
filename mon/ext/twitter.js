@@ -31,32 +31,6 @@
 var Twitter = (function (module) {
     "use strict";
 
-    function StreamerManager() {
-        this.streamers = {};
-    }
-
-    //returns a streamerID that identifies the new Streamer in the list for removal when necessary
-    StreamerManager.prototype.addStreamer = function (hashtag, klass, accountCredentials) {
-        var streamer;
-        if (klass === Streamer.TWEET_STREAMER) {
-            streamer = new TweetStreamer(hashtag, Utils.randomStr128(), accountCredentials);
-        } else if (klass === Streamer.PKEY_STREAMER) {
-            streamer = new PKeyStreamer(Utils.randomStr128(), accountCredentials);
-        }
-        this.streamers[streamer.streamerID] = streamer;
-        return streamer;
-    };
-
-
-    StreamerManager.prototype.removeStreamer = function(streamerID) {
-        console.log("removing streamer ", streamerID);
-        if (!streamerID) {
-            return;
-        }
-        this.streamers[streamerID].abort();
-        delete this.streamers[streamerID];
-    };
-
     function Streamer(hashtag, streamerID, accountCredentials) {
 
         var nonceGenerator = function(length) {
@@ -375,7 +349,109 @@ var Twitter = (function (module) {
 
     module.PkeyStreamer = PKeyStreamer;
 
+    function StreamerManager() {
+        this.streamers = {};
 
+        // keep track of open streams by hashtag.
+        // each value is an array of Streamer
+        this.byHash = {};
+    }
+
+    StreamerManager.prototype._setInstance = function (hashtag, refName, creds) {
+
+        function _index(cur) {
+            return cur.streamerID === refName;
+        }
+
+        var byHash = this.byHash[hashtag] = this.byHash[hashtag] || [];
+        var newStreamer = null;
+        var active = (byHash.length > 0) ? byHash[0] : null;
+
+        var index = byHash.findIndex(_index);
+        if (index >= 0) {
+            this.byHash[hashtag].splice(index, 1);
+        }
+
+        if (creds) {
+            newStreamer = new TweetStreamer(hashtag, refName, creds);
+            byHash.push(newStreamer);
+        }
+
+        if (byHash[0] !== active && active !== null) {
+            active.abort();
+        }
+
+        if (byHash.length === 0) {
+            // cleanup
+            delete this.byHash[hashtag];
+        } else {
+            // activate new head of the list
+            byHash[0].send();
+        }
+
+        return newStreamer;
+    };
+
+    /**
+       Indicate that a user account (represented by creds) should
+       receive tweets for the given group.
+
+       The refName is used to do reference counting on the streaming
+       instance. (we maintain one open stream if there are multiple
+       subscriptions to the same hashtag).
+    */
+    StreamerManager.prototype.subscribe = function (hashtag, refName, creds) {
+         this._setInstance(hashtag, refName, creds);
+    };
+
+    StreamerManager.prototype.unsubscribe = function (hashtag, refName) {
+        this._setInstance(hashtag, refName, null);
+    };
+
+    /**
+       Returns the list of hashtags subscribed to under the given
+       name.
+    */
+    StreamerManager.prototype.hashtagsByRef = function (refName) {
+        var hash, accum = [];
+
+        function _index(cur) {
+            return cur.streamerID === refName;
+        }
+        for (hash in this.byHash) {
+            if (this.byHash.hasOwnProperty(hash)) {
+                if (this.byHash[hash].findIndex(_index) >= 0) {
+                    accum.push(hash);
+                }
+            }
+        }
+        return accum;
+    };
+
+    //returns a streamerID that identifies the new Streamer in the list for removal when necessary
+    StreamerManager.prototype.addStreamer = function (hashtag, klass, accountCredentials) {
+        var streamer;
+        if (klass === Streamer.TWEET_STREAMER) {
+            streamer = new TweetStreamer(hashtag, Utils.randomStr128(), accountCredentials);
+        } else if (klass === Streamer.PKEY_STREAMER) {
+            streamer = new PKeyStreamer(Utils.randomStr128(), accountCredentials);
+        }
+        this.streamers[streamer.streamerID] = streamer;
+        return streamer;
+    };
+
+
+    StreamerManager.prototype.removeStreamer = function(streamerID) {
+        console.log("removing streamer ", streamerID);
+        if (!streamerID) {
+            return;
+        }
+        this.streamers[streamerID].abort();
+        delete this.streamers[streamerID];
+    };
+
+
+    module.StreamerManager = StreamerManager;
     /*
       getUserInfo:
 
@@ -627,6 +703,20 @@ var Twitter = (function (module) {
        the token* fields.
 
        If the application does not exist you get Fail.NOTFOUND
+
+       {
+           appId: null,
+           appName: null,
+           consumerKey: null,
+           consumerSecret: null,
+           appOwner: null,
+           appOwnerId: null,
+           accessToken: null,
+           accessSecret: null,
+           accessOwner: null,
+           accessOwnerId: null,
+           hasAccessToken: false
+       };
     */
     module.grepDevKeys = function grepDevKeys(appId) {
         return new Promise(function (resolve, reject) {

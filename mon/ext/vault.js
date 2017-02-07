@@ -136,7 +136,14 @@ window.Vault = (function () {
         
         // set default username
         setUsername: function (userid) {
-            this.set({'username': userid});
+            return new Promise( resolve => {
+                if (!this.accountExists(userid)) {
+                    throw new Fail(Fail.ENOENT, "invalid userid");
+                }
+                resolve(this.set({'username': userid}).then(() => {
+                    Events.emit("account:changed", userid);
+                }));
+            });
         },
 
         /** checks if there exists an account with the
@@ -171,6 +178,8 @@ window.Vault = (function () {
                 }
 
                 return that.set(settings).then(function () {
+                    Events.emit('account:deleted', userid);
+                    Events.emit('account:changed', settings.username);
                     return userid;
                 });
             });
@@ -185,14 +194,8 @@ window.Vault = (function () {
             return null;
         },
 
-        /** Returns an Account object, or null.
-
-            the value is a copy of the last saved settings for the
-            identified account.
-
-            *Watch out for aliasing*
-
-            FIXME keep one object for each account.
+        /**
+           Returns the one Account object for that user.
         */
         getAccount: function (userid) {
             if (userid === "" || userid === undefined) {
@@ -208,16 +211,28 @@ window.Vault = (function () {
                 return null;
             }
 
-            var kp = Account.fromStore(identity);
-            return kp;
+            return identity;
         },
 
         _defaults: function () {
-            return {usernames: []};
+            return {
+                usernames: [],
+                username: null
+            };
         },
 
         _save: function () {
-            localStorage.settings = JSON.stringify(this.db);
+            var storable = {};
+            Object.keys(this.db).forEach(key => {
+                var val = this.db[key];
+                if (val && (typeof val.toStore) === "function") {
+                    storable[key] = val.toStore();
+                } else {
+                    storable[key] = val;
+                }
+            });
+
+            localStorage.settings = JSON.stringify(storable);
             return Promise.resolve(true);
         },
 
@@ -229,6 +244,12 @@ window.Vault = (function () {
             }
             try {
                 this.db = JSON.parse(settings);
+                Object.keys(this.db).forEach(key => {
+                    var val = this.db[key];
+                    if ((val instanceof Object) && val.typ !== undefined) {
+                        this.db[key] = KeyLoader.fromStore(val);
+                    }
+                });
             } catch (err) {
                 console.error("Could not load settings string. Starting fresh.", settings);
                 this.db = this._defaults();
@@ -242,31 +263,32 @@ window.Vault = (function () {
            promises null when complete.
         */
         _saveAccount: function (acct) {
-            var id = acct.id;
-            if (!this.accountExists(id)) {
-                throw new Fail(Fail.NOENT, "invalid account name");
-            }
+            return new Promise(resolve => {
+                var id = acct.id;
 
-            var inStore = acct.toStore();
-            var sk = Vault.ACCOUNT_PREFIX + btoa(id);
-            var settings = {};
+                if (!this.accountExists(id)) {
+                    throw new Fail(Fail.NOENT, "invalid account name");
+                }
 
-            settings[sk] = inStore;
-            return this.set(settings).then(function () {
-                Events.emit('account:updated', acct);
-                return null;
+                var sk = Vault.ACCOUNT_PREFIX + btoa(id);
+                var settings = {};
+                settings[sk] = acct;
+                resolve(this.set(settings).then(function () {
+                    Events.emit('account:updated', id);
+                    return null;
+                }));
             });
         }
     };
 
     function GroupStats(opts) {
         this.name = opts.name || null;
-        this.joinedOn = opts.joinedOn || null;
-        this.lastReceivedOn = opts.lastReceivedOn || null;
-        this.lastSentOn = opts.lastSentOn || null;
+        this.joinedOn = opts.joinedOn || null; // unix. in seconds.
+        this.lastReceivedOn = opts.lastReceivedOn || null; // unix. in seconds.
+        this.lastSentOn = opts.lastSentOn || null; // unix. in seconds.
         this.numReceived = opts.numReceived || 0;
         this.numSent = opts.numSent || 0;
-        this.txPeriodMs = 15*60*1000;
+        this.txPeriodMs = 15*60*1000;  // in ms. for timers.
     }
 
     GroupStats.prototype = {
@@ -291,9 +313,9 @@ window.Vault = (function () {
     KeyLoader.registerClass("grp", GroupStats);
 
     function Account(opts) {
-        this.primaryId = opts.primaryId || null;
-        this.primaryHandle = opts.primaryHandle || null;
-        this.primaryApp = opts.primaryApp || null;
+        this.primaryId = opts.primaryId || null;           // string userid (e.g. large 64 integer as string)
+        this.primaryHandle = opts.primaryHandle || null;   // string username (e.g. twitter handle)
+        this.primaryApp = opts.primaryApp || null;         // dict   application/dev credentials
 
         this.key = opts.key || new ECCKeyPair();
 
@@ -308,9 +330,32 @@ window.Vault = (function () {
         },
 
         /**
+           Promises true when the group is left. Opposite of joinGroup.
+
+           The account is saved in the process. Emits account:udpated.
+        */
+        leaveGroup: function (groupName) {
+            return new Promise(resolve => {
+                var idx = this.groups.findIndex(grp => (grp.name === groupName));
+                if (idx === -1) {
+                    throw new Fail(Fail.ENOENT, "not in the group");
+                }
+                this.groups.splice(idx, 1);
+
+                resolve(window.Vault._saveAccount(this)
+                        .then(() => true)
+                        .catch(err => {
+                            // FIXME racy
+                            this.groups.pop();
+                            throw err;
+                        }));
+            });
+        },
+
+        /**
            Promises a GroupStats for the newly joined group.
 
-           Resulting account is saved in the process.
+           Resulting account is saved in the process. Emits accout:updated.
         **/
         joinGroup: function (groupName) {
             return new Promise(resolve => {
@@ -322,7 +367,7 @@ window.Vault = (function () {
 
                 var groupStats = new GroupStats({
                     name: groupName,
-                    joinedOn: Date.now(),
+                    joinedOn: Date.now() / 1000,
                     lastReceivedOn: 0,
                     lastSentOn: 0,
                     numReceived: 0,
@@ -331,9 +376,13 @@ window.Vault = (function () {
 
                 this.groups.push(groupStats);
 
-                this._saveAccount().then(() => {
-                    resolve(groupStats);
-                });
+                resolve(window.Vault._saveAccount(this)
+                        .then(() => groupStats)
+                        .catch(err => {
+                            // FIXME racy
+                            this.groups.pop();
+                            throw err;
+                        }));
             });
         },
 

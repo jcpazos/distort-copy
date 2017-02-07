@@ -37,7 +37,6 @@ var cryptoCtxSerial = 0;
 var bgCallSerial = 0;
 
 var API;
-var streamerManager;
 
 /**
    Global event emitter/listener object
@@ -612,8 +611,8 @@ CryptoCtx.notifyAll = function (rpc, params) {
 CryptoCtx.prototype = {
     close: function () {
         "use strict";
-        streamerManager.removeStreamer(this.tweetStreamerID);
-        streamerManager.removeStreamer(this.pKeyStreamerID);
+        API.streamerManager.removeStreamer(this.tweetStreamerID);
+        API.streamerManager.removeStreamer(this.pKeyStreamerID);
         this.port = null;
         this.tabId = -1;
         if (this.kapEngine) {
@@ -1647,7 +1646,13 @@ function BGAPI() {
     this.validateTasks = {};
     this.distributeTasks = {};
 
+    // accounts for which streaming is ON.
+    // accountid => Vault.Account
+    this.activeAccounts = {};
+    this.streamerManager = new Twitter.StreamerManager();
+
     Events.on('account:updated', this.accountUpdated, this);
+    Events.on('account:deleted', this.accountDeleted, this);
 
     window.setTimeout(function () {
         var initialUser = Vault.getUsername();
@@ -1674,14 +1679,56 @@ BGAPI.prototype._stopBackgroundTasks = function () {
             this.distributeTasks[user].stop();
         }
     }
+
+    Object.keys(this.activeAccounts).forEach(name => {
+        var acct = this.activeAccounts[name];
+        var hashes = this.streamerManager.hashtagsByRef(acct.id);
+        hashes.forEach( elt => {
+            this.streamerManager.unsubscribe(elt, acct.id);
+        });
+    });
 };
+
 
 /**
    The settings of the given account have been updated.
 */
-BGAPI.prototype.accountUpdated = function (account) {
+BGAPI.prototype.accountUpdated = function (userid) {
     "use strict";
-    console.log("Account updated:", account.id);
+    console.log("Account updated:", userid);
+
+    var active = this.activeAccounts[userid];
+
+    if (!active) {
+        return;
+    }
+
+
+    // update streams
+
+    var oldSubs = this.streamerManager.hashtagsByRef(userid);
+    var account = Vault.getAccount(userid);
+    var newSubs = account.groups.map(grp => grp.name);
+
+    oldSubs.forEach(hashtag => {
+        if (newSubs.indexOf(hashtag) === -1) {
+            this.streamerManager.unsubscribe(hashtag, account.id);
+        }
+    });
+
+    newSubs.forEach(hashtag => {
+        if (oldSubs.indexOf(hashtag) === -1) {
+            this.streamerManager.subscribe(hashtag, account.id, account.creds);
+        }
+    });
+
+    // update account info -- FIXME copy stats over
+    this.activeAccounts[account.id] = account;
+};
+
+BGAPI.prototype.accountDeleted = function (userid) {
+    "use strict";
+    console.log("Account deleted:", userid);
 };
 
 /**
@@ -1693,9 +1740,20 @@ BGAPI.prototype.accountChanged = function (username) {
 
     this._stopBackgroundTasks();
 
+    // FIXME more than one active account at a time
+    Object.keys(this.activeAccounts).forEach(name => {
+        delete this.activeAccounts[name];
+    });
+
     if (!username) {
         return;
     }
+
+    var account = Vault.getAccount(username);
+    this.activeAccounts[account.id] = account;
+    account.groups.forEach(group => {
+        this.streamerManager.subscribe(group.name, account.id, account.primaryApp);
+    });
 
     if (!this.validateTasks[username]) {
         this.validateTasks[username] = new ValidateTask(BGAPI.PERIOD_VALIDATE_MS, username);
@@ -2033,6 +2091,8 @@ BGAPI.prototype.getDevKeys = function (username, appName) {
 
 BGAPI.prototype.openTwitterStream = function (hashtag, username) {
     "use strict";
+    var that = this;
+
     return new Promise(function (resolve, reject) { 
         console.debug("[BGAPI] getting Twitter Stream for :", username);
         // assumes a single tabId will be returned
@@ -2059,8 +2119,8 @@ BGAPI.prototype.openTwitterStream = function (hashtag, username) {
                             console.log("error streaming: couldn't retrieve dev keys", err);
                             throw err;
                         }).then(function (keyObj) {
-                            var tweetStreamer = streamerManager.addStreamer(hashtag, Twitter.Streamer.TWEET_STREAMER, keyObj);
-                            var pKeyStreamer = streamerManager.addStreamer(hashtag, Twitter.Streamer.PKEY_STREAMER, keyObj);
+                            var tweetStreamer = that.streamerManager.addStreamer(hashtag, Twitter.Streamer.TWEET_STREAMER, keyObj);
+                            var pKeyStreamer = that.streamerManager.addStreamer(hashtag, Twitter.Streamer.PKEY_STREAMER, keyObj);
                             tweetStreamer.addListener('sendTweet', function (tweet) {
                                 console.log('new tweet received', tweet);
                                 //TOOD: -fix bug with ctx not having the keyring open
@@ -2973,7 +3033,7 @@ var handlers = {
     refresh_twitter: function (ctx, rpc) {
         "use strict";
 
-        API.refreshAllFriends().then(function (matches) {
+        API.refreshAllFriends().then(function () {
             ctx.port.postMessage({callid: rpc.callid, result: true});
         }).catch(function (err) {
             console.error(err);
@@ -3333,4 +3393,3 @@ var KeyCache = (function () {
 })();
 
 API = new BGAPI();
-streamerManager = new Twitter.StreamerManager();
