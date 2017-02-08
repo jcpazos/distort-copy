@@ -101,7 +101,7 @@ window.Vault = (function () {
                 var inStore = acct.toStore();
                 var sk = Vault.ACCOUNT_PREFIX + btoa(userid);
                 var settings = {};
-            
+
                 if (that.get(sk)) {
                     console.error("user already exists");
                     return null;
@@ -133,7 +133,7 @@ window.Vault = (function () {
         getUsername: function () {
             return this.get('username');
         },
-        
+
         // set default username
         setUsername: function (userid) {
             return new Promise( resolve => {

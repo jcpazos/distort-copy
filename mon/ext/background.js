@@ -1716,11 +1716,8 @@ BGAPI.prototype.accountUpdated = function (userid) {
         }
     });
 
-    newSubs.forEach(hashtag => {
-        if (oldSubs.indexOf(hashtag) === -1) {
-            this.streamerManager.subscribe(hashtag, account.id, account.creds);
-        }
-    });
+    this.streamerManager.unsubscribe(oldSubs, account.id);
+    this.streamerManager.subscribe(newSubs, account.id, account.creds);
 
     // update account info -- FIXME copy stats over
     this.activeAccounts[account.id] = account;
