@@ -23,6 +23,8 @@
 
   ECCPubKey,
 
+  Emitter,
+
   CryptoCtx
 */
 
@@ -31,8 +33,17 @@
 var Twitter = (function (module) {
     "use strict";
 
-    function Streamer(hashtag, streamerID, accountCredentials) {
+    /** returns an XMLHttpRequest with appropriate authorize headers
+        for the given URL, using App-Only and user auth.
 
+        method: one of "POST" "GET", "DELETE", etc.
+        url: the url to pass into open()
+        data: a list of tuples to pass
+    */
+    function _appOnlyXHR(method, url, data, accountCredentials) {
+        data = data || [];
+
+        //setup the oauth string
         var nonceGenerator = function(length) {
             var text = "";
             var possible = "abcdef0123456789";
@@ -42,17 +53,17 @@ var Twitter = (function (module) {
             return text;
         };
 
-        this._callbacks = {sendTweet:[]};
-        this.streamerID = streamerID;
+        var xhr = new XMLHttpRequest();
 
-        var url = 'https://stream.twitter.com/1.1/statuses/filter.json';
-
-        //setup the oauth string
-        this.tpost = new XMLHttpRequest();
+        // app-only auth
         var consumerKey = accountCredentials.consumerKey;
         var consumerSecret = accountCredentials.consumerSecret;
+
+        // user-access auth
         var accessToken = accountCredentials.accessToken;
         var accessSecret = accountCredentials.accessSecret;
+
+        // streaming requires both app and user auth
         var signingKey = consumerSecret + "&" + accessSecret;
 
         var SIGNATURE_METHOD = "HMAC-SHA1";
@@ -71,11 +82,20 @@ var Twitter = (function (module) {
         var oauth_timestamp = encodeURIComponent(parseInt((new Date().getTime())/1000));
         var oauth_timestamp_url = "%26oauth_timestamp%3D" + oauth_timestamp;
 
+        var query = [];
+        data.forEach(tup => {
+            query.push(tup[0] + "=" + encodeURIComponent(tup[1]));
+        });
+        var dataStr = query.join("&");
+
         var signature_base_string = (
             STREAM_BASE_STRING + oauth_nonce_url + SIGNATURE_METHOD_URL +
                 oauth_timestamp_url + "%26oauth_token%3D" + accessToken +
-                OAUTH_VERSION_URL + "%26track%3D" + encodeURIComponent(encodeURIComponent(hashtag))
-        );
+                OAUTH_VERSION_URL);
+
+        if (dataStr) {
+            signature_base_string += "%26" + encodeURIComponent(dataStr);
+        }
 
         var oauth_signature = Utils.hmac_sha1(signingKey, signature_base_string);
 
@@ -87,42 +107,60 @@ var Twitter = (function (module) {
             'oauth_token="' + accessToken + '", ' +
             'oauth_version="' + OAUTH_VERSION + '"';
 
-        //console.log("header string, ", header_string);
-        //console.log("getting stream");
-
-        this.tpost.open("POST", url, true);
-        this.tpost.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-        this.tpost.setRequestHeader("Authorization", header_string);
-        this.postData = "track=" + hashtag;
-        this.index = 0;
-        this.stream_buffer = '';
-        this.tweets = [];
-
-        return this;
+        xhr.open(method, url, true);
+        xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+        xhr.setRequestHeader("Authorization", header_string);
+        return xhr;
     }
 
-    Streamer.TWEET_STREAMER = 'TweetStreamer';
-    Streamer.PKEY_STREAMER  = 'PKeyStreamer';
+    /**
+       hashtags: string or array of simple tags (no hash signs)
+       streamerID: uniqueID for this streamer,
+       accountCredentials: secrets to perform app-only auth and user-auth
+    */
+    function Streamer(hashtags, streamerID, accountCredentials) {
+        Streamer.__super__.constructor.apply(this, arguments);
 
-    Streamer.prototype.sendTweet = function(tweet) {
-        this._callbacks.sendTweet[0](tweet);
-    };
+        this._callbacks = {sendTweet:[]};
+        this.streamerID = streamerID;
+        this.creds = accountCredentials;
 
-    Streamer.prototype.addListener = function(functionName, handler) {
-        this._callbacks[functionName].push(handler);
-    };
+        this.hashtags = (typeof hashtags === "string") ? hashtags.split(",") : hashtags.slice();
 
-    Streamer.prototype.send = function() {
-        this.tpost.send(this.postData);
-    };
+        this.index = 0;
+        this.stream_buffer = '';
+        this.tweetCount = 0;
+        this.connectedOn = 0; // UNIX timestamp in seconds;
 
-    Streamer.prototype.abort = function() {
-        this.tpost.abort();
-    };
+        this._initXHR();
+    }
 
-    Streamer.prototype.setupTpost = function() {
-        throw new Fail(Fail.GENERIC, "run() must be implemented by subclasses");
-    };
+    //addListener
+    _extends(Streamer, Emitter, {
+        _initXHR: function () {
+            if (this.tpost) {
+                this.tpost.abort();
+            }
+
+            var track = this.hashtags.join(",");
+            this.postData = "track=" + encodeURIComponent(track);
+            var url = 'https://stream.twitter.com/1.1/statuses/filter.json';
+            this.tpost = _appOnlyXHR("POST", url, [['track', track]], this.creds);
+        },
+
+        sendTweet: function (tweet) {
+            this._callbacks.sendTweet[0](tweet);
+        },
+
+        send: function () {
+            this.connectedOn = Date.now() / 1000;
+            this.tpost.send(this.postData);
+        },
+
+        abort: function () {
+            this.tpost.abort();
+        }
+    });
 
     module.Streamer = Streamer;
 
@@ -130,10 +168,18 @@ var Twitter = (function (module) {
         TweetStreamer.__super__.constructor.call(this, hashtag, streamerID, accountCredentials);
 
         this.tpost.onreadystatechange = (function () {
+            // 0 unsent
+            // 1 opened
+            // 2 headers received
+            // 3 loading
+            // 4 done
             if (this.tpost.readyState > 2)  {
                 if (this.tpost.status >= 200 && this.tpost.status <= 400) {
                     //start at the index we left off
-                    //console.log('responseText ', this.tpost.responseText);
+
+                    // twitter will periodically send whitespace, just to keep
+                    // a flow going. Also, one tweet per line (\n).
+
                     this.stream_buffer = this.tpost.responseText.substr(this.index);
 
                     //remove possible leading whitespace from tpost.responseText
@@ -147,8 +193,14 @@ var Twitter = (function (module) {
                         this.index += curr_index + 1;
                         var json = this.stream_buffer.substr(0, curr_index);
                         if (json.length > 0) {
+                            var tweet = null;
                             try {
-                                var tweet = JSON.parse(json);
+                                tweet = JSON.parse(json);
+                            } catch (error) {
+                                console.error("failed to parse JSON:", error, json);
+                            }
+
+                            if (tweet) {
                                 console.log(tweet);
                                 if (tweet.quoted_status) {
                                     var keyb16kString = tweet.quoted_status.text;
@@ -158,24 +210,19 @@ var Twitter = (function (module) {
                                     tagb16kString = tagb16kString.substr(0, tagb16kString.indexOf(" "));
                                     var b64String = tagb16kString + ":" + keyb16kString;
 
-                                    this.tweets.push(tweet.text);
+                                    this.tweetCount += 1;
                                     console.log('tweet: ' + b64String);
-                                    this.sendTweet(b64String);
+                                    this.emit("sendTweet", b64String);
                                 }
-                            } catch (error) {
-                                console.error("ERR: ", error);
                             }
                         }
                         this.stream_buffer = this.stream_buffer.substr(curr_index+1);
                     }
                     //If the current this.tpost buffer is too big, make a new one;
-                    if (this.tweets.length >= 3000) {
-                        //context and streamerManager keep the ID of the first streamer
-                        var tmp_streamer = new TweetStreamer(hashtag, Utils.randomStr128());
-                        tmp_streamer.send();
-                        tmp_streamer._callbacks = this._callbacks;
-                        this.abort();
-                        this.tpost = tmp_streamer;
+                    if (this.tweetCount >= 3000) {
+                        //FIXME -- not tested -- do the partial tweets stick around?
+                        this._initXHR();
+                        this.tweetCount = 0;
                     }
                 } else {
                     console.error("Failed to stream tweets, closing connection: ",
@@ -198,7 +245,7 @@ var Twitter = (function (module) {
 
     module.TweetStreamer = TweetStreamer;
 
-    function PKeyStreamer(streamerID, accountCredentials) {
+    function PKeyStreamer(hashtags, streamerID, accountCredentials) {
         PKeyStreamer.__super__.constructor.call(this, "encryptkey,keysig,signkey", streamerID, accountCredentials);
         function parseKey(sign, encrypt, expiration, signature, timestamp, twitterId, username) {
             //we found both keys, persist them
@@ -350,104 +397,255 @@ var Twitter = (function (module) {
     module.PkeyStreamer = PKeyStreamer;
 
     function StreamerManager() {
+        // Stores active streams
         this.streamers = {};
 
-        // keep track of open streams by hashtag.
-        // each value is an array of Streamer
-        this.byHash = {};
+        // Stores subscriptions
+        this.ref2creds = {};  // refname => creds
+        this.hash2ref  = {};  // hashtag => [ ref, ref, ref ]
+        this.ref2hash  = {};  // refName => [hashtag, hashtag, ...]
     }
 
-    StreamerManager.prototype._setInstance = function (hashtag, refName, creds) {
+    StreamerManager.prototype = {
+        _updateSub: function (hashtag, refName, creds) {
 
-        function _index(cur) {
-            return cur.streamerID === refName;
-        }
+            var subs, hashes;
 
-        var byHash = this.byHash[hashtag] = this.byHash[hashtag] || [];
-        var newStreamer = null;
-        var active = (byHash.length > 0) ? byHash[0] : null;
+            creds = this._unaliasCreds(creds);
 
-        var index = byHash.findIndex(_index);
-        if (index >= 0) {
-            this.byHash[hashtag].splice(index, 1);
-        }
+            if (creds) {
+                // subscribing
+                subs = this.hash2ref[hashtag] = this.hash2ref[hashtag] || [];
 
-        if (creds) {
-            newStreamer = new TweetStreamer(hashtag, refName, creds);
-            byHash.push(newStreamer);
-        }
+                //FIXME check if account credentials have changed
+                this.ref2creds[refName] = creds;
 
-        if (byHash[0] !== active && active !== null) {
-            active.abort();
-        }
+                if (subs.indexOf(refName) === -1) {
+                    subs.push(refName);
+                }
 
-        if (byHash.length === 0) {
-            // cleanup
-            delete this.byHash[hashtag];
-        } else {
-            // activate new head of the list
-            byHash[0].send();
-        }
+                hashes = this.ref2hash[refName] = this.ref2hash[refName] || [];
+                if (hashes.indexOf(hashtag) === -1) {
+                    hashes.push(hashtag);
+                }
+            } else {
+                //unsubscribing
 
-        return newStreamer;
-    };
-
-    /**
-       Indicate that a user account (represented by creds) should
-       receive tweets for the given group.
-
-       The refName is used to do reference counting on the streaming
-       instance. (we maintain one open stream if there are multiple
-       subscriptions to the same hashtag).
-    */
-    StreamerManager.prototype.subscribe = function (hashtag, refName, creds) {
-         this._setInstance(hashtag, refName, creds);
-    };
-
-    StreamerManager.prototype.unsubscribe = function (hashtag, refName) {
-        this._setInstance(hashtag, refName, null);
-    };
-
-    /**
-       Returns the list of hashtags subscribed to under the given
-       name.
-    */
-    StreamerManager.prototype.hashtagsByRef = function (refName) {
-        var hash, accum = [];
-
-        function _index(cur) {
-            return cur.streamerID === refName;
-        }
-        for (hash in this.byHash) {
-            if (this.byHash.hasOwnProperty(hash)) {
-                if (this.byHash[hash].findIndex(_index) >= 0) {
-                    accum.push(hash);
+                subs = this.hash2ref[hashtag] || [];
+                var index = subs.indexOf(refName);
+                if (index >= 0) {
+                    subs.splice(index, 1);
+                    if (subs.length === 0) {
+                        delete this.hash2ref[hashtag];
+                    }
+                }
+                hashes = this.ref2hash[refName] || [];
+                index = hashes.indexOf(hashtag);
+                if (index >= 0) {
+                    hashes.splice(index, 1);
+                    if (hashes.length === 0) {
+                        delete this.ref2hash[refName];
+                        delete this.ref2creds[refName];
+                    }
                 }
             }
-        }
-        return accum;
-    };
+        },
 
-    //returns a streamerID that identifies the new Streamer in the list for removal when necessary
-    StreamerManager.prototype.addStreamer = function (hashtag, klass, accountCredentials) {
-        var streamer;
-        if (klass === Streamer.TWEET_STREAMER) {
-            streamer = new TweetStreamer(hashtag, Utils.randomStr128(), accountCredentials);
-        } else if (klass === Streamer.PKEY_STREAMER) {
-            streamer = new PKeyStreamer(Utils.randomStr128(), accountCredentials);
-        }
-        this.streamers[streamer.streamerID] = streamer;
-        return streamer;
-    };
+        /**
+           Indicate that a user account should receive tweets for the
+           given list of hashtags. The refname is a unique name designating the given
+           credentials object. This name is used again when unsubscribing.
+
+           The refName is used to do reference counting on the
+           streaming instance. (we try to maintain a single open
+           stream if there are multiple subscriptions to the same
+           hashtag).
+        */
+        subscribe: function (hashtags, refName, creds) {
+            var credsCopy = {
+                consumerKey: creds.consumerKey,
+                consumerSecret: creds.consumerSecret,
+                accessToken: creds.accessToken,
+                accessSecret: creds.accessSecret
+            };
+
+            if ((typeof hashtags) === "string") {
+                hashtags = hashtags.split(",");
+            }
+
+            hashtags.forEach(hashtag => {
+                this._updateSub(hashtag, refName, credsCopy);
+            });
+            this._scheduleStreamUpdate();
+        },
+
+        unsubscribe: function (hashtags, refName) {
+            hashtags.forEach(hashtag => {
+                this._updateSub(hashtag, refName, null);
+            });
+            this._scheduleStreamUpdate();
+        },
+
+        /**
+           Returns the list of hashtags subscribed to under the given
+           name.
+        */
+        hashtagsByRef: function (refName) {
+            return (this.ref2hash[refName] || []).slice();
+        },
+
+        /* de-aliases credentials objects known to the active streams */
+        _unaliasCreds: function (creds) {
+            for (var name in this.ref2creds) {
+                if (this.ref2creds.hasOwnProperty(name)) {
+                    var other = this.ref2creds[name];
+                    if (creds.consumerKey === other.consumerKey &&
+                        creds.consumerSecret === other.consumerSecret &&
+                        creds.accessToken === other.accessToken &&
+                        creds.accessSecret === other.accessSecret) {
+                        return other;
+                    }
+                }
+            }
+            return creds;
+        },
+
+        /**
+           When there has been a change in the subscriptions or the
+           connection status of one of the active streams, call this
+           function.
+
+           This will "sync" the subscriptions with the active connections
+           we have to Twitter channels/streams.
+        */
+        _scheduleStreamUpdate: function () {
+            if (this._pendingStreamUpdate) {
+                return;
+            } else {
+                this._pendingStreamUpdate = true;
+                window.setTimeout(() => {
+                    this._pendingStreamUpdate = false;
+                    this._updateStreams();
+                }, 0);
+            }
+        },
+
+        /**
+           syncs up the state of all the streaming sockets with
+           Twitter, based on the current subscriptions.
+        */
+        _updateStreams: function () {
+
+            var activeStreams = {}; // hashtag => [streamer, streamer, ...]
+
+            /* find out the set of all channels we are listening on */
+            Object.keys(this.streamers).forEach(streamerId => {
+                var streamer = this.streamers[streamerId];
+                streamer.hashtags.forEach(tag => {
+                    activeStreams[tag] = activeStreams[tag] || [];
+                    activeStreams[tag].push(streamer);
+                });
+            });
 
 
-    StreamerManager.prototype.removeStreamer = function(streamerID) {
-        console.log("removing streamer ", streamerID);
-        if (!streamerID) {
-            return;
+            /* remove the streams we are no longer interested in */
+            var stopHashtags = [];
+            Object.keys(activeStreams).forEach(tag => {
+                if (!this.hash2ref[tag]) {
+                    stopHashtags.push(tag);
+                }
+            });
+
+            if (stopHashtags.length > 0) {
+                // remove one tag at a time, and call _update again at
+                // a later time. If the streamer being cancelled
+                // handled multiple tags, this will allow a better
+                // placement strategy for the remaining tags.
+                var killTag = stopHashtags[0];
+                console.debug("No longer interested in tag:", killTag);
+                activeStreams[killTag].forEach(streamer => {
+                    this.removeStreamer(streamer);
+                });
+                return this._scheduleStreamUpdate();
+            }
+
+            // Find accounts that have subscriptions not currently being handled.
+
+            var refsWithNewSubs = Object.keys(this.ref2hash).filter(refName => {
+                // does this account need to listen on streams we don't listen on
+                var subscribedHashes = this.ref2hash[refName];
+                var hashtagWithNoActiveStream = subscribedHashes.findIndex(hashtag => (!activeStreams.hasOwnProperty(hashtag)));
+                return hashtagWithNoActiveStream !== -1;
+            });
+
+            if (refsWithNewSubs.length > 0) {
+                var growRef = refsWithNewSubs.pop();
+                var newHashes = this.ref2hash[growRef].filter(hashtag => (!activeStreams[hashtag]));
+
+                // we either grow an existing streamer's subscription, or create a new one.
+                var useCreds = this.ref2creds[growRef];
+
+                var streamersWithSameCreds = Object.keys(this.streamers)
+                    .map(streamerId => this.streamers[streamerId])
+                    .filter(streamer => streamer.creds === useCreds);
+
+                // FIXME, start streaming the new one before killing the old
+                // one. this would reduce the likelihood of missing tweets.
+
+                // grow the oldest active streamer on the same account
+                streamersWithSameCreds.sort((a, b) => {
+                    if (a.connectedOn < b.connectedOn) {
+                        return -1;
+                    } else if (a.connectedOn > b.connectedOn) {
+                        return 1;
+                    } else {
+                        return 0;
+                    }
+                });
+
+                var afterHashes = newHashes;
+
+                if (streamersWithSameCreds.length > 0) {
+                    var killStreamer = streamersWithSameCreds[0];
+                    var beforeHashes = killStreamer.hashtags;
+                    afterHashes = afterHashes.concat(beforeHashes);
+                    this.removeStreamer(killStreamer);
+                    console.log("Growing existing streamer from", beforeHashes, "to", afterHashes);
+                } else {
+                    console.log("Creating new streamer for", afterHashes);
+                }
+
+
+                var newStreamer = this.addStreamer(afterHashes, TweetStreamer, this.ref2creds[growRef]);
+                newStreamer.send();
+                return this._scheduleStreamUpdate();
+            }
+
+            // we're done
+            console.log("Streams all sync'd up.");
+        },
+
+        /*
+          @hashtag: string or array of simple hashtags
+          @klass: streamer constructor
+         */
+        addStreamer: function (hashtag, klass, accountCredentials) {
+            if (!(klass.prototype instanceof Streamer)) {
+                throw new Error("invalid streamer subclass");
+            }
+            var streamer = new klass(hashtag, Utils.randomStr128(), accountCredentials);
+            this.streamers[streamer.streamerID] = streamer;
+            return streamer;
+        },
+
+        removeStreamer: function(streamerID) {
+            console.log("removing streamer ", streamerID);
+            if (!streamerID) {
+                return;
+            }
+            this.streamers[streamerID].abort();
+            delete this.streamers[streamerID];
         }
-        this.streamers[streamerID].abort();
-        delete this.streamers[streamerID];
     };
 
 
