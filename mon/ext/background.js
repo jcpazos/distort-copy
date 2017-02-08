@@ -2116,9 +2116,9 @@ BGAPI.prototype.openTwitterStream = function (hashtag, username) {
                             console.log("error streaming: couldn't retrieve dev keys", err);
                             throw err;
                         }).then(function (keyObj) {
-                            var tweetStreamer = that.streamerManager.addStreamer(hashtag, Twitter.Streamer.TWEET_STREAMER, keyObj);
-                            var pKeyStreamer = that.streamerManager.addStreamer(hashtag, Twitter.Streamer.PKEY_STREAMER, keyObj);
-                            tweetStreamer.addListener('sendTweet', function (tweet) {
+                            var tweetStreamer = that.streamerManager.addStreamer(hashtag, Twitter.TweetStreamer, keyObj);
+                            var pKeyStreamer = that.streamerManager.addStreamer(hashtag, Twitter.PkeyStreamer, keyObj);
+                            tweetStreamer.on('sendTweet', function (tweet) {
                                 console.log('new tweet received', tweet);
                                 //TOOD: -fix bug with ctx not having the keyring open
                                 //      -add different message handling for tweets
@@ -2129,7 +2129,7 @@ BGAPI.prototype.openTwitterStream = function (hashtag, username) {
                             ctx.setStreamerIDs(tweetStreamer.streamerID, pKeyStreamer.streamerID);
                             tweetStreamer.send(tweetStreamer.postData);
                             pKeyStreamer.send(pKeyStreamer.postData);
-                        });                       
+                        });
                     }
                 }
             }
@@ -3317,7 +3317,6 @@ chrome.extension.onConnect.addListener(function (port) {
 
     port.onDisconnect.addListener(function ( /* p */) {
         ctx.close();
-        
     });
 });
 

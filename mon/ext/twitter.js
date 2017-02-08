@@ -23,6 +23,8 @@
 
   ECCPubKey,
 
+  Emitter,
+
   CryptoCtx
 */
 
@@ -31,13 +33,17 @@
 var Twitter = (function (module) {
     "use strict";
 
-    /**
-       hashtags: string or array of simple tags (no hash signs)
-       streamerID: uniqueID for this streamer,
-       accountCredentials: secrets to perform app-only auth and user-auth
-    */
-    function Streamer(hashtags, streamerID, accountCredentials) {
+    /** returns an XMLHttpRequest with appropriate authorize headers
+        for the given URL, using App-Only and user auth.
 
+        method: one of "POST" "GET", "DELETE", etc.
+        url: the url to pass into open()
+        data: a list of tuples to pass
+    */
+    function _appOnlyXHR(method, url, data, accountCredentials) {
+        data = data || [];
+
+        //setup the oauth string
         var nonceGenerator = function(length) {
             var text = "";
             var possible = "abcdef0123456789";
@@ -47,24 +53,7 @@ var Twitter = (function (module) {
             return text;
         };
 
-        this._callbacks = {sendTweet:[]};
-        this.streamerID = streamerID;
-        this.creds = accountCredentials;
-
-        var track;
-
-        if (typeof hashtags === "string") {
-            track = hashtags;
-            this.hashtags = hashtags.split(",");
-        } else {
-            track = hashtags.join(",");
-            this.hashtags = hashtags.splice();
-        }
-
-        var url = 'https://stream.twitter.com/1.1/statuses/filter.json';
-
-        //setup the oauth string
-        this.tpost = new XMLHttpRequest();
+        var xhr = new XMLHttpRequest();
 
         // app-only auth
         var consumerKey = accountCredentials.consumerKey;
@@ -93,11 +82,20 @@ var Twitter = (function (module) {
         var oauth_timestamp = encodeURIComponent(parseInt((new Date().getTime())/1000));
         var oauth_timestamp_url = "%26oauth_timestamp%3D" + oauth_timestamp;
 
+        var query = [];
+        data.forEach(tup => {
+            query.push(tup[0] + "=" + encodeURIComponent(tup[1]));
+        });
+        var dataStr = query.join("&");
+
         var signature_base_string = (
             STREAM_BASE_STRING + oauth_nonce_url + SIGNATURE_METHOD_URL +
                 oauth_timestamp_url + "%26oauth_token%3D" + accessToken +
-                OAUTH_VERSION_URL + "%26track%3D" + encodeURIComponent(encodeURIComponent(track))
-        );
+                OAUTH_VERSION_URL);
+
+        if (dataStr) {
+            signature_base_string += "%26" + encodeURIComponent(dataStr);
+        }
 
         var oauth_signature = Utils.hmac_sha1(signingKey, signature_base_string);
 
@@ -109,45 +107,60 @@ var Twitter = (function (module) {
             'oauth_token="' + accessToken + '", ' +
             'oauth_version="' + OAUTH_VERSION + '"';
 
-        //console.log("header string, ", header_string);
-        //console.log("getting stream");
-
-        this.tpost.open("POST", url, true);
-        this.tpost.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-        this.tpost.setRequestHeader("Authorization", header_string);
-        this.postData = "track=" + track;
-        this.index = 0;
-        this.stream_buffer = '';
-        this.tweets = [];
-        this.submittedOn = 0; // UNIX timestamp in seconds;
-
-        return this;
+        xhr.open(method, url, true);
+        xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+        xhr.setRequestHeader("Authorization", header_string);
+        return xhr;
     }
 
-    Streamer.TWEET_STREAMER = 'TweetStreamer';
-    Streamer.PKEY_STREAMER  = 'PKeyStreamer';
+    /**
+       hashtags: string or array of simple tags (no hash signs)
+       streamerID: uniqueID for this streamer,
+       accountCredentials: secrets to perform app-only auth and user-auth
+    */
+    function Streamer(hashtags, streamerID, accountCredentials) {
+        Streamer.__super__.constructor.apply(this, arguments);
 
-    Streamer.prototype.sendTweet = function(tweet) {
-        this._callbacks.sendTweet[0](tweet);
-    };
+        this._callbacks = {sendTweet:[]};
+        this.streamerID = streamerID;
+        this.creds = accountCredentials;
 
-    Streamer.prototype.addListener = function(functionName, handler) {
-        this._callbacks[functionName].push(handler);
-    };
+        this.hashtags = (typeof hashtags === "string") ? hashtags.split(",") : hashtags.slice();
 
-    Streamer.prototype.send = function() {
-        this.submittedOn = Date.now() / 1000;
-        this.tpost.send(this.postData);
-    };
+        this.index = 0;
+        this.stream_buffer = '';
+        this.tweetCount = 0;
+        this.connectedOn = 0; // UNIX timestamp in seconds;
 
-    Streamer.prototype.abort = function() {
-        this.tpost.abort();
-        this.submittedOn = 0;
-    };
+        this._initXHR();
+    }
 
-    Streamer.prototype.setupTpost = function() {
-        throw new Fail(Fail.GENERIC, "run() must be implemented by subclasses");
-    };
+    //addListener
+    _extends(Streamer, Emitter, {
+        _initXHR: function () {
+            if (this.tpost) {
+                this.tpost.abort();
+            }
+
+            var track = this.hashtags.join(",");
+            this.postData = "track=" + encodeURIComponent(track);
+            var url = 'https://stream.twitter.com/1.1/statuses/filter.json';
+            this.tpost = _appOnlyXHR("POST", url, [['track', track]], this.creds);
+        },
+
+        sendTweet: function (tweet) {
+            this._callbacks.sendTweet[0](tweet);
+        },
+
+        send: function () {
+            this.connectedOn = Date.now() / 1000;
+            this.tpost.send(this.postData);
+        },
+
+        abort: function () {
+            this.tpost.abort();
+        }
+    });
 
     module.Streamer = Streamer;
 
@@ -155,10 +168,18 @@ var Twitter = (function (module) {
         TweetStreamer.__super__.constructor.call(this, hashtag, streamerID, accountCredentials);
 
         this.tpost.onreadystatechange = (function () {
+            // 0 unsent
+            // 1 opened
+            // 2 headers received
+            // 3 loading
+            // 4 done
             if (this.tpost.readyState > 2)  {
                 if (this.tpost.status >= 200 && this.tpost.status <= 400) {
                     //start at the index we left off
-                    //console.log('responseText ', this.tpost.responseText);
+
+                    // twitter will periodically send whitespace, just to keep
+                    // a flow going. Also, one tweet per line (\n).
+
                     this.stream_buffer = this.tpost.responseText.substr(this.index);
 
                     //remove possible leading whitespace from tpost.responseText
@@ -172,8 +193,14 @@ var Twitter = (function (module) {
                         this.index += curr_index + 1;
                         var json = this.stream_buffer.substr(0, curr_index);
                         if (json.length > 0) {
+                            var tweet = null;
                             try {
-                                var tweet = JSON.parse(json);
+                                tweet = JSON.parse(json);
+                            } catch (error) {
+                                console.error("failed to parse JSON:", error, json);
+                            }
+
+                            if (tweet) {
                                 console.log(tweet);
                                 if (tweet.quoted_status) {
                                     var keyb16kString = tweet.quoted_status.text;
@@ -183,24 +210,19 @@ var Twitter = (function (module) {
                                     tagb16kString = tagb16kString.substr(0, tagb16kString.indexOf(" "));
                                     var b64String = tagb16kString + ":" + keyb16kString;
 
-                                    this.tweets.push(tweet.text);
+                                    this.tweetCount += 1;
                                     console.log('tweet: ' + b64String);
-                                    this.sendTweet(b64String);
+                                    this.emit("sendTweet", b64String);
                                 }
-                            } catch (error) {
-                                console.error("ERR: ", error);
                             }
                         }
                         this.stream_buffer = this.stream_buffer.substr(curr_index+1);
                     }
                     //If the current this.tpost buffer is too big, make a new one;
-                    if (this.tweets.length >= 3000) {
-                        //context and streamerManager keep the ID of the first streamer
-                        var tmp_streamer = new TweetStreamer(hashtag, Utils.randomStr128());
-                        tmp_streamer.send();
-                        tmp_streamer._callbacks = this._callbacks;
-                        this.abort();
-                        this.tpost = tmp_streamer;
+                    if (this.tweetCount >= 3000) {
+                        //FIXME -- not tested -- do the partial tweets stick around?
+                        this._initXHR();
+                        this.tweetCount = 0;
                     }
                 } else {
                     console.error("Failed to stream tweets, closing connection: ",
@@ -223,7 +245,7 @@ var Twitter = (function (module) {
 
     module.TweetStreamer = TweetStreamer;
 
-    function PKeyStreamer(streamerID, accountCredentials) {
+    function PKeyStreamer(hashtags, streamerID, accountCredentials) {
         PKeyStreamer.__super__.constructor.call(this, "encryptkey,keysig,signkey", streamerID, accountCredentials);
         function parseKey(sign, encrypt, expiration, signature, timestamp, twitterId, username) {
             //we found both keys, persist them
@@ -378,7 +400,6 @@ var Twitter = (function (module) {
         // Stores active streams
         this.streamers = {};
 
-
         // Stores subscriptions
         this.ref2creds = {};  // refname => creds
         this.hash2ref  = {};  // hashtag => [ ref, ref, ref ]
@@ -404,6 +425,9 @@ var Twitter = (function (module) {
                 }
 
                 hashes = this.ref2hash[refName] = this.ref2hash[refName] || [];
+                if (hashes.indexOf(hashtag) === -1) {
+                    hashes.push(hashtag);
+                }
             } else {
                 //unsubscribing
 
@@ -445,18 +469,21 @@ var Twitter = (function (module) {
                 accessSecret: creds.accessSecret
             };
 
+            if ((typeof hashtags) === "string") {
+                hashtags = hashtags.split(",");
+            }
+
             hashtags.forEach(hashtag => {
                 this._updateSub(hashtag, refName, credsCopy);
             });
-            window.setTimeout(() => {this._updateStreams();}, 0);
+            this._scheduleStreamUpdate();
         },
 
         unsubscribe: function (hashtags, refName) {
             hashtags.forEach(hashtag => {
                 this._updateSub(hashtag, refName, null);
             });
-
-            window.setTimeout(() => {this._updateStreams();}, 0);
+            this._scheduleStreamUpdate();
         },
 
         /**
@@ -484,6 +511,26 @@ var Twitter = (function (module) {
         },
 
         /**
+           When there has been a change in the subscriptions or the
+           connection status of one of the active streams, call this
+           function.
+
+           This will "sync" the subscriptions with the active connections
+           we have to Twitter channels/streams.
+        */
+        _scheduleStreamUpdate: function () {
+            if (this._pendingStreamUpdate) {
+                return;
+            } else {
+                this._pendingStreamUpdate = true;
+                window.setTimeout(() => {
+                    this._pendingStreamUpdate = false;
+                    this._updateStreams();
+                }, 0);
+            }
+        },
+
+        /**
            syncs up the state of all the streaming sockets with
            Twitter, based on the current subscriptions.
         */
@@ -491,7 +538,7 @@ var Twitter = (function (module) {
 
             var activeStreams = {}; // hashtag => [streamer, streamer, ...]
 
-            /* find out the set of all channels we are receiving */
+            /* find out the set of all channels we are listening on */
             Object.keys(this.streamers).forEach(streamerId => {
                 var streamer = this.streamers[streamerId];
                 streamer.hashtags.forEach(tag => {
@@ -519,8 +566,7 @@ var Twitter = (function (module) {
                 activeStreams[killTag].forEach(streamer => {
                     this.removeStreamer(streamer);
                 });
-                window.setTimeout(() => { this._updateStreams(); }, 0);
-                return;
+                return this._scheduleStreamUpdate();
             }
 
             // Find accounts that have subscriptions not currently being handled.
@@ -528,7 +574,8 @@ var Twitter = (function (module) {
             var refsWithNewSubs = Object.keys(this.ref2hash).filter(refName => {
                 // does this account need to listen on streams we don't listen on
                 var subscribedHashes = this.ref2hash[refName];
-                return subscribedHashes.findIndex(hashtag => (!activeStreams[hashtag])) === -1;
+                var hashtagWithNoActiveStream = subscribedHashes.findIndex(hashtag => (!activeStreams.hasOwnProperty(hashtag)));
+                return hashtagWithNoActiveStream !== -1;
             });
 
             if (refsWithNewSubs.length > 0) {
@@ -547,9 +594,9 @@ var Twitter = (function (module) {
 
                 // grow the oldest active streamer on the same account
                 streamersWithSameCreds.sort((a, b) => {
-                    if (a.submittedOn < b.submittedOn) {
+                    if (a.connectedOn < b.connectedOn) {
                         return -1;
-                    } else if (a.submittedOn > b.submittedOn) {
+                    } else if (a.connectedOn > b.connectedOn) {
                         return 1;
                     } else {
                         return 0;
@@ -568,7 +615,10 @@ var Twitter = (function (module) {
                     console.log("Creating new streamer for", afterHashes);
                 }
 
-                this.addStreamer(afterHashes, Streamer.TWEET_STREAMER, this.ref2creds[growRef]);
+
+                var newStreamer = this.addStreamer(afterHashes, TweetStreamer, this.ref2creds[growRef]);
+                newStreamer.send();
+                return this._scheduleStreamUpdate();
             }
 
             // we're done
@@ -577,15 +627,13 @@ var Twitter = (function (module) {
 
         /*
           @hashtag: string or array of simple hashtags
-          @klass: Streamer.TWEET_STREAMER, or Streamer.PKEY_STREAMER
+          @klass: streamer constructor
          */
         addStreamer: function (hashtag, klass, accountCredentials) {
-            var streamer;
-            if (klass === Streamer.TWEET_STREAMER) {
-                streamer = new TweetStreamer(hashtag, Utils.randomStr128(), accountCredentials);
-            } else if (klass === Streamer.PKEY_STREAMER) {
-                streamer = new PKeyStreamer(Utils.randomStr128(), accountCredentials);
+            if (!(klass.prototype instanceof Streamer)) {
+                throw new Error("invalid streamer subclass");
             }
+            var streamer = new klass(hashtag, Utils.randomStr128(), accountCredentials);
             this.streamers[streamer.streamerID] = streamer;
             return streamer;
         },
