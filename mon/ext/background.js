@@ -1717,7 +1717,7 @@ BGAPI.prototype.accountUpdated = function (userid) {
     });
 
     this.streamerManager.unsubscribe(oldSubs, account.id);
-    this.streamerManager.subscribe(newSubs, account.id, account.creds);
+    this.streamerManager.subscribe(newSubs, account.id, account.primaryApp);
 
     // update account info -- FIXME copy stats over
     this.activeAccounts[account.id] = account;

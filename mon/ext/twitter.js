@@ -480,6 +480,10 @@ var Twitter = (function (module) {
         },
 
         unsubscribe: function (hashtags, refName) {
+            if ((typeof hashtags) === "string") {
+                hashtags = hashtags.split(",");
+            }
+
             hashtags.forEach(hashtag => {
                 this._updateSub(hashtag, refName, null);
             });
