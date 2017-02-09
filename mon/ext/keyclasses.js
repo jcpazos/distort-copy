@@ -199,7 +199,7 @@ AESKey.prototype = {
         }
         return null;
     },
-            
+
     toHex: function () {
         "use strict";
         return sjcl.codec.hex.fromBits(this.key);
@@ -224,7 +224,7 @@ AESKey.prototype = {
 
     decryptText: function (cipherText) {
         "use strict";
-        
+
         return sjcl.decrypt(this.key, cipherText);
     },
 
@@ -255,7 +255,7 @@ AESKey.prototype = {
         newBits = sjcl.codec.base64.fromBits(newKey);
         return new AESKey(newBits);
     },
-    
+
     // derive a new key from this key, using @text as input.  calling
     // this function again with the same @text value will produce the
     // same key.
@@ -293,7 +293,7 @@ AESKey.fromHex = function (hexString) {
 
 AESKey.fromStore = function (obj) {
     "use strict";
-    
+
     if (obj.typ !== "aes") {
         return null;
     }
@@ -822,7 +822,7 @@ AnonKey.prototype.toStore = function (keyid) {
 
 AnonKey.fromStore = function (obj) {
     "use strict";
-    
+
     if (obj.typ !== "anon") {
         return null;
     }
