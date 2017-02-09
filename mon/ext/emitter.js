@@ -120,7 +120,7 @@ window.Emitter = (function() {
                 }
 
                 // give a fresh (shallow) copy of the arguments
-                cb.apply(listener.thisArg === undefined ? that : listener.thisArg, 
+                cb.apply(listener.thisArg === undefined ? that : listener.thisArg,
                          args.slice());
             });
 
@@ -138,3 +138,8 @@ window.Emitter = (function() {
 
     return Emitter;
 })();
+
+/**
+   Global event emitter/listener object
+*/
+var Events = new Emitter();

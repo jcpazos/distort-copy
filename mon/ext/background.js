@@ -21,7 +21,7 @@
   chrome, Promise, performance,
   ECCPubKey, AESKey, KeyLoader, Friendship,
   UI, Utils, Vault, Twitter,
-  Emitter,
+  Events, API,
   getHost, Fail, assertType, OneOf, KH_TYPE, MSG_TYPE, _extends
 */
 
@@ -35,13 +35,6 @@ var storageArea = chrome.storage.local;
 
 var cryptoCtxSerial = 0;
 var bgCallSerial = 0;
-
-var API;
-
-/**
-   Global event emitter/listener object
-*/
-var Events = new Emitter();
 
 function KAP(kapEngine, myName, myIdent, otherName, otherIdent) {
     "use strict";
@@ -265,7 +258,6 @@ KAPEngine.prototype = {
 
     _identKey: function (username) {
         "use strict";
-        
         return "ident." + btoa(username);
     },
 
@@ -2774,7 +2766,7 @@ BGAPI.prototype.delStorageVal = function (name) {
             }
             resolve();
         });
-    });                   
+    });
 };
 
 BGAPI.prototype.clearStorage = function () {
@@ -3287,7 +3279,7 @@ chrome.extension.onConnect.addListener(function (port) {
             //console.debug("[SOP] " + rpc.cmd);
             var ret = handler(ctx, rpc);
             if (ret instanceof Promise) {
-                
+
                 ret.then(function (result) {
                     if (rpc.times) {
                         rpc.times.bgout = performance.now();
@@ -3387,5 +3379,3 @@ var KeyCache = (function () {
     };
     return new KeyCache();
 })();
-
-API = new BGAPI();

@@ -29,7 +29,8 @@
 		    "vault.js",
 		    "ui.js",
 		    "twitter.js",
-		    "background.js"
+		    "background.js",
+		    "main.js"
 		   ]
     },
     "options_ui": {
