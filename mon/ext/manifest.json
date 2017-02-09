@@ -29,6 +29,7 @@
 		    "vault.js",
 		    "ui.js",
 		    "twitter.js",
+		    "certs.js",
 		    "background.js",
 		    "main.js"
 		   ]
