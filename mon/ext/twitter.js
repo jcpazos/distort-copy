@@ -642,13 +642,26 @@ var Twitter = (function (module) {
             return streamer;
         },
 
-        removeStreamer: function(streamerID) {
-            console.log("removing streamer ", streamerID);
-            if (!streamerID) {
+        removeStreamer: function(streamer) {
+            console.log("removing streamer ", streamer);
+            if (!streamer) {
                 return;
             }
-            this.streamers[streamerID].abort();
-            delete this.streamers[streamerID];
+
+            var id;
+
+            if (streamer instanceof Streamer) {
+                id = streamer.streamerID;
+            } else {
+                id = "" + streamer;
+            }
+
+            if (!this.streamers[id]) {
+                    console.debug("no streamer with id: " + id);
+            } else {
+                this.streamers[id].abort();
+                delete this.streamers[id];
+            }
         }
     };
 
