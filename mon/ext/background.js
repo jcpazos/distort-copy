@@ -2859,7 +2859,7 @@ var handlers = {
 
         var method = protTypes[rpc.params.type];
         var keyid = rpc.params.keyObj.keyid;
- 
+
         if (method) {
             var streamKey = KeyLoader.fromStore(rpc.params.keyObj);
             return UI[method](rpc.params.val, streamKey);
@@ -2914,7 +2914,7 @@ var handlers = {
 
     app_message: function (ctx, rpc) {
         "use strict";
-            
+
         rpc.params = assertType(rpc.params, {
             msg: {}
         });
