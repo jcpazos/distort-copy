@@ -33,6 +33,9 @@
 var Twitter = (function (module) {
     "use strict";
 
+    // lib/twitter-text.js
+    var TT = window.twttr;
+
     /** returns an XMLHttpRequest with appropriate authorize headers
         for the given URL, using App-Only and user auth.
 
@@ -163,6 +166,58 @@ var Twitter = (function (module) {
     });
 
     module.Streamer = Streamer;
+
+    function BasicStreamer(hashtag, streamerID, accountCredentials) {
+        BasicStreamer.__super__.constructor.call(this, hashtag, streamerID, accountCredentials);
+
+        this.tpost.onreadystatechange = (function () {
+            if (this.tpost.readyState > 2)  {
+                if (this.tpost.status >= 200 && this.tpost.status <= 400) {
+                    //parse pkey info and save into database
+                    //start at the index we left off
+                    //console.log('responseText ', this.tpost.responseText);
+                    this.stream_buffer = this.tpost.responseText.substr(this.index);
+                    //remove possible leading whitespace from tpost.responseText
+                    this.stream_buffer = this.stream_buffer.replace(/^\s+/g, "");
+                    while (this.stream_buffer.length !== 0 &&
+                           this.stream_buffer[0] !== '\n' &&
+                           this.stream_buffer[0] !== '\r') {
+                        var curr_index = this.stream_buffer.indexOf('\n');
+                        this.index += this.stream_buffer.indexOf('\n')+1;
+
+                        var json = this.stream_buffer.substr(0, curr_index);
+
+                        if (json.length > 0) {
+                            try {
+                                var tweet = JSON.parse(json);
+                                this.emit("tweet", tweet);
+                            } catch (error) {
+                                console.error("ERR: ", error, json);
+                            }
+                        }
+                        this.stream_buffer = this.stream_buffer.substr(curr_index+1);
+                    }
+
+                    if (this.tpost.length >= 10000) {
+                        //FIXME -- not tested -- do the partial tweets stick around?
+                        this._initXHR();
+                        this.tweetCount = 0;
+                    }
+
+                } else {
+                    // fixme. do restart
+                    console.error("Stream connection failed.", this.tpost.status, this.tpost.responseText);
+                    this.abort();
+                }
+            }
+        });
+    }
+
+    _extends(BasicStreamer, Streamer, {
+
+    });
+
+    module.BasicStreamer = BasicStreamer;
 
     function TweetStreamer(hashtag, streamerID, accountCredentials) {
         TweetStreamer.__super__.constructor.call(this, hashtag, streamerID, accountCredentials);
@@ -406,7 +461,8 @@ var Twitter = (function (module) {
         this.ref2hash  = {};  // refName => [hashtag, hashtag, ...]
     }
 
-    StreamerManager.prototype = {
+
+    _extends(StreamerManager, Emitter, {
         _updateSub: function (hashtag, refName, creds) {
 
             var subs, hashes;
@@ -449,6 +505,37 @@ var Twitter = (function (module) {
                     }
                 }
             }
+        },
+
+        // one of the managed streamers received a tweet
+        onTweet: function (tweet) {
+            var containedHashes = TT.txt.extractHashtagsWithIndices(tweet.text).map(tok => tok.hashtag);
+
+            // just the hashtags we are subscribed to
+            var groupTags = containedHashes.filter(hashtag => !!this.hash2ref[hashtag]);
+
+            if (groupTags.length === 0) {
+                // not subscribed to any group tag mentioned.
+                // probably means we're out of sync with the streaming.
+                return;
+            }
+
+            // get the list of accounts and hashtags concerned with the incoming tweet
+            var affectedRefs = [];
+            groupTags.forEach(hashtag => {
+                this.hash2ref[hashtag].forEach(ref => {
+                    if (affectedRefs.indexOf(ref) === -1) {
+                        affectedRefs.push(ref);
+                    }
+                });
+            });
+
+            this.emit("tweet", {
+                tweet: tweet,
+                hashtags: containedHashes,
+                groups: groupTags,
+                refs: affectedRefs
+            });
         },
 
         /**
@@ -620,7 +707,11 @@ var Twitter = (function (module) {
                 }
 
 
-                var newStreamer = this.addStreamer(afterHashes, TweetStreamer, this.ref2creds[growRef]);
+                var newStreamer = this.addStreamer(afterHashes, BasicStreamer, this.ref2creds[growRef]);
+                newStreamer.on('tweet', tweet => {
+                    this.onTweet(tweet, newStreamer);
+                });
+
                 newStreamer.send();
                 return this._scheduleStreamUpdate();
             }

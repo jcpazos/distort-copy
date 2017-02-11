@@ -20,7 +20,7 @@
 /*global
   chrome, Promise, performance,
   ECCPubKey, AESKey, KeyLoader, Friendship,
-  UI, Utils, Vault, Twitter,
+  UI, Utils, Vault, Twitter, Certs,
   Events, API,
   getHost, Fail, assertType, OneOf, KH_TYPE, MSG_TYPE, _extends
 */
@@ -341,7 +341,7 @@ KAPEngine.prototype = {
             kap.friendship.reject(err);
             throw err;
         }
-        
+
         console.log("received kap2 in state:", kap.state, kap);
 
         if (msg.hdr.AFID !== kap.aId) {
@@ -1221,7 +1221,7 @@ CryptoCtx.prototype = {
         "use strict";
 
         var that = this;
-        
+
         if (!this.kr) {
             console.debug("[message] incoming message");
         } else {
@@ -1427,7 +1427,7 @@ CryptoCtx.prototype = {
         }).then(function (tpost) {
             UI.log("Stream for @" + that.kr.username + " acquired.");
             return tpost;
-        });   
+        });
     },
 
     encryptMessage: function (principals, plaintext) {
@@ -1437,7 +1437,7 @@ CryptoCtx.prototype = {
         var result = [];
         var promisesPromises = [];
         var i;
-        
+
         for (i = 0; i < principals.length; i++) {
             promisesPromises.push(API.fetchPublic(principals[i]));
         }
@@ -1642,6 +1642,7 @@ function BGAPI() {
     // accountid => Vault.Account
     this.activeAccounts = {};
     this.streamerManager = new Twitter.StreamerManager();
+    this.certManager = new Certs.CertManager(this.streamerManager);
 
     Events.on('account:updated', this.accountUpdated, this);
     Events.on('account:deleted', this.accountDeleted, this);
