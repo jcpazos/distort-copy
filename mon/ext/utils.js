@@ -875,6 +875,9 @@ var KH_TYPE = {keyid: ""};
 var MSG_TYPE = {type: "", hdr: { to: "", from: "" }};
 
 var Utils = {
+
+    _extends: _extends,
+
     // string made from 128 random bits
     randomStr128: function () {
         "use strict";
