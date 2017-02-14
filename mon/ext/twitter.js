@@ -512,7 +512,7 @@ var Twitter = (function (module) {
             var containedHashes = TT.txt.extractHashtagsWithIndices(tweet.text).map(tok => tok.hashtag);
 
             // just the hashtags we are subscribed to
-            var groupTags = containedHashes.filter(hashtag => !!this.hash2ref[hashtag]);
+            var groupTags = containedHashes.filter(hashtag => (this.hash2ref[hashtag] || []).length > 0);
 
             if (groupTags.length === 0) {
                 // not subscribed to any group tag mentioned.
