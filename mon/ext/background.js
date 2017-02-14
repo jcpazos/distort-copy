@@ -543,7 +543,6 @@ function CryptoCtx(port) {
     this.extCallId = -1;
     this.promptId = 0;
     this.tweetStreamerID = '';
-    this.pKeyStreamerID = '';
 
     // content script pending call structures
     this._csCalls = {};
@@ -604,7 +603,6 @@ CryptoCtx.prototype = {
     close: function () {
         "use strict";
         API.streamerManager.removeStreamer(this.tweetStreamerID);
-        API.streamerManager.removeStreamer(this.pKeyStreamerID);
         this.port = null;
         this.tabId = -1;
         if (this.kapEngine) {
@@ -1466,11 +1464,9 @@ CryptoCtx.prototype = {
 
     },
 
-    setStreamerIDs: function (tweetStreamerID, pKeyStreamerID) {
+    setStreamerIDs: function (tweetStreamerID) {
         "use strict";
         this.tweetStreamerID = tweetStreamerID;
-        this.pKeyStreamerID = pKeyStreamerID;
-
     }
 };
 
@@ -2083,7 +2079,7 @@ BGAPI.prototype.openTwitterStream = function (hashtag, username) {
     "use strict";
     var that = this;
 
-    return new Promise(function (resolve, reject) { 
+    return new Promise(function (resolve, reject) {
         console.debug("[BGAPI] getting Twitter Stream for :", username);
         // assumes a single tabId will be returned
         var ctx;
@@ -2110,7 +2106,6 @@ BGAPI.prototype.openTwitterStream = function (hashtag, username) {
                             throw err;
                         }).then(function (keyObj) {
                             var tweetStreamer = that.streamerManager.addStreamer(hashtag, Twitter.TweetStreamer, keyObj);
-                            var pKeyStreamer = that.streamerManager.addStreamer(hashtag, Twitter.PkeyStreamer, keyObj);
                             tweetStreamer.on('sendTweet', function (tweet) {
                                 console.log('new tweet received', tweet);
                                 //TOOD: -fix bug with ctx not having the keyring open
@@ -2119,9 +2114,8 @@ BGAPI.prototype.openTwitterStream = function (hashtag, username) {
                             });
                             console.log('ctx tab id', ctx.tabId);
                             //console.log('setting tweetStreamerID to ', tweetStreamer.streamerID);
-                            ctx.setStreamerIDs(tweetStreamer.streamerID, pKeyStreamer.streamerID);
+                            ctx.setStreamerIDs(tweetStreamer.streamerID);
                             tweetStreamer.send(tweetStreamer.postData);
-                            pKeyStreamer.send(pKeyStreamer.postData);
                         });
                     }
                 }

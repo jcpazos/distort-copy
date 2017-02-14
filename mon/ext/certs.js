@@ -471,6 +471,12 @@ window.Certs = (function (module) {
                 if (!userCert) {
                     return null;
                 } else {
+                    // How pubkeys used to be stored. after public key tweet was received
+                    // var storageName = CryptoCtx.globalKeyName(username, "@");
+                    // var pubKey = pubKeyContainer.key;
+                    // API.storeKey(storageName, pubKey).then(function () {
+                    //    console.log('stored key for username ', username);
+                    // });
                     return module.Store.saveCert(userCert);
                 }
             });
