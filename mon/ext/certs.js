@@ -18,7 +18,7 @@
 **/
 
 /*global
-  Promise, Fail, Utils,
+  Promise, Fail, Utils, Emitter,
   KeyLoader, ECCPubKey,
   IDBKeyRange
 */
@@ -30,130 +30,88 @@ window.Certs = (function (module) {
     "use strict";
 
     var IDB = window.indexedDB;
-    // lib/twitter-text.js
-    var TT = window.twttr;
 
-    function UserCert(opts) {
+    /*
+      The certificates are submitted as multiple tweets/parts
+      which may or may not arrive at the same time. those are
+      tracked here.
+    */
+    function PartialCert(opts) {
         opts = opts || {};
 
-        // uniqueness
-        this.id = opts.id || Utils.randomStr128();
-
+        // taken from tweet envelope
         this.primaryId = opts.primaryId || null;
         this.primaryHdl = opts.primaryHdl || null;
-        this.secondaryId = opts.secondaryId || null;
-        this.secondaryHdl = opts.secondaryHdl || null;
-        this.validFrom = opts.validFrom || 0; // Unix. seconds.
-        this.validUntil = opts.validUntil || 0; // Unix. seconds.
-        this.completedOn = opts.completedOn || 0; // Date cert was assembled. Unix. seconds.
-        this.verifiedOn = opts.verifiedOn || 0; // Date cert was verified. Unix. seconds.
-        this.status = opts.status || UserCert.STATUS_UNKNOWN;
-        this.groups = (opts.groups || []).slice(); // group memberships listed in the certs.
-        this.key = opts.key || null; // ECCPubkey
 
-        /*
-          The certificates are submitted as multiple tweets/parts
-          which may or may not arrive at the same time. those are
-          tracked here.
-        */
-        this.parts = {
-            signkey: (opts.parts || {}).signkey || null,
-            encryptkey: (opts.parts || {}).encryptkey || null,
-            keysig: (opts.parts || {}).keysig || null
-        };
+        // taken from first tweet in sequence
+        this.groups = opts.groups || [];
+
+        // the following are saved as strings until signature verification
+        this.primaryTs = opts.primaryTs || 0; /* ts string. unix. */
+        this.expirationTs = opts.expirationTs || 0; /* ts string. unix. */
+        this.signkey =  opts.signkey || null;
+        this.encryptkey = opts.encryptkey || null;
+        this.keysig = opts.keysig || null;
     }
-    UserCert.STATUS_FAIL = -1;
-    UserCert.STATUS_UNKNOWN = 0;
-    UserCert.STATUS_PASS = 1;
 
-    KeyLoader.registerClass("ucert", UserCert);
-
-    UserCert.fromStore = function (obj) {
-        if (obj.typ !== "ucert") {
-            return null;
-        }
-        return new UserCert(obj);
-    };
-
-    UserCert.prototype = {
-        toStore: function () {
-            return {
-                typ: "ucert",
-                id: this.id,
-                primaryId: this.primaryId,
-                primaryHdl: this.primaryHdl,
-                secondaryId: this.secondaryId,
-                secondaryHdl: this.secondaryHdl,
-                validFrom: this.validFrom,
-                validUntil: this.validUntil,
-                completedOn: this.completedOn,
-                verifiedOn: this.verifiedOn,
-                status: this.status,
-                groups: this.groups,
-                key: (this.key) ? this.key.toStore() : null,
-                parts: this.parts
-            };
+    PartialCert.prototype = {
+        _updateTs: function (ts) {
+            if (ts <= 0) {
+                throw new Fail(Fail.BADPARAM, "invalid ts: " + ts);
+            }
+            if (this.primaryTs === 0) {
+                this.primaryTs = ts;
+            } else if (this.primaryTs !== ts) {
+                throw new Fail(Fail.BADPARAM, "expected ts " + this.primaryTs + " but got: " + ts);
+            }
         },
 
-        _parseSignKey: function (text) {
+        parseSignKey: function (toks) {
             // var signStatus = "#signkey " + ts + " " + signKey;
-            var toks = text.split(/\s+/);
-            var signkey = {ts: 0, strkey: null};
-
-            if (toks.length === 3 && Number(toks[1])) {
-                signkey.ts = toks[1];
-                signkey.strkey = toks[2];
-                this.parts.signkey = signkey;
+            if (toks.length >= 3 && Number(toks[1])) {
+                this._updateTs(toks[1]);
+                this.signkey = toks[2];
             } else {
                 throw new Fail(Fail.BADPARAM, "unrecognized syntax for signkey msg.");
             }
         },
 
-        _parseEncryptKey: function (text) {
+        parseEncryptKey: function (toks) {
             // var encryptStatus = "#encryptkey " + ts + " " + encryptKey;
-            var toks = text.split(/\s+/);
-            var encryptkey = {ts: 0, strkey: null};
-
-            if (toks.length === 3 && Number(toks[1])) {
-                encryptkey.ts = toks[1];
-                encryptkey.strkey = toks[2];
-                this.parts.encryptkey = encryptkey;
+            if (toks.length >= 3 && Number(toks[1])) {
+                this._updateTs(toks[1]);
+                this.encryptkey = toks[2];
             } else {
                 throw new Fail(Fail.BADPARAM, "unrecognized syntax for encryptkey msg.");
             }
         },
 
-        _parseKeySig: function (text) {
+        parseKeySig: function (toks) {
             // var sigStatus = "#keysig " + ts + " " + expiration + " " + signature;
-            var toks = text.split(/\s+/);
-            var keysig = {ts: 0, strsign: null, expiration: 0};
-
-            if (toks.length === 4 && Number(toks[1]) && Number(toks[2])) {
-                keysig.ts = toks[1];
-                keysig.expiration = toks[2];
-                keysig.strsign = toks[3];
-                this.parts.keysig = keysig;
+            if (toks.length >= 4 && Number(toks[1]) && Number(toks[2])) {
+                this._updateTs(toks[1]);
+                this.expirationTs = toks[2];
+                this.keysig = toks[3];
             } else {
                 throw new Fail(Fail.BADPARAM, "unrecognized syntax for sigkey msg.");
             }
         },
 
         /**
-           takes the 3 parts of the cert, verifies them, and completes
-           the certificate object fields.
+           takes the 3 parts of the cert, verifies them, and creates a full UserCert.
 
-           @returns true on success, false if not enough information is available (parts are
-           missing),
+           @returns a filled-in UserCert on success, otherwise null if
+           enough information is available (parts are missing),
 
            @throws STALE if key is old, GENERIC if the verification fails otherwise.
         */
-        _completeCert: function () {
+        completeCert: function () {
             var that = this;
 
-            if (!this.parts.signkey ||
-                !this.parts.encryptkey ||
-                !this.parts.keysig) {
-                return false;
+            if (!this.signkey ||
+                !this.encryptkey ||
+                !this.keysig) {
+                return null;
             }
 
             function parseKey(sign, encrypt, expiration, signature, timestamp) {
@@ -170,38 +128,110 @@ window.Certs = (function (module) {
                     throw new Fail(Fail.GENERIC, "verification failed");
                 }
                 return {key:  key,
-                        ts: Number(timestamp),
-                        expiration: Number(expiration)};
+                        ts: Number(timestamp) /*in ms*/,
+                        expiration: Number(expiration) /*in ms*/};
             }
 
-            if (this.parts.signkey.ts !== this.parts.encryptkey.ts ||
-                this.parts.signkey.ts !== this.parts.keysig.ts) {
-                throw new Fail(Fail.GENERIC, "ts mismatch");
-            }
+            var pubKeyContainer = parseKey(this.signkey,
+                                           this.encryptkey,
+                                           this.expirationTs,
+                                           this.keysig,
+                                           this.primaryTs);
 
-            var pubKeyContainer = parseKey(this.parts.signkey.strkey,
-                                           this.parts.encryptkey.strkey,
-                                           this.parts.keysig.expiration,
-                                           this.parts.keysig.strsig,
-                                           this.parts.signkey.ts);
-
-            if (pubKeyContainer.expiration < Date.now() || pubKeyContainer.expiration / 1000 > this.validFrom ) {
+            if (pubKeyContainer.expiration < Date.now() || pubKeyContainer.expiration < pubKeyContainer.ts) {
                 throw new Fail(Fail.STALE, "Found only a stale key for " + that.primaryHdl);
             }
 
-            // validFrom is set to the date at which we receive the first part
-            this.validUntil = pubKeyContainer.expiration / 1000;
-            this.completedOn = Date.now() / 1000;
-            this.verifiedOn = 0;
-            this.status = UserCert.STATUS_UNKNOWN;
-            // groups is set on the first key tweet
-            this.key = pubKeyContainer.key;
-            this.parts = null;
-            return true;
+            var opts = {
+                primaryHdl: this.primaryHdl,
+                primaryId: this.primaryId,
+                // validFrom is set to the date at which we receive the first part
+                validFrom: pubKeyContainer.ts / 1000,
+                validUntil: pubKeyContainer.expiration / 1000,
+                completedOn: Date.now() / 1000,
+                verifiedOn: 0,
+
+                // groups is set on the first key tweet
+                groups: this.groups,
+            };
+            return new UserCert(opts);
         }
     };
 
+    function UserCert(opts) {
+        opts = opts || {};
+
+        this.primaryId = opts.primaryId || null;
+        this.primaryHdl = opts.primaryHdl || null;
+        this.secondaryId = opts.secondaryId || null;
+        this.secondaryHdl = opts.secondaryHdl || null;
+
+        this.validFrom = opts.validFrom || 0; // Unix. seconds. taken from cert body.
+        this.validUntil = opts.validUntil || 0; // Unix. seconds. taken from cert body.
+
+        this.completedOn = opts.completedOn || 0; // Date cert was assembled. Unix. seconds.
+        this.verifiedOn = opts.verifiedOn || 0; // Date cert was verified. Unix. seconds.
+        this.status = opts.status || UserCert.STATUS_UNKNOWN;
+        this.groups = (opts.groups || []).slice(); // group memberships listed in the certs.
+        this.key = opts.key || null; // ECCPubkey
+    }
+
+    UserCert.STATUS_UNKNOWN = 0;
+    UserCert.STATUS_FAIL = 1;
+    UserCert.STATUS_OK = 2;
+    UserCert.fromStore = function (obj) {
+        if (obj.typ !== "ucert") {
+            return null;
+        }
+        if (obj.key) {
+            obj.key = KeyLoader.fromStore(obj.key);
+        }
+        return new UserCert(obj);
+    };
+    KeyLoader.registerClass("ucert", UserCert);
+
+    UserCert.prototype = {
+
+        // UserCerts have unique (timestamp, primaryId) tuples
+        get id() {
+            if (!this._id) {
+                this._id = (new Date(this.validFrom * 1000)).toISOString() + " " + this.primaryId;
+            }
+            return this._id;
+        },
+
+        toStore: function () {
+            return {
+                typ: "ucert",
+                id: this.id,
+                primaryId: this.primaryId,
+                primaryHdl: this.primaryHdl,
+                secondaryId: this.secondaryId,
+                secondaryHdl: this.secondaryHdl,
+                validFrom: this.validFrom,
+                validUntil: this.validUntil,
+                completedOn: this.completedOn,
+                verifiedOn: this.verifiedOn,
+                status: this.status,
+                groups: this.groups,
+                key: (this.key) ? this.key.toStore() : null,
+            };
+        }
+    };
+
+    /**
+       Singleton class managing a certificate store.
+
+       Aside from offering certificate query/search,
+       the instance will emit the following events:
+
+       cert:updated (UserCert ucert)
+
+           A certificate has been added or modified.
+    */
     function CertStore () {
+        this._partialCerts = [];
+
         this.open = new Promise((resolve, reject) => {
             var request = IDB.open("user_cert_db", 1);
             request.onupgradeneeded = this._setupDB.bind(this);
@@ -215,30 +245,45 @@ window.Certs = (function (module) {
         });
     }
 
-    CertStore.prototype = {
+    Utils._extends(CertStore, Emitter, {
         _setupDB: function (dbevt) {
             var db = dbevt.target.result;
             if (!db.objectStoreNames.contains("user_cert_os")) {
                 // object key is the .id property
+                console.log("creating object store for user certificates");
+
                 var objectStore = db.createObjectStore("user_cert_os", {keyPath: "id"});
 
                 objectStore.createIndex("byId", ["primaryId"], {unique: false});
                 objectStore.createIndex("byHdl", ["primaryHdl"], {unique: false});
-
-                // // In your query section
-                //var transaction = db.transaction('mystore','readonly');
-                //var store = transaction.objectStore('mystore');
-                //var index = store.index('myindex')
-                // // Select only those records where prop1=value1 and prop2=value2
-                //var request = index.openCursor(IDBKeyRange.only([value1, value2]));
-                // // Select the first matching record
-                //var request = index.get(IDBKeyRange.only([value1, value2]));
 
                 objectStore.transaction.oncomplete = function () {
                     // Store values in the newly created objectStore.
                     // store initial values
                     console.debug("Database initialized.");
                 };
+            }
+        },
+
+        getPartialCert: function (filter) {
+            filter = filter || function () { return true; };
+            return this._partialCerts.filter(filter);
+        },
+
+        addPartialCert: function (partialCert) {
+            this._partialCerts.push(partialCert);
+            // remove the partialCert from the list in 5 minutes.
+            // it should be complete by then.
+            window.setTimeout(() => {
+                console.log("Removing partial cert from: ", partialCert.primaryHdl + " due to timeout.");
+                this.removePartialCert(partialCert);
+            }, 5 * 60 * 1000);
+        },
+
+        removePartialCert: function (partialCert) {
+            var pIndex = this._partialCerts.indexOf(partialCert);
+            if (pIndex >= 0) {
+                this._partialCerts.splice(pIndex, 1);
             }
         },
 
@@ -269,9 +314,12 @@ window.Certs = (function (module) {
                     var store = trx.objectStore("user_cert_os");
                     var request = store.put(cert.toStore());
                     request.onsuccess = function () {
-                        resolve(cert.id);
+                        resolve(cert);
                     };
                 });
+            }).then(cert => {
+                this.emit("cert:updated", cert);
+                return cert;
             });
         },
 
@@ -291,43 +339,25 @@ window.Certs = (function (module) {
                 });
             });
         },
-
-        /*
-          searches the database of certificates based on the parameters
-          given.
-
-          returns a list of matching UserCerts
-        */
-        searchCerts: function (params) {
-            return [];
-        },
-
-        // promises the latest verified certificate known from the
-        // given user.
-        getVerifiedCert: function (primaryId, secondaryId) {
-
-        }
-    };
+    });
 
     /**
        Listens for certificates on group streams.
     */
-    function Manager(streamerManager) {
-        this.streamerManager = streamerManager;
-        this.streamerManager.on('tweet', this.onTweet, this);
+    function TwitterListener(streamerManager) {
+        streamerManager.on('tweet', this.onTweet, this);
 
         this._pendingTweets = [];
         this._dropCount = 0;
         this._scheduled = false;
     }
 
-    Manager.QUEUE_LIMIT = 100;
+    TwitterListener.QUEUE_LIMIT = 100;
 
-    Manager.prototype = {
+    TwitterListener.prototype = {
         _scheduleProcessing: function (toQueue) {
-
             if (toQueue) {
-                if (this._pendingTweets.length > Manager.QUEUE_LIMIT) {
+                if (this._pendingTweets.length > TwitterListener.QUEUE_LIMIT) {
                     this._dropCount += 1;
                     console.log("Dropping certificate tweet. queue limit exceeded. (" + this._dropCount + ")");
                 } else {
@@ -345,6 +375,7 @@ window.Certs = (function (module) {
                 var batch = this._pendingTweets;
                 this._pendingTweets = [];
                 console.debug("Processing " + batch.length + " certificate tweets.");
+
                 Promise.all(batch.map(tweetInfo => this._processTweet(tweetInfo))).catch(err => {
                     console.error("error processing certificate tweets", err);
                 }).then(() => {
@@ -359,107 +390,97 @@ window.Certs = (function (module) {
            Construct a certificate from incoming tweets
         */
         _processTweet: function (tweetInfo) {
-            var tweet = tweetInfo.tweet;
-            var groups = tweetInfo.groupTags.filter(hashtag => !["encryptkey", "signkey", "keysig"].includes(hashtag));
+            return new Promise(resolve => {
+                var tweet = tweetInfo.tweet;
+                var groups = tweetInfo.hashtags.filter(hashtag => !["encryptkey", "signkey", "keysig"].includes(hashtag));
 
-            if (!tweet || !tweet.user) {
-                console.error("malformed tweet?", tweet);
-                return;
-            }
+                if (!tweet || !tweet.user) {
+                    console.error("malformed tweet?", tweet);
+                    return;
+                }
+                // author
+                var userid = tweet.user.id_str;
+                var handle = tweet.user.screen_name;
+                var partialCert = null;
 
-            // author
-            var userid = tweet.user.id_str;
-            var handle = tweet.user.screen_name;
+                if (!userid || !handle) {
+                    throw new Fail(Fail.GENERIC, "malformed tweet");
+                }
 
-            if (!userid || !handle) {
-                console.error("malformed tweet?", tweet);
-                return;
-            }
+                var toks = tweet.text.split(/\s+/);
 
+                if (toks.length < 2 || !Number(toks[1])) {
+                    throw new Fail(Fail.GENERIC, "malformed tweet");
+                }
+                var primaryTs = toks[1];
 
-            module.Store.loadCertsById(userid).then(certs => {
-                var incompleteCerts = certs.filter(cert => (cert.completedOn === 0));
-                var authorCerts = incompleteCerts.filter(cert => (cert.primaryHdl === handle));
-                function _mostRecent(a, b) {
-                    if (a.validFrom > b.validFrom) {
-                        return -1;
-                    } else if (a.validFrom < b.validFrom) {
-                        return 1;
-                    } else {
-                        return 0;
+                /* TODO check that ts in tweet envelope is close to body ts */
+
+                var partialCerts = module.Store.getPartialCert(cert => {
+                    return cert.primaryId === userid && cert.primaryHdl === handle && cert.primaryTs === primaryTs;
+                });
+
+                partialCert = partialCerts[0];
+                if (!partialCert) {
+                    partialCert = new PartialCert({
+                        primaryId: userid,
+                        primaryHdl: handle,
+                        primaryTs: primaryTs,
+                        groups: groups
+                    });
+                    module.Store._addPartialCert(partialCert);
+                }
+
+                return resolve({toks: toks, partialCert: partialCert});
+
+            }).then(info => {
+                return new Promise(resolve => {
+                    if (tweetInfo.hashtags.indexOf("signkey") !== -1) {
+                        info.partialCert.parseSignKey(info.toks);
                     }
-                }
-                authorCerts.sort(_mostRecent);
-                return authorCerts[0] || null;
-            }).then(incompleteCert => {
-                if (!incompleteCert) {
-                    incompleteCert = new UserCert({primaryId: userid, primaryHdl: handle});
-                }
 
-                if (incompleteCert.validFrom  === 0) {
-                    incompleteCert.validFrom = Date.now() / 1000;
-                }
+                    if (tweetInfo.hashtags.indexOf("encryptKey") !== -1) {
+                        info.partialCert.parseEncryptKey(info.toks);
+                    }
+                    if (tweetInfo.hashtags.indexOf("keysig") !== -1) {
+                        info.partialCert.parseKeySig(info.toks);
+                    }
 
-                if (incompleteCert.groups.length === 0 && groups.length > 0) {
-                    incompleteCert.groups = groups.length;
-                }
+                    var userCert = info.partialCert.completeCert();
 
-                if (hashtags.indexOf("signkey") !== -1) {
-                    incompleteCert._parseSignKey(tweet.text);
-                }
-                if (hashtags.indexOf("encryptKey") !== -1) {
-                    incompleteCert._parseEncryptKey(tweet.text);
-                }
-                if (hashtags.indexOf("keysig") !== -1) {
-                    incompleteCert._parseKeySig(tweet.text);
-                }
-                return incompleteCert;
-            }).then(filledInCert => {
-                //check if we have all the user info needed
-                try {
-                    filledInCert._completeCert();
-                } catch (err) {
+                    if (userCert) {
+                        //we have all the user info needed. the cert is complete.
+                        module.Store.removePartialCert(info.partialCert);
+                        return resolve(userCert);
+                    } else {
+                        //still waiting for more information.
+                        return resolve(null);
+                    }
+
+                }).catch(err => {
                     if (err instanceof Fail) {
-                        // verification failed. forget the cert.
-                        //
-                        return module.Store.deleteCert(filledInCert).then(() => null);
-                    } else {
-                        throw err;
+                        console.log("removing partial cert from " +
+                                    info.partialCert.primaryHdl +
+                                    " due to parse error", err);
+                        module.Store.removePartialCert(info.partialCert);
                     }
-                }
-                return filledInCert;
-            }).then(updatedCert => {
+                    throw err;
+                });
+            }).then(userCert => {
                 // save the updated cert.
+                if (!userCert) {
+                    return null;
+                } else {
+                    return module.Store.saveCert(userCert);
+                }
             });
-
-        },
-
-        /** parse certificate tweets and insert them in the database */
-        onTweet: function (tweetInfo) {
-            var tweet = tweetInfo.tweet;
-
-            if (tweetInfo.hashtags.indexOf("encryptkey") === -1 &&
-                tweetInfo.hashtags.indexOf("signkey") === -1 &&
-                tweetInfo.hashtags.indexOf("keysig") === -1) {
-                // does not contain a key or part of a key
-                return;
-            }
-
-            this._scheduleProcessing(tweetInfo);
-
-            this._pendingTweets.push(tweetInfo);
-            if (this._scheduled === false) {
-                window.setTimeout(() => {
-                    this._processIncoming().catch(err => {
-                        console.error("error processing certificate tweets", err);
-                    }).then(() => {
-                        this._scheduled
-                }, 0);
-            }
         },
     };
 
     module.UserCert = UserCert;
     module.Store = new CertStore();
+    module.listenForTweets = function (streamer) {
+        new TwitterListener(streamer);
+    };
     return module;
 })(window.Certs || {});

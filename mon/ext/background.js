@@ -1642,7 +1642,7 @@ function BGAPI() {
     // accountid => Vault.Account
     this.activeAccounts = {};
     this.streamerManager = new Twitter.StreamerManager();
-    this.certManager = new Certs.CertManager(this.streamerManager);
+    Certs.listenForTweets(this.streamerManager);
 
     Events.on('account:updated', this.accountUpdated, this);
     Events.on('account:deleted', this.accountDeleted, this);
