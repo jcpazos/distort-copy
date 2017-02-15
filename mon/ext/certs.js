@@ -31,6 +31,9 @@ window.Certs = (function (module) {
 
     var IDB = window.indexedDB;
 
+    // lib/twitter-text.js
+    var TT = window.twttr;
+
     /*
       The certificates are submitted as multiple tweets/parts
       which may or may not arrive at the same time. those are
@@ -53,6 +56,13 @@ window.Certs = (function (module) {
         this.encryptkey = opts.encryptkey || null;
         this.keysig = opts.keysig || null;
     }
+    PartialCert.ENCRYPTKEY = "encryptkey";
+    PartialCert.SIGNKEY = "signkey";
+    PartialCert.KEYSIG = "keysig";
+    PartialCert.TAGS = [PartialCert.ENCRYPTKEY,
+                        PartialCert.SIGNKEY,
+                        PartialCert.KEYSIG];
+    PartialCert.POUND_TAGS = PartialCert.TAGS.map(tag => "#" + tag);
 
     PartialCert.prototype = {
         _updateTs: function (ts) {
@@ -66,32 +76,90 @@ window.Certs = (function (module) {
             }
         },
 
-        parseSignKey: function (toks) {
+        // feeds in partial certificate content.
+        // toks is the message tokens from a tweet.
+
+        // this will attempt to complete the cert.
+        // returns a full certificate if all the tokens
+        // were received.
+        feed: function (toks) {
+            if (toks.length < 2) {
+                throw new Fail(Fail.BADPARAM, "invalid tokens for partialcert");
+            }
+            if (!PartialCert.POUND_TAGS.includes(toks[0])) {
+                throw new Fail(Fail.BADPARAM, "invalid tokens for partialcert");
+            }
+            if (toks[0] === "#" + PartialCert.ENCRYPTKEY) {
+                this._parseEncryptKey(toks);
+            } else if (toks[0] === "#" + PartialCert.SIGNKEY) {
+                this._parseSignKey(toks);
+            } else if (toks[0] === "#" + PartialCert.KEYSIG) {
+                this._parseKeySig(toks);
+            } else {
+                throw new Error("unexpected tag type");
+            }
+
+            return this.completeCert();
+        },
+
+        _setGroups: function (toks) {
+            // no #, and not one of TAGS
+            var clean = [];
+            toks.forEach(tok => {
+                var hashes = TT.txt.extractHashtagsWithIndices(tok).map(tok => tok.hashtag);
+                if (hashes.length > 0 && !PartialCert.TAGS.includes(hashes[0])) {
+                    clean.push(hashes[0]);
+                }
+            });
+
+            // first time we fill this in -- need at least one group
+            if (!this.groups) {
+                if (clean.length === 0) {
+                    throw new Fail(Fail.BADPARAM, "empty group set");
+                }
+                this.groups = clean;
+                return;
+            }
+
+            // must match what we had before
+            var mismatch = clean.findIndex(tag => !this.groups.includes(tag));
+            if (mismatch > -1) {
+                throw new Fail(Fail.BADPARAM, "tag " + clean[mismatch] + " in tweet not in groups recognized so far.");
+            }
+        },
+
+        _parseSignKey: function (toks) {
             // var signStatus = "#signkey " + ts + " " + signKey;
             if (toks.length >= 3 && Number(toks[1])) {
                 this._updateTs(toks[1]);
                 this.signkey = toks[2];
+                // find all tags that follow -- assume they are groups for this cert
+                this._setGroups(toks.slice(3).filter(tok => tok && tok.substr(0, 1) === "#"));
             } else {
                 throw new Fail(Fail.BADPARAM, "unrecognized syntax for signkey msg.");
             }
         },
 
-        parseEncryptKey: function (toks) {
+        _parseEncryptKey: function (toks) {
             // var encryptStatus = "#encryptkey " + ts + " " + encryptKey;
             if (toks.length >= 3 && Number(toks[1])) {
                 this._updateTs(toks[1]);
                 this.encryptkey = toks[2];
+                // find all tags that follow -- assume they are groups for this cert
+                this._setGroups(toks.slice(3).filter(tok => tok && tok.substr(0, 1) === "#"));
             } else {
                 throw new Fail(Fail.BADPARAM, "unrecognized syntax for encryptkey msg.");
             }
         },
 
-        parseKeySig: function (toks) {
+        _parseKeySig: function (toks) {
             // var sigStatus = "#keysig " + ts + " " + expiration + " " + signature;
             if (toks.length >= 4 && Number(toks[1]) && Number(toks[2])) {
                 this._updateTs(toks[1]);
                 this.expirationTs = toks[2];
                 this.keysig = toks[3];
+                // find all tags that follow -- assume they are groups for this cert
+                this._setGroups(toks.slice(4).filter(tok => tok && tok.substr(0, 1) === "#"));
             } else {
                 throw new Fail(Fail.BADPARAM, "unrecognized syntax for sigkey msg.");
             }
@@ -394,7 +462,6 @@ window.Certs = (function (module) {
         _processTweet: function (tweetInfo) {
             return new Promise(resolve => {
                 var tweet = tweetInfo.tweet;
-                var groups = tweetInfo.hashtags.filter(hashtag => !["encryptkey", "signkey", "keysig"].includes(hashtag));
 
                 if (!tweet || !tweet.user) {
                     console.error("malformed tweet?", tweet);
@@ -427,8 +494,7 @@ window.Certs = (function (module) {
                     partialCert = new PartialCert({
                         primaryId: userid,
                         primaryHdl: handle,
-                        primaryTs: primaryTs,
-                        groups: groups
+                        primaryTs: primaryTs
                     });
                     module.Store._addPartialCert(partialCert);
                 }
@@ -437,18 +503,7 @@ window.Certs = (function (module) {
 
             }).then(info => {
                 return new Promise(resolve => {
-                    if (tweetInfo.hashtags.indexOf("signkey") !== -1) {
-                        info.partialCert.parseSignKey(info.toks);
-                    }
-
-                    if (tweetInfo.hashtags.indexOf("encryptKey") !== -1) {
-                        info.partialCert.parseEncryptKey(info.toks);
-                    }
-                    if (tweetInfo.hashtags.indexOf("keysig") !== -1) {
-                        info.partialCert.parseKeySig(info.toks);
-                    }
-
-                    var userCert = info.partialCert.completeCert();
+                    var userCert = info.partialCert.feed(info.toks);
 
                     if (userCert) {
                         //we have all the user info needed. the cert is complete.

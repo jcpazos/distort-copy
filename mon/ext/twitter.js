@@ -980,6 +980,7 @@ var Twitter = (function (module) {
 
             // id => [ partial cert, ... ]
             var partialCerts = {};
+
             function getPartialCert(userid, handle, ts) {
                 var certs = partialCerts[userid] = partialCerts[userid] || [];
                 certs = certs.filter(cert => {
@@ -1005,6 +1006,10 @@ var Twitter = (function (module) {
             var tweets = xmlDoc.getElementsByClassName("js-tweet-text");
             var toks;
 
+            function tagOfInterest(tag) {
+                return Certs.PartialCert.POUND_TAGS.includes(tag);
+            }
+
             for (var i = 0; i < tweets.length; i++) {
 
                 var tweet = tweets[i];
@@ -1020,7 +1025,10 @@ var Twitter = (function (module) {
                     continue;
                 }
 
-                //<span class="_timestamp js-short-timestamp " data-aria-label-part="last" data-time="1448867714" data-time-ms="1448867714000" data-long-form="true">29 Nov 2015</span>
+                //<span class="_timestamp js-short-timestamp "
+                //data-aria-label-part="last" data-time="1448867714"
+                //data-time-ms="1448867714000"
+                //data-long-form="true">29 Nov 2015</span>
                 var timeContainer = content.getElementsByClassName("js-short-timestamp");
                 if (timeContainer.length < 1) {
                     // no timestamp
@@ -1046,7 +1054,7 @@ var Twitter = (function (module) {
                 }
 
                 var foundTags = findtags(tweet);
-                if (!foundTags.includes("#signkey") && !foundTags.includes("#encryptkey") && !foundTags.includes("#keysig")) {
+                if (foundTags.filter(tagOfInterest).length === 0) {
                     continue;
                 }
 
@@ -1066,15 +1074,7 @@ var Twitter = (function (module) {
                 var pCert = getPartialCert(id, authorHandle, toks[1]);
 
                 try {
-                    if (foundTags.includes("#signkey")) {
-                        pCert.parseSignKey(toks);
-                    }
-                    if (foundTags.includes("#encryptkey")) {
-                        pCert.parseEncryptKey(toks);
-                    }
-                    if (foundTags.includes("#keysig")) {
-                        pCert.parseKeySig(toks);
-                    }
+                    pCert.feed(toks);
                 } catch (err) {
                     if ((err instanceof Fail) && err.code === Fail.BADPARAM) {
                         continue;
@@ -1134,58 +1134,49 @@ var Twitter = (function (module) {
                 //parse the response
                 var parser = new DOMParser();
                 var xmlDoc = parser.parseFromString(preq.responseText, "text/html");
-                var loadedkey;
 
                 //look through the response to find keys
-                looktweet(xmlDoc);
+                var latest = looktweet(xmlDoc);
 
-                if (sign !== null && encrypt !== null && signature !== null) {
-                    try {
-                        loadedkey = parseKey(); // captures sign, encrypt, timestamp, expiration, etc.
-                    } catch (err) {
-                        console.error("Failed to parse key: ", sign, encrypt, signature, err);
-                        reject(new Fail(Fail.NOIDENT, "Could not parse keys found."));
-                        return;
-                    }
-                    resolve({key: loadedkey,
-                             ts: Number(timestamp),
-                             expiration: Number(expiration)});
-                } else {
-                    //we failed, do another pass on the search page
-                    var sreq = new XMLHttpRequest();
-                    sreq.open("GET", "https://twitter.com/search?q=%23signkey%20OR%20%23encryptkey%20OR%20%23signature%20from%3A" + username, true);
-                    sreq.onerror = function () {
-                        console.error("Prolem loading tweets (search)", [].slice.apply(arguments));
-                        reject(new Fail(Fail.GENERIC, "Ajax failed."));
-                    };
-
-                    sreq.onload = function () {
-                        //parse the response to find the key
-                        var parser = new DOMParser();
-                        var xmlDoc = parser.parseFromString(sreq.responseText, "text/html");
-                        looktweet(xmlDoc);
-                        if (sign !== null && encrypt !== null && signature !== null) {
-                            try {
-                                resolve({key: parseKey(),
-                                         ts: Number(timestamp),
-                                         expiration: Number(expiration)});  // captures sign, encrypt, timestamp, expiration, etc.
-                            } catch (err) {
-                                console.error("Failed to parse key: ", sign, encrypt, signature, err);
-                                reject(new Fail(Fail.NOIDENT, "Could not parse keys found."));
-                                return;
-                            }
-                        } else {
-                            console.error("failed to find both keys and signature for @" + username, sign, encrypt, signature);
-                            reject(new Fail(Fail.NOIDENT, "Could not find key in tweets."));
-                            return;
-                        }
-                    };
-                    //send the search request
-                    sreq.send();
+                if (!latest) {
+                    return reject(new Fail(Fail.NOIDENT, "Could not parse keys found."));
                 }
+
+                resolve(latest);
             };
             //send the profile request
             preq.send();
+
+        }).catch(err => {
+            if (!(err instanceof Fail) || err.code !== Fail.NOIDENT) {
+                throw err;
+            }
+
+            //we failed, do another pass on the search page
+            console.debug("getting directly from " + handle + "'s feed failed. trying search page...");
+            return new Promise((resolve, reject) => {
+                var sreq = new XMLHttpRequest();
+                var tagsearch = Certs.PartialCert.POUND_TAGS.map(tag => encodeURIComponent(tag)).join("%20OR%20");
+                sreq.open("GET", "https://twitter.com/search?q=" + tagsearch +
+                          "%20from%3A" + encodeURIComponent(handle), true);
+                sreq.onerror = function () {
+                    console.error("Prolem loading tweets (search)", [].slice.apply(arguments));
+                    reject(new Fail(Fail.GENERIC, "Ajax failed."));
+                };
+                sreq.onload = function () {
+                    //parse the response to find the key
+                    var parser = new DOMParser();
+                    var xmlDoc = parser.parseFromString(sreq.responseText, "text/html");
+
+                    var latest = looktweet(xmlDoc);
+                    if (!latest) {
+                        return reject(new Fail(Fail.NOIDENT, "could not retrieve key"));
+                    }
+                    resolve(latest);
+                };
+                //send the search request
+                sreq.send();
+            });
         });
     };
 
