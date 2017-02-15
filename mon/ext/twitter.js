@@ -23,7 +23,7 @@
 
   ECCPubKey,
 
-  Emitter,
+  Emitter, Certs,
 
   CryptoCtx
 */
@@ -603,10 +603,9 @@ var Twitter = (function (module) {
                 delete this.streamers[id];
             }
         }
-    };
-
-
+    });
     module.StreamerManager = StreamerManager;
+
     /*
       getUserInfo:
 
@@ -964,5 +963,231 @@ var Twitter = (function (module) {
             xhr.send();
         });
     };
+
+    // Fetches user's latest public key on Twitter
+    //
+    // Promises UserCert
+    //
+    // Fails with NOIDENT if keys can't be found (expired or not)
+    // Fails with GENERIC if any other problem arises
+    //
+    module.fetchLatestCertFromFeed = function (handle) {
+        //return tags contained in the tweet element.
+        //tags include the # sign.
+        //look through the tweets in xmldoc for tags
+        function looktweet(xmlDoc) {
+            //run through tweets looking for the right hashtag
+
+            // id => [ partial cert, ... ]
+            var partialCerts = {};
+            function getPartialCert(userid, handle, ts) {
+                var certs = partialCerts[userid] = partialCerts[userid] || [];
+                certs = certs.filter(cert => {
+                    return cert.primaryTs === ts;
+                });
+                if (certs.length === 0) {
+                    certs.push(new Certs.PartialCert({
+                        primaryId: userid,
+                        primaryHdl: handle,
+                        primaryTs: ts
+                    }));
+                }
+                return certs[0];
+            }
+
+            function findtags(element) {
+                //look through each hashtag for the given element
+                return element.getElementsByClassName("twitter-hashtag").map(elt => {
+                    return elt.innerText;
+                });
+            }
+
+            var tweets = xmlDoc.getElementsByClassName("js-tweet-text");
+            var toks;
+
+            for (var i = 0; i < tweets.length; i++) {
+
+                var tweet = tweets[i];
+                var content = tweet.closest(".content");
+
+                if (!content) {
+                    console.debug("No .content element. in tweet. skipping.", tweet);
+                    continue;
+                }
+
+                var profileLinks = content.getElementsByClassName("js-user-profile-link");
+                if (profileLinks.length < 1) {
+                    continue;
+                }
+
+                //<span class="_timestamp js-short-timestamp " data-aria-label-part="last" data-time="1448867714" data-time-ms="1448867714000" data-long-form="true">29 Nov 2015</span>
+                var timeContainer = content.getElementsByClassName("js-short-timestamp");
+                if (timeContainer.length < 1) {
+                    // no timestamp
+                    continue;
+                }
+
+                var id = profileLinks[0].getAttribute("data-user-id");
+                var authorHandle = profileLinks[0].getElementsByClassName("username")[0];
+                if (!authorHandle) {
+                    console.error("revise syntax");
+                    continue;
+                }
+                // @foo
+                authorHandle = authorHandle.textContent;
+                if (!authorHandle) {
+                    console.error("revise syntax");
+                    continue;
+                }
+                authorHandle = authorHandle.substr(1);
+                if (authorHandle !== handle) {
+                    console.debug("skipping tweet. different author. found " + authorHandle + " but expected " + handle);
+                    continue;
+                }
+
+                var foundTags = findtags(tweet);
+                if (!foundTags.includes("#signkey") && !foundTags.includes("#encryptkey") && !foundTags.includes("#keysig")) {
+                    continue;
+                }
+
+                toks = tweet.innerText.split(/\s+/);
+                if (toks.length < 2 || !Number(toks[1])) {
+                    continue;
+                }
+
+                var messageMs = Number(toks[1]);
+                var postTimeMs = Number(timeContainer[0].getAttribute("data-time-ms"));
+                console.log("Tweet post time:", postTimeMs, " message post time:", messageMs);
+
+                if (Math.abs(postTimeMs - messageMs) > Certs.UserCert.MAX_TIME_DRIFT_PRIMARY_MS) {
+                    continue;
+                }
+
+                var pCert = getPartialCert(id, authorHandle, toks[1]);
+
+                try {
+                    if (foundTags.includes("#signkey")) {
+                        pCert.parseSignKey(toks);
+                    }
+                    if (foundTags.includes("#encryptkey")) {
+                        pCert.parseEncryptKey(toks);
+                    }
+                    if (foundTags.includes("#keysig")) {
+                        pCert.parseKeySig(toks);
+                    }
+                } catch (err) {
+                    if ((err instanceof Fail) && err.code === Fail.BADPARAM) {
+                        continue;
+                    }
+                    throw err;
+                }
+            }
+
+            var allIds = partialCerts.keys();
+            if (allIds.length > 1) {
+                console.error("Retrieved tweets from the user handle with differing twitter ids: ", allIds);
+                return null;
+            }
+
+            var userid = allIds[0];
+
+            // try to complete the partialcerts. this will only succeed for
+            // posts with complete tweet-triples and that pass local checks.
+            var fullCerts = partialCerts[userid].map((pCert) => {
+                try {
+                    var fullCert = pCert.completeCert();
+                    if (fullCert) {
+                        return fullCert;
+                    }
+                } catch (err) {
+                    if (err instanceof Fail) {
+                        return null;
+                    }
+                    throw err;
+                }
+            }).filter(cert => (cert !== null));
+
+            // put latest at the front
+            fullCerts.sort((a, b) => {
+                if (a.primaryTs < b.primaryTs) {
+                    return 1;
+                } else if (a.primaryTs > b.primaryTs) {
+                    return -1;
+                } else {
+                    return 0;
+                }
+            });
+
+            return fullCerts[0] || null;
+        }
+
+        return new Promise(function (resolve, reject) {
+            // fetch the corresponding username's tweets
+            // get the signing key and the encrypting key
+            var preq = new XMLHttpRequest();
+            preq.open("GET", "https://twitter.com/" + encodeURIComponent(handle), true);
+            preq.onerror = function () {
+                console.error("Prolem loading tweets", [].slice.apply(arguments));
+                reject(new Fail(Fail.GENERIC, "Ajax failed."));
+            };
+            preq.onload = function () {
+                //parse the response
+                var parser = new DOMParser();
+                var xmlDoc = parser.parseFromString(preq.responseText, "text/html");
+                var loadedkey;
+
+                //look through the response to find keys
+                looktweet(xmlDoc);
+
+                if (sign !== null && encrypt !== null && signature !== null) {
+                    try {
+                        loadedkey = parseKey(); // captures sign, encrypt, timestamp, expiration, etc.
+                    } catch (err) {
+                        console.error("Failed to parse key: ", sign, encrypt, signature, err);
+                        reject(new Fail(Fail.NOIDENT, "Could not parse keys found."));
+                        return;
+                    }
+                    resolve({key: loadedkey,
+                             ts: Number(timestamp),
+                             expiration: Number(expiration)});
+                } else {
+                    //we failed, do another pass on the search page
+                    var sreq = new XMLHttpRequest();
+                    sreq.open("GET", "https://twitter.com/search?q=%23signkey%20OR%20%23encryptkey%20OR%20%23signature%20from%3A" + username, true);
+                    sreq.onerror = function () {
+                        console.error("Prolem loading tweets (search)", [].slice.apply(arguments));
+                        reject(new Fail(Fail.GENERIC, "Ajax failed."));
+                    };
+
+                    sreq.onload = function () {
+                        //parse the response to find the key
+                        var parser = new DOMParser();
+                        var xmlDoc = parser.parseFromString(sreq.responseText, "text/html");
+                        looktweet(xmlDoc);
+                        if (sign !== null && encrypt !== null && signature !== null) {
+                            try {
+                                resolve({key: parseKey(),
+                                         ts: Number(timestamp),
+                                         expiration: Number(expiration)});  // captures sign, encrypt, timestamp, expiration, etc.
+                            } catch (err) {
+                                console.error("Failed to parse key: ", sign, encrypt, signature, err);
+                                reject(new Fail(Fail.NOIDENT, "Could not parse keys found."));
+                                return;
+                            }
+                        } else {
+                            console.error("failed to find both keys and signature for @" + username, sign, encrypt, signature);
+                            reject(new Fail(Fail.NOIDENT, "Could not find key in tweets."));
+                            return;
+                        }
+                    };
+                    //send the search request
+                    sreq.send();
+                }
+            };
+            //send the profile request
+            preq.send();
+        });
+    };
+
     return module;
 })(window.Twitter || {});
