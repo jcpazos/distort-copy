@@ -175,7 +175,9 @@ window.Certs = (function (module) {
         this.groups = (opts.groups || []).slice(); // group memberships listed in the certs.
         this.key = opts.key || null; // ECCPubkey
     }
-
+    /* max tolerance in milliseconds between timestamp in a cert and
+       timestamp on the tweet envelope */
+    UserCert.MAX_TIME_DRIFT_PRIMARY_MS = 5 * 60 * 1000;
     UserCert.STATUS_UNKNOWN = 0;
     UserCert.STATUS_FAIL = 1;
     UserCert.STATUS_OK = 2;
@@ -484,6 +486,7 @@ window.Certs = (function (module) {
     };
 
     module.UserCert = UserCert;
+    module.PartialCert = PartialCert;
     module.Store = new CertStore();
     module.listenForTweets = function (streamer) {
         new TwitterListener(streamer);
