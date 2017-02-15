@@ -1934,7 +1934,6 @@ BGAPI.prototype.postTweets = function (username, messages) {
         return {tweets: messages, token: token};
 
     }).then(function (tweetInfo) {
-     
 
         function isTwitterCtx(ctx) {
             return (!ctx.isMaimed && ctx.app === "twitter.com");
@@ -1961,7 +1960,9 @@ BGAPI.prototype.postTweets = function (username, messages) {
             var ret = [];
             var j = 0;
             for (var i =0; i<values.length; i++) {
-                if (values[i]) j++;
+                if (values[i]) {
+                    j++;
+                }
                 console.log("promise ", JSON.parse(values[i]).tweet_id);
                 ret.push(JSON.parse(values[i]).tweet_id);
             }
