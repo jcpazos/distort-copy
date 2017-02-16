@@ -385,7 +385,7 @@ KAPEngine.prototype = {
         if (!KAP._verifySignature(msg, kap.otherIdent)) {
             failKAP(new Fail(Fail.KAPERROR, "bad signature"));
         }
-        
+
         if (msg.hdr.AFID !== kap.aId) {
             console.error("msg AFID:", msg.hdr.AFID, "kap.aId:", kap.aId);
             failKAP(kap, new Fail(Fail.KAPERROR, "different AFID expected"));
@@ -1483,7 +1483,7 @@ function PeriodicTask(periodMs) {
 
 PeriodicTask.prototype.stop = function () {
     "use strict";
-    
+
     if (this.timer > -1) {
         window.clearInterval(this.timer);
     }
@@ -1564,10 +1564,10 @@ _extends(DistributeTask, PeriodicTask, {
         //  if a different key is found: raise an alarm
         //
 
-        var checkTime = Date.now();
-        var ident = Vault.getAccountKP(that.username);
+        var checkTime = Date.now() / 1000.0;
+        var account = Vault.getAccount(that.username);
 
-        if (!ident) {
+        if (!account) {
             throw new Fail(Fail.NOIDENT, "No identity attached with username", that.username);
         }
 
@@ -1580,24 +1580,30 @@ _extends(DistributeTask, PeriodicTask, {
             });
         }
 
-        return API.fetchTwitter(that.username).then(function (twitterKeyContainer) {
-            var twitterKey = twitterKeyContainer.key;
-            var myKey = ident.toPubKey();
-            var keyAgeMs = checkTime - twitterKeyContainer.ts;
+        return Twitter.fetchLatestCertFromFeed(that.username).then(function (twitterCert) {
+            var myKey = account.key.toPubKey();
+            var keyAgeMs = (checkTime - twitterCert.validFrom) * 1000;
 
-            if (!twitterKey.equalTo(myKey)) {
+            if (!twitterCert.key.equalTo(myKey)) {
                 console.error("Key of @" + that.username + " was found to be different on twitter.");
                 UI.raiseWarning(null, "Your own key (@" + that.username + ") is different on twitter.");
                 throw new Fail(Fail.INVALIDKEY, "Key of @" + that.username, " was found to be different on twitter.");
             }
 
-            if (checkTime > twitterKeyContainer.expiration) {
+            if (checkTime > twitterCert.validUntil) {
                 UI.log("Key for @" + that.username + " has expired. Reposting.");
                 return _repostKey();
             }
 
             if (keyAgeMs > BGAPI.MAX_KEY_POST_AGE_MS) {
                 UI.log("Key for @" + that.username + " has aged. Reposting.");
+                return _repostKey();
+            }
+
+            var accountGroupNames = account.groups.map(gstat => gstat.name);
+            var intersection = accountGroupNames.filter(name => twitterCert.groups.includes(name));
+            if (intersection.length !== account.groups.length || intersection.length !== twitterCert.groups) {
+                UI.log("Group memberships for @" + that.username + " have changed. Reposting.");
                 return _repostKey();
             }
 
@@ -1766,6 +1772,13 @@ BGAPI.prototype.postKeys = function (username) {
         console.error("postKeys for", username, ": nonexistent account");
         return Promise.reject(new Error("account name does not exist: " + username));
     }
+
+    // var postedOn = Date.now() / 1000.0;
+    // account.groups.forEach(grp => {
+    //     grp.lastSentOn = postedOn;
+    //     grp.numSent += 1;
+    // });
+    // return Vault.saveAccount(account, true);
 
     return Twitter.getUserInfo().then(function (twitterInfo) {
         var token = twitterInfo.token;

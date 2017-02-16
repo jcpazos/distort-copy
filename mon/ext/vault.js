@@ -41,7 +41,6 @@ window.Vault = (function () {
 
         /*
           reads the key given from the in-memory db.
-          Note: returns a shallow copy of the value retrieved.
         */
         get: function (opt) {
             return this.db[opt];
@@ -262,7 +261,9 @@ window.Vault = (function () {
 
            promises null when complete.
         */
-        _saveAccount: function (acct) {
+        saveAccount: function (acct, isSilent) {
+            isSilent = (isSilent === undefined) ? false : !!isSilent;
+
             return new Promise(resolve => {
                 var id = acct.id;
 
@@ -274,7 +275,9 @@ window.Vault = (function () {
                 var settings = {};
                 settings[sk] = acct;
                 resolve(this.set(settings).then(function () {
-                    Events.emit('account:updated', id);
+                    if (!isSilent) {
+                        Events.emit('account:updated', id);
+                    }
                     return null;
                 }));
             });
@@ -284,10 +287,15 @@ window.Vault = (function () {
     function GroupStats(opts) {
         this.name = opts.name || null;
         this.joinedOn = opts.joinedOn || null; // unix. in seconds.
+
+        // Bumped when a message has the user as a recipient.
         this.lastReceivedOn = opts.lastReceivedOn || null; // unix. in seconds.
-        this.lastSentOn = opts.lastSentOn || null; // unix. in seconds.
         this.numReceived = opts.numReceived || 0;
+
+        // Bumped when the user sends a message on that group.
+        this.lastSentOn = opts.lastSentOn || null; // unix. in seconds.
         this.numSent = opts.numSent || 0;
+
         this.txPeriodMs = 15*60*1000;  // in ms. for timers.
     }
 
@@ -317,6 +325,8 @@ window.Vault = (function () {
         this.primaryHandle = opts.primaryHandle || null;   // string username (e.g. twitter handle)
         this.primaryApp = opts.primaryApp || null;         // dict   application/dev credentials
 
+        this.lastDistributeOn = opts.lastDistributeOn || null; // last time the cert was distributed.
+
         this.key = opts.key || new ECCKeyPair();
 
         // array of GroupStats
@@ -342,7 +352,7 @@ window.Vault = (function () {
                 }
                 this.groups.splice(idx, 1);
 
-                resolve(window.Vault._saveAccount(this)
+                resolve(window.Vault.saveAccount(this)
                         .then(() => true)
                         .catch(err => {
                             // FIXME racy
@@ -376,7 +386,7 @@ window.Vault = (function () {
 
                 this.groups.push(groupStats);
 
-                resolve(window.Vault._saveAccount(this)
+                resolve(window.Vault.saveAccount(this)
                         .then(() => groupStats)
                         .catch(err => {
                             // FIXME racy
