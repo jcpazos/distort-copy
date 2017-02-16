@@ -296,6 +296,8 @@ var Twitter = (function (module) {
     module.TweetStreamer = TweetStreamer;
 
     function StreamerManager() {
+        StreamerManager.__super__.constructor.apply(this, arguments);
+
         // Stores active streams
         this.streamers = {};
 
