@@ -994,10 +994,11 @@ var Twitter = (function (module) {
             //run through tweets looking for the right hashtag
 
             var tweets = xmlDoc.getElementsByClassName("js-tweet-text");
-            var certFeed = Certs.PartialCertFeed();
+            var certFeed = new Certs.PartialCertFeed();
             var fullCerts = {};
 
-            tweets.forEach(tweet => {
+            // tweets is an HTMLCollection object. so we schmumpf it into an array.
+            [].slice.apply(tweets).forEach(tweet => {
                 var content = tweet.closest(".content");
 
                 if (!content) {
@@ -1061,7 +1062,7 @@ var Twitter = (function (module) {
                 }
             });
 
-            var allIds = fullCerts.keys();
+            var allIds = Object.keys(fullCerts);
             if (allIds.length > 1) {
                 console.error("Retrieved tweets from the user handle with differing twitter ids: ", allIds);
                 return null;
