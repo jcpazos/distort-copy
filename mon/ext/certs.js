@@ -86,7 +86,7 @@ window.Certs = (function (module) {
                     primaryHdl: primaryHdl,
                     primaryTs: primaryTs
                 });
-                module.Store._addPartialCert(partialCert);
+                this._addPartialCert(partialCert);
             }
 
             try {
