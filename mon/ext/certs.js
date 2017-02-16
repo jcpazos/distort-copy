@@ -34,6 +34,102 @@ window.Certs = (function (module) {
     // lib/twitter-text.js
     var TT = window.twttr;
 
+    function PartialCertFeed(timeoutMs) {
+        this._partialCerts = [];
+        this._timeoutMs = (timeoutMs === undefined) ? -1 : timeoutMs;
+    }
+
+    // this object is fed tweets one by one and pumps out UserCert objects
+    // when all the proper bits have been ingested.
+    PartialCertFeed.prototype = {
+        /**
+           return a full UserCert if the given tweet completes
+           a partial cert. returns null if more bits are needed.
+           throws error if the given tweet is not a partial cert tweet.
+
+           @tweetText the text of a tweet (body)
+
+           @envelope: the metadata around the tweet.
+                     { primaryId: userid string,
+                       primaryHdl: user handle string,
+                       createdAtMs: unix time posted in ms
+                     }
+        */
+        feedTweet: function (tweetText, envelope) {
+            var primaryId = envelope.primaryId;
+            var primaryHdl = envelope.primaryHdl;
+            var createdAtMs = envelope.createdAtMs;
+
+            var toks = tweetText.split(/\s+/);
+
+            if (toks.length < 2 || !Number(toks[1])) {
+                throw new Fail(Fail.BADPARAM, "not a partialcert tweet");
+            }
+            var primaryTs = toks[1];
+
+            if (!PartialCert.POUND_TAGS.includes(toks[0])) {
+                throw new Fail(Fail.BADPARAM, "invalid tokens for partialcert");
+            }
+
+            if (Math.abs(createdAtMs - Number(toks[1])) > UserCert.MAX_TIME_DRIFT_PRIMARY_MS) {
+                throw new Fail(Fail.STALE, "Time of post is too distant from certificate timestamp.");
+            }
+
+            var partialCerts = this._getPartialCert(cert => {
+                return cert.primaryId === primaryId && cert.primaryHdl === primaryHdl && cert.primaryTs === primaryTs;
+            });
+
+            var partialCert = partialCerts[0];
+            if (!partialCert) {
+                partialCert = new PartialCert({
+                    primaryId: primaryId,
+                    primaryHdl: primaryHdl,
+                    primaryTs: primaryTs
+                });
+                module.Store._addPartialCert(partialCert);
+            }
+
+            try {
+                var userCert = partialCert.feedToks(toks);
+                if (userCert) {
+                    // completed
+                    this._removePartialCert(partialCert);
+                }
+                return userCert;
+            } catch (err) {
+                if (err instanceof Fail) {
+                    // remove certs with invalid parts
+                    console.log("partial cert processing failed", err);
+                    this._removePartialCert(partialCert);
+                }
+                throw err;
+            }
+        },
+
+        _getPartialCert: function (filter) {
+            filter = filter || function () { return true; };
+            return this._partialCerts.filter(filter);
+        },
+
+        _addPartialCert: function (partialCert) {
+            this._partialCerts.push(partialCert);
+            // remove the partialCert from the list in 5 minutes.
+            // it should be complete by then.
+            if (this._timeoutMs >= -1) {
+                window.setTimeout(() => {
+                    console.log("Removing partial cert from: ", partialCert.primaryHdl + " due to timeout.");
+                    this._removePartialCert(partialCert);
+                }, this._timeoutMs);
+            }
+        },
+        _removePartialCert: function (partialCert) {
+            var pIndex = this._partialCerts.indexOf(partialCert);
+            if (pIndex >= 0) {
+                this._partialCerts.splice(pIndex, 1);
+            }
+        }
+    };
+
     /*
       The certificates are submitted as multiple tweets/parts
       which may or may not arrive at the same time. those are
@@ -82,13 +178,7 @@ window.Certs = (function (module) {
         // this will attempt to complete the cert.
         // returns a full certificate if all the tokens
         // were received.
-        feed: function (toks) {
-            if (toks.length < 2) {
-                throw new Fail(Fail.BADPARAM, "invalid tokens for partialcert");
-            }
-            if (!PartialCert.POUND_TAGS.includes(toks[0])) {
-                throw new Fail(Fail.BADPARAM, "invalid tokens for partialcert");
-            }
+        feedToks: function (toks) {
             if (toks[0] === "#" + PartialCert.ENCRYPTKEY) {
                 this._parseEncryptKey(toks);
             } else if (toks[0] === "#" + PartialCert.SIGNKEY) {
@@ -99,7 +189,7 @@ window.Certs = (function (module) {
                 throw new Error("unexpected tag type");
             }
 
-            return this.completeCert();
+            return this._completeCert();
         },
 
         _setGroups: function (toks) {
@@ -173,7 +263,7 @@ window.Certs = (function (module) {
 
            @throws STALE if key is old, GENERIC if the verification fails otherwise.
         */
-        completeCert: function () {
+        _completeCert: function () {
             var that = this;
 
             if (!this.signkey ||
@@ -300,8 +390,6 @@ window.Certs = (function (module) {
            A certificate has been added or modified.
     */
     function CertStore () {
-        this._partialCerts = [];
-
         this.open = new Promise((resolve, reject) => {
             var request = IDB.open("user_cert_db", 1);
             request.onupgradeneeded = this._setupDB.bind(this);
@@ -332,28 +420,6 @@ window.Certs = (function (module) {
                     // store initial values
                     console.debug("Database initialized.");
                 };
-            }
-        },
-
-        getPartialCert: function (filter) {
-            filter = filter || function () { return true; };
-            return this._partialCerts.filter(filter);
-        },
-
-        addPartialCert: function (partialCert) {
-            this._partialCerts.push(partialCert);
-            // remove the partialCert from the list in 5 minutes.
-            // it should be complete by then.
-            window.setTimeout(() => {
-                console.log("Removing partial cert from: ", partialCert.primaryHdl + " due to timeout.");
-                this.removePartialCert(partialCert);
-            }, 5 * 60 * 1000);
-        },
-
-        removePartialCert: function (partialCert) {
-            var pIndex = this._partialCerts.indexOf(partialCert);
-            if (pIndex >= 0) {
-                this._partialCerts.splice(pIndex, 1);
             }
         },
 
@@ -415,6 +481,8 @@ window.Certs = (function (module) {
        Listens for certificates on group streams.
     */
     function TwitterListener(streamerManager) {
+        this._partialFeed = new PartialCertFeed(5 * 60 * 1000);
+
         streamerManager.on('tweet', this.onTweet, this);
 
         this._pendingTweets = [];
@@ -463,66 +531,23 @@ window.Certs = (function (module) {
             return new Promise(resolve => {
                 var tweet = tweetInfo.tweet;
 
-                if (!tweet || !tweet.user) {
+                if (!tweet || !tweet.user || !tweet.text || !tweet.created_at) {
                     console.error("malformed tweet?", tweet);
                     return;
                 }
-                // author
-                var userid = tweet.user.id_str;
-                var handle = tweet.user.screen_name;
-                var partialCert = null;
 
-                if (!userid || !handle) {
-                    throw new Fail(Fail.GENERIC, "malformed tweet");
-                }
-
-                var toks = tweet.text.split(/\s+/);
-
-                if (toks.length < 2 || !Number(toks[1])) {
-                    throw new Fail(Fail.GENERIC, "malformed tweet");
-                }
-                var primaryTs = toks[1];
-
-                /* TODO check that ts in tweet envelope is close to body ts */
-
-                var partialCerts = module.Store.getPartialCert(cert => {
-                    return cert.primaryId === userid && cert.primaryHdl === handle && cert.primaryTs === primaryTs;
-                });
-
-                partialCert = partialCerts[0];
-                if (!partialCert) {
-                    partialCert = new PartialCert({
-                        primaryId: userid,
-                        primaryHdl: handle,
-                        primaryTs: primaryTs
-                    });
-                    module.Store._addPartialCert(partialCert);
-                }
-
-                return resolve({toks: toks, partialCert: partialCert});
-
-            }).then(info => {
-                return new Promise(resolve => {
-                    var userCert = info.partialCert.feed(info.toks);
-
-                    if (userCert) {
-                        //we have all the user info needed. the cert is complete.
-                        module.Store.removePartialCert(info.partialCert);
-                        return resolve(userCert);
-                    } else {
-                        //still waiting for more information.
-                        return resolve(null);
-                    }
-
-                }).catch(err => {
-                    if (err instanceof Fail) {
-                        console.log("removing partial cert from " +
-                                    info.partialCert.primaryHdl +
-                                    " due to parse error", err);
-                        module.Store.removePartialCert(info.partialCert);
-                    }
+                resolve(this._partialFeed.feedTweet(tweet.text, {
+                    primaryId: tweet.user.id_str,
+                    primaryHandle: tweet.user.screen_name,
+                    createdAtMs: (new Date(tweet.created_ad)).getTime()
+                }));
+            }).catch(err => {
+                if (err instanceof Fail) {
+                    // invalid syntax or old cert
+                    return null;
+                } else {
                     throw err;
-                });
+                }
             }).then(userCert => {
                 // save the updated cert.
                 if (!userCert) {
@@ -546,5 +571,6 @@ window.Certs = (function (module) {
     module.listenForTweets = function (streamer) {
         new TwitterListener(streamer);
     };
+    module.PartialCertFeed = PartialCertFeed;
     return module;
 })(window.Certs || {});

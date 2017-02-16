@@ -20,12 +20,7 @@
 /*global
   Promise, Fail, $, Utils,_extends,
   API,
-
-  ECCPubKey,
-
-  Emitter, Certs,
-
-  CryptoCtx
+  Emitter, Certs
 */
 
 /*exported Twitter */
@@ -972,57 +967,27 @@ var Twitter = (function (module) {
     // Fails with GENERIC if any other problem arises
     //
     module.fetchLatestCertFromFeed = function (handle) {
-        //return tags contained in the tweet element.
+
         //tags include the # sign.
         //look through the tweets in xmldoc for tags
         function looktweet(xmlDoc) {
             //run through tweets looking for the right hashtag
 
-            // id => [ partial cert, ... ]
-            var partialCerts = {};
-
-            function getPartialCert(userid, handle, ts) {
-                var certs = partialCerts[userid] = partialCerts[userid] || [];
-                certs = certs.filter(cert => {
-                    return cert.primaryTs === ts;
-                });
-                if (certs.length === 0) {
-                    certs.push(new Certs.PartialCert({
-                        primaryId: userid,
-                        primaryHdl: handle,
-                        primaryTs: ts
-                    }));
-                }
-                return certs[0];
-            }
-
-            function findtags(element) {
-                //look through each hashtag for the given element
-                return element.getElementsByClassName("twitter-hashtag").map(elt => {
-                    return elt.innerText;
-                });
-            }
-
             var tweets = xmlDoc.getElementsByClassName("js-tweet-text");
-            var toks;
+            var certFeed = Certs.PartialCertFeed();
+            var fullCerts = {};
 
-            function tagOfInterest(tag) {
-                return Certs.PartialCert.POUND_TAGS.includes(tag);
-            }
-
-            for (var i = 0; i < tweets.length; i++) {
-
-                var tweet = tweets[i];
+            tweets.forEach(tweet => {
                 var content = tweet.closest(".content");
 
                 if (!content) {
                     console.debug("No .content element. in tweet. skipping.", tweet);
-                    continue;
+                    return;
                 }
 
                 var profileLinks = content.getElementsByClassName("js-user-profile-link");
                 if (profileLinks.length < 1) {
-                    continue;
+                    return;
                 }
 
                 //<span class="_timestamp js-short-timestamp "
@@ -1032,58 +997,51 @@ var Twitter = (function (module) {
                 var timeContainer = content.getElementsByClassName("js-short-timestamp");
                 if (timeContainer.length < 1) {
                     // no timestamp
-                    continue;
+                    return;
                 }
 
                 var id = profileLinks[0].getAttribute("data-user-id");
                 var authorHandle = profileLinks[0].getElementsByClassName("username")[0];
                 if (!authorHandle) {
                     console.error("revise syntax");
-                    continue;
+                    return;
                 }
                 // @foo
                 authorHandle = authorHandle.textContent;
                 if (!authorHandle) {
                     console.error("revise syntax");
-                    continue;
+                    return;
                 }
                 authorHandle = authorHandle.substr(1);
                 if (authorHandle !== handle) {
                     console.debug("skipping tweet. different author. found " + authorHandle + " but expected " + handle);
-                    continue;
+                    return;
                 }
 
-                var foundTags = findtags(tweet);
-                if (foundTags.filter(tagOfInterest).length === 0) {
-                    continue;
-                }
-
-                toks = tweet.innerText.split(/\s+/);
-                if (toks.length < 2 || !Number(toks[1])) {
-                    continue;
-                }
-
-                var messageMs = Number(toks[1]);
                 var postTimeMs = Number(timeContainer[0].getAttribute("data-time-ms"));
-                console.log("Tweet post time:", postTimeMs, " message post time:", messageMs);
-
-                if (Math.abs(postTimeMs - messageMs) > Certs.UserCert.MAX_TIME_DRIFT_PRIMARY_MS) {
-                    continue;
+                if (!postTimeMs) {
+                    return;
                 }
-
-                var pCert = getPartialCert(id, authorHandle, toks[1]);
 
                 try {
-                    pCert.feed(toks);
+                    var fullCert = certFeed.feedTweet(tweet.innerText, {
+                        primaryId: id,
+                        primaryHdl: authorHandle,
+                        createdAtMs: postTimeMs
+                    });
+                    if (fullCert) {
+                        fullCerts[fullCert.primaryId] = (fullCerts[fullCert.primaryId] || []);
+                        fullCerts[fullCert.primaryId].push(fullCert);
+                    }
                 } catch (err) {
-                    if ((err instanceof Fail) && err.code === Fail.BADPARAM) {
-                        continue;
+                    if ((err instanceof Fail) && [Fail.BADPARAM, Fail.STALE].includes(err.code)) {
+                        return;
                     }
                     throw err;
                 }
-            }
+            });
 
-            var allIds = partialCerts.keys();
+            var allIds = fullCerts.keys();
             if (allIds.length > 1) {
                 console.error("Retrieved tweets from the user handle with differing twitter ids: ", allIds);
                 return null;
@@ -1091,24 +1049,8 @@ var Twitter = (function (module) {
 
             var userid = allIds[0];
 
-            // try to complete the partialcerts. this will only succeed for
-            // posts with complete tweet-triples and that pass local checks.
-            var fullCerts = partialCerts[userid].map((pCert) => {
-                try {
-                    var fullCert = pCert.completeCert();
-                    if (fullCert) {
-                        return fullCert;
-                    }
-                } catch (err) {
-                    if (err instanceof Fail) {
-                        return null;
-                    }
-                    throw err;
-                }
-            }).filter(cert => (cert !== null));
-
             // put latest at the front
-            fullCerts.sort((a, b) => {
+            fullCerts[userid].sort((a, b) => {
                 if (a.primaryTs < b.primaryTs) {
                     return 1;
                 } else if (a.primaryTs > b.primaryTs) {
@@ -1118,7 +1060,7 @@ var Twitter = (function (module) {
                 }
             });
 
-            return fullCerts[0] || null;
+            return fullCerts[userid][0] || null;
         }
 
         return new Promise(function (resolve, reject) {
