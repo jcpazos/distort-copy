@@ -119,7 +119,6 @@ var Twitter = (function (module) {
     function Streamer(hashtags, streamerID, accountCredentials) {
         Streamer.__super__.constructor.apply(this, arguments);
 
-        this._callbacks = {sendTweet:[]};
         this.streamerID = streamerID;
         this.creds = accountCredentials;
 
@@ -146,8 +145,6 @@ var Twitter = (function (module) {
             this.tpost = _appOnlyXHR("POST", url, [['track', track]], this.creds);
         },
 
-        sendTweet: function (tweet) {
-            this._callbacks.sendTweet[0](tweet);
         },
 
         send: function () {
