@@ -18,7 +18,7 @@
 **/
 
 /*global
-  Promise, Fail, $, Utils,_extends,
+  Promise, Fail, $, Utils,
   API,
   Emitter, Certs
 */
@@ -124,7 +124,6 @@ var Twitter = (function (module) {
 
         this.hashtags = (typeof hashtags === "string") ? hashtags.split(",") : hashtags.slice();
 
-        this.index = 0;
         this.stream_buffer = '';
         this.tweetCount = 0;
         this.connectedOn = 0; // UNIX timestamp in seconds;
@@ -133,18 +132,26 @@ var Twitter = (function (module) {
     }
 
     //addListener
-    _extends(Streamer, Emitter, {
+    Utils._extends(Streamer, Emitter, {
         _initXHR: function () {
             if (this.tpost) {
                 this.tpost.abort();
             }
-
+            var streamer = this;
             var track = this.hashtags.join(",");
             this.postData = "track=" + encodeURIComponent(track);
             var url = 'https://stream.twitter.com/1.1/statuses/filter.json';
+
+            this.index = 0;
             this.tpost = _appOnlyXHR("POST", url, [['track', track]], this.creds);
+            this.tpost.onreadystatechange = function () {
+                return streamer.onReadyStateChange(this /*the xhr*/);
+            };
         },
 
+        onReadyStateChange: function (xhr) {
+            /*jshint unused: false */
+            throw new Error("not implemented");
         },
 
         send: function () {
@@ -161,16 +168,38 @@ var Twitter = (function (module) {
 
     function BasicStreamer(hashtag, streamerID, accountCredentials) {
         BasicStreamer.__super__.constructor.call(this, hashtag, streamerID, accountCredentials);
+    }
 
-        this.tpost.onreadystatechange = (function () {
-            if (this.tpost.readyState > 2)  {
-                if (this.tpost.status >= 200 && this.tpost.status <= 400) {
+    Utils._extends(BasicStreamer, Streamer, {
+        onReadyStateChange: function (xhr) {
+            if (xhr !== this.tpost) {
+                console.error("receiving event for previous XHR");
+                return;
+            }
+
+            // 0 unsent
+            // 1 opened
+            // 2 headers received
+            // 3 loading
+            // 4 done
+            if (xhr.readyState > 2)  {
+                if (xhr.status >= 200 && xhr.status <= 400) {
                     //parse pkey info and save into database
                     //start at the index we left off
                     //console.log('responseText ', this.tpost.responseText);
-                    this.stream_buffer = this.tpost.responseText.substr(this.index);
+                    this.stream_buffer = xhr.responseText.substr(this.index);
+
                     //remove possible leading whitespace from tpost.responseText
+
+                    //Twitter periodically sends lines of whitespace if there is no
+                    //message to keep the TCP stream warm (and forcing clients to
+                    //ingest to stay connected).
                     this.stream_buffer = this.stream_buffer.replace(/^\s+/g, "");
+
+                    // FIXME this line parsing is wrong. doesn't take into account
+                    // partial lines, and stops parsing if there are blanks in the
+                    // middle of the chunk.
+
                     while (this.stream_buffer.length !== 0 &&
                            this.stream_buffer[0] !== '\n' &&
                            this.stream_buffer[0] !== '\r') {
@@ -190,7 +219,7 @@ var Twitter = (function (module) {
                         this.stream_buffer = this.stream_buffer.substr(curr_index+1);
                     }
 
-                    if (this.tpost.length >= 10000) {
+                    if (xhr.length >= 10000) {
                         //FIXME -- not tested -- do the partial tweets stick around?
                         this._initXHR();
                         this.tweetCount = 0;
@@ -202,11 +231,7 @@ var Twitter = (function (module) {
                     this.abort();
                 }
             }
-        });
-    }
-
-    _extends(BasicStreamer, Streamer, {
-
+        }
     });
 
     module.BasicStreamer = BasicStreamer;
@@ -214,14 +239,26 @@ var Twitter = (function (module) {
     function TweetStreamer(hashtag, streamerID, accountCredentials) {
         TweetStreamer.__super__.constructor.call(this, hashtag, streamerID, accountCredentials);
 
-        this.tpost.onreadystatechange = (function () {
+        this.tpost.onerror = function () {
+            console.error("Problem streaming tweets.", [].slice.apply(arguments));
+            //return reject(new Fail(Fail.GENERIC, "Failed to stream tweets."));
+        };
+    }
+
+    Utils._extends(TweetStreamer, Streamer, {
+        onReadyStateChange: function (xhr) {
+            if (xhr !== this.tpost) {
+                console.error("receiving event for previous XHR");
+                return;
+            }
+
             // 0 unsent
             // 1 opened
             // 2 headers received
             // 3 loading
             // 4 done
-            if (this.tpost.readyState > 2)  {
-                if (this.tpost.status >= 200 && this.tpost.status <= 400) {
+            if (xhr.readyState > 2)  {
+                if (xhr.status >= 200 && xhr.status <= 400) {
                     //start at the index we left off
 
                     // twitter will periodically send whitespace, just to keep
@@ -278,16 +315,7 @@ var Twitter = (function (module) {
                     this.abort();
                 }
             }
-        }).bind(this);
-
-        this.tpost.onerror = function () {
-            console.error("Problem streaming tweets.", [].slice.apply(arguments));
-            //return reject(new Fail(Fail.GENERIC, "Failed to stream tweets."));
-        };
-    }
-
-    _extends(TweetStreamer, Streamer, {
-
+        }
     });
 
     module.TweetStreamer = TweetStreamer;
@@ -326,7 +354,7 @@ var Twitter = (function (module) {
     }
 
 
-    _extends(StreamerManager, Emitter, {
+    Utils._extends(StreamerManager, Emitter, {
         _updateSub: function (hashtag, refName, creds) {
 
             var subs, hashes;
