@@ -1765,7 +1765,7 @@ BGAPI.prototype.postKeys = function (username) {
 
     console.debug("postKeys:", username);
 
-    var ident = Vault.getAccountKP(username);
+    var ident = Vault.getAccount(username);
     var ts = Date.now();
 
     if (!ident) {
@@ -1784,35 +1784,43 @@ BGAPI.prototype.postKeys = function (username) {
         var token = twitterInfo.token;
         var twitterUser = twitterInfo.twitterUser;
         var twitterId = twitterInfo.twitterId;
-        
+
         if (twitterId === null || twitterUser === null) {
             throw new Fail(Fail.PUBSUB,
                            "failed to retrieve current user information on Twitter." +
                            "Make sure you are logged in to twitter (in any tab).");
         }
 
-        if (twitterUser !== username) {
+        if (twitterUser !== ident.primaryHandle || twitterId !== ident.primaryId) {
             throw new Fail(Fail.PUBSUB,
                            "Twitter authenticated under a different username. Found '" +
-                           twitterUser + "' but expected  '" + username + "'.");
+                           twitterId + ":" + twitterUser + "' but expected  '" +
+                           ident.primaryId + ":" + ident.primaryHandle + "'.");
         }
 
-        
-        var pubKey = ident.toPubKey();
+        var pubKey = ident.key.toPubKey();
         var min = pubKey.minify();
-        var encryptKey = min.encrypt;
-        var signKey = min.sign;
-        var encryptStatus = "#encryptkey " + ts + " " + encryptKey;
-        var signStatus = "#signkey " + ts + " " + signKey;
 
-        // Generate signature tweet
-        // Expiration is 30 days
-        var expiration = ts + (60 * 60 * 24 * 30) * 1000;
+        var groupNames = ident.groups.map(groupStats => groupStats.name);
+        groupNames.sort();
 
-        var sigText = twitterUser + twitterId + encryptKey + signKey + ts + expiration;
+        var groupString = groupNames.map(name => "#" + name).join(" ");
+        var encryptStatus = "#encryptkey " + ts + " " + min.encrypt + " " + groupString;
+        var signStatus = "#signkey " + ts + " " + min.sign + " " + groupString;
+        var expiration = ts + Certs.UserCert.DEFAULT_EXPIRATION_MS;
+
+        var sigText = [
+            ident.primaryHandle,
+            ident.primaryId,
+            min.encrypt,
+            min.sign,
+            ts,
+            expiration,
+            groupNames.join(" ")
+        ].join("");
         var signature = ident.signText(sigText);
 
-        var sigStatus = "#keysig " + ts + " " + expiration + " " + signature;
+        var sigStatus = "#keysig " + ts + " " + expiration + " " + signature + " " + groupString;
 
         return {tweets: [encryptStatus, signStatus, sigStatus], token: token};
 
@@ -1832,7 +1840,6 @@ BGAPI.prototype.postKeys = function (username) {
             throw new Fail(Fail.PUBSUB, "Twitter context not available, must have twitter tab open.");
         }
 
-        
         for (ti = 0; ti < tweets.length; ti++) {
             promisesPromises.push(twitterCtx[0].callCS("post_public", {tweet: tweets[ti], authToken: authToken}));
         }
@@ -1848,7 +1855,7 @@ BGAPI.prototype.postTweets = function (username, messages) {
     "use strict";
 
     console.debug("[BGAPI] postTweets:", username);
-    
+
     var ident = Vault.getAccountKP(username);
     var ts = Date.now();
 

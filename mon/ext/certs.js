@@ -214,7 +214,7 @@ window.Certs = (function (module) {
             // must match what we had before
             var mismatch = clean.findIndex(tag => !this.groups.includes(tag));
             if (mismatch > -1) {
-                throw new Fail(Fail.BADPARAM, "tag " + clean[mismatch] + " in tweet not in groups recognized so far.");
+                throw new Fail(Fail.BADPARAM, "tag " + clean[mismatch] + " not in groups recognized so far.");
             }
         },
 
@@ -272,29 +272,34 @@ window.Certs = (function (module) {
                 return null;
             }
 
-            function parseKey(sign, encrypt, expiration, signature, timestamp) {
-                //we found both keys, persist them
-                var minified = {
-                    encrypt: encrypt,
-                    sign: sign
-                };
-                var key = ECCPubKey.unminify(minified);
+            var sortedGroups = this.groups.slice();
+            sortedGroups.sort();
 
-                var signedMessage = that.primaryHdl + that.primaryId + encrypt + sign + timestamp + expiration;
-                if (!key.verifySignature(signedMessage, signature)) {
-                    console.error("Failed to verify signature: ", sign, encrypt, signature);
-                    throw new Fail(Fail.GENERIC, "verification failed");
-                }
-                return {key:  key,
-                        ts: Number(timestamp) /*in ms*/,
-                        expiration: Number(expiration) /*in ms*/};
+            var key = ECCPubKey.unminify({
+                encrypt: this.encryptkey,
+                sign: this.signkey
+            });
+
+            var signedMessage = [
+                this.primaryHdl,
+                this.primaryId,
+                this.encryptkey,
+                this.signkey,
+                this.primaryTs,
+                this.expirationTs,
+                sortedGroups.join(" ")
+            ].join("");
+
+            if (!key.verifySignature(signedMessage, this.keysig)) {
+                console.error("Failed to verify signature in cert");
+                throw new Fail(Fail.GENERIC, "verification failed");
             }
 
-            var pubKeyContainer = parseKey(this.signkey,
-                                           this.encryptkey,
-                                           this.expirationTs,
-                                           this.keysig,
-                                           this.primaryTs);
+            var pubKeyContainer = {
+                expiration: Number(this.expirationTs),
+                ts: Number(this.primaryTs),
+                key: key
+            };
 
             if (pubKeyContainer.expiration < Date.now() || pubKeyContainer.expiration < pubKeyContainer.ts) {
                 throw new Fail(Fail.STALE, "Found only a stale key for " + that.primaryHdl);
@@ -310,7 +315,7 @@ window.Certs = (function (module) {
                 verifiedOn: 0,
 
                 // groups is set on the first key tweet
-                groups: this.groups,
+                groups: sortedGroups,
             };
             return new UserCert(opts);
         }
@@ -336,6 +341,7 @@ window.Certs = (function (module) {
     /* max tolerance in milliseconds between timestamp in a cert and
        timestamp on the tweet envelope */
     UserCert.MAX_TIME_DRIFT_PRIMARY_MS = 5 * 60 * 1000;
+    UserCert.DEFAULT_EXPIRATION_MS = 7 * 24 * 3600 * 1000;
     UserCert.STATUS_UNKNOWN = 0;
     UserCert.STATUS_FAIL = 1;
     UserCert.STATUS_OK = 2;
