@@ -295,6 +295,27 @@ var Twitter = (function (module) {
 
     module.TweetStreamer = TweetStreamer;
 
+
+    /**
+       The manager is the class that manages a series of Twitter streams
+       based on group memberships. The caller "subscribes" and "unsubscribes"
+       to groups, and this class will create the corresponding HTTPS connections
+       to twitter to receive those tags.
+
+       When a tweet is received, the StreamerManager will emit the 'tweet' event.
+
+       Event "tweet" param: {
+                tweet: { twitter object for the tweet },
+                hashtags: [ list of hashtags without the '#' contained in the message],
+                groups: [the list of groupnames interested in the tweet],
+                refs: [the list of refNames interested in the tweet (passed to subscribe)]
+       }
+
+       It is important to not delay the processing of this event to
+       utilize the network as best as possible. Twitter penalizes slow
+       streams. If processing on the tweet is needed, clients should
+       buffer/queue the tweets.
+    */
     function StreamerManager() {
         StreamerManager.__super__.constructor.apply(this, arguments);
 
