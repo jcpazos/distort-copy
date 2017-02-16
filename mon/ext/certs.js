@@ -499,6 +499,11 @@ window.Certs = (function (module) {
     TwitterListener.QUEUE_LIMIT = 100;
 
     TwitterListener.prototype = {
+        onTweet: function (tweetInfo) {
+            /* queue this for later */
+            this._scheduleProcessing(tweetInfo);
+        },
+
         _scheduleProcessing: function (toQueue) {
             if (toQueue) {
                 if (this._pendingTweets.length > TwitterListener.QUEUE_LIMIT) {
