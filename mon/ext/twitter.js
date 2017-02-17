@@ -1096,6 +1096,10 @@ var Twitter = (function (module) {
                 return null;
             }
 
+            if (allIds.length === 0) {
+                // no cert could be found
+                return null;
+            }
             var userid = allIds[0];
 
             // put latest at the front
@@ -1168,6 +1172,65 @@ var Twitter = (function (module) {
                 //send the search request
                 sreq.send();
             });
+        });
+    };
+
+    /**
+       posts the given messages to the given account app
+
+       Promises an array of result values for each message, in the
+       same order as the messages. The result is either a tweetId
+       if a message is posted successfully, otherwise an error object.
+
+       Callers should make sure that all returned values are non Errors.
+    */
+    module.postTweets = function postTweets(accountCredentials, messages) {
+        return module.getUserInfo().then(twitterInfo => {
+            if (twitterInfo.twitterId === null || twitterInfo.twitterUser === null) {
+                throw new Fail(Fail.BADAUTH, "Make sure you are logged in to twitter (in any tab).");
+            }
+            if (twitterInfo.twitterId !== accountCredentials.appOwnerId ||
+                twitterInfo.twitterUser !== accountCredentials.appOwner) {
+                throw new Fail(Fail.BADAUTH,
+                               "Twitter authenticated under a different username. Found '" +
+                               twitterInfo.twitterId + ":" + twitterInfo.twitterUser + "' but expected  '" +
+                               accountCredentials.appOwnerId + ":" + accountCredentials.appOwner + "'.");
+            }
+
+            function isTwitterCtx(ctx) {
+                return (!ctx.isMaimed && ctx.app === "twitter.com");
+            }
+
+            var twitterContexts = API.filterContext(isTwitterCtx);
+            if (twitterContexts.length > 0) {
+                return {
+                    token: twitterInfo.token,
+                    twitterId: twitterInfo.twitterId,
+                    twitterUser: twitterInfo.twitterUser,
+                    ctx: twitterContexts[0]
+                };
+            } else {
+                return API.openContext("https://twitter.com/").then(function (ctx) {
+                    return {
+                        token: twitterInfo.token,
+                        twitterId: twitterInfo.twitterId,
+                        twitterUser: twitterInfo.twitterUser,
+                        ctx: ctx
+                    };
+                });
+            }
+        }).then(twitterCtx => {
+            var allPromises = messages.map(msg => {
+                return twitterCtx.ctx.callCS("post_public", {tweet: msg, authToken: twitterCtx.token})
+                    .then(resp => {
+                        var obj = JSON.parse(resp);
+                        return obj.tweet_id;
+                    })
+                    .catch(err => {
+                        return err;
+                    });
+            });
+            return Promise.all(allPromises);
         });
     };
 

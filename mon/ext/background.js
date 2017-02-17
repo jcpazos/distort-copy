@@ -1244,81 +1244,6 @@ CryptoCtx.prototype = {
         });
     },
 
-
-    //TODO: remove.
-    postKeys: function (message) {
-        "use strict";
-        var that = this;
-
-        var prompt = UI.prompt(that, that.promptId++,
-                               "Beeswax will post public keys to twitter account " + "'@" + message + "'\n Do you wish to continue?",
-                               [UI.Prompt.ACCEPT, UI.Prompt.REFUSE]);
-        return prompt.getPromise().then(function (triggered) {
-            if (triggered !== UI.Prompt.ACCEPT) {
-                throw new Fail(Fail.REFUSED, "Posting Keys not accepted: " + triggered);
-            } else {
-                // Accepted
-                that.openKeyring(message).then(function () {
-                    console.log("opened keyring " + message);
-                    return API.postKeys(that.kr.username).catch(function (err) {
-                        UI.log("error reposting(" + err.code + "): " + err);
-                        throw err; // throw again
-                    }).then(function () {
-                        UI.log("Key for @" + that.kr.username + " posted.");
-                    });
-                })["catch"](function (err) {
-                    console.error("failed to open keyring " + message, err);
-                    if (err.code === "NOKEYRING") {
-                        return that.newKeyring(message).then(function () {
-                            console.log("new keyring created");
-                            return API.postKeys(that.kr.username).catch(function (err) {
-                                UI.log("error reposting(" + err.code + "): " + err);
-                                throw err; // throw again
-                            }).then(function () {
-                                UI.log("Key for @" + that.kr.username + " reposted.");
-                            });
-                        });
-                    } else {
-                        throw err;
-                    }
-                });
-            }
-        });
-    },
-
-    postTweets: function (tags, keys) {
-        "use strict";
-        var that = this;
-        var i;
-
-        if (that.kr === null) {
-            return new Fail(Fail.NOKEYRING, "Keyring not open.");
-        }
-
-        var prompt = UI.prompt(that, that.promptId++,
-           "Beeswax will post your messages to twitter account " + "'@" + that.kr.username + "'\n Do you wish to continue?",
-           [UI.Prompt.ACCEPT, UI.Prompt.REFUSE]);
-        return prompt.getPromise().then(function (triggered) {
-            if (triggered !== UI.Prompt.ACCEPT) {
-                throw new Fail(Fail.REFUSED, "Posting Tweets not accepted: " + triggered);
-            }
-        }).then(function () {
-            return API.postTweets(that.kr.username, keys);
-        }).then(function (tweetIDs) {
-            var baseString = " https://twitter.com/" + encodeURIComponent(that.kr.username) + "/status/";
-            UI.log("Tweets for @" + that.kr.username + " posted.");
-            for (i = 0; i < tags.length; i++) {
-                tags[i] = tags[i] + baseString + tweetIDs[i];
-            }
-            return API.postTweets(that.kr.username, tags);
-        }).then(function () {
-            UI.log("Replies for @" + that.kr.username + " posted.");
-        }).catch(function (err) {
-            UI.log("error posting messages(" + err.code + "): " + err);
-            throw err;
-        });
-    },
-
     //TODO: REMOVE. UNNECESSARY NOW THAT CREATETWITTERAPP HANDLES THIS AS WELL
     getDevKeys: function () {
         "use strict";
@@ -1572,7 +1497,7 @@ _extends(DistributeTask, PeriodicTask, {
         }
 
         function _repostKey() {
-            return API.postKeys(that.username).catch(function (err) {
+            return API.postKeys(account).catch(function (err) {
                 UI.log("error reposting(" + err.code + "): " + err);
                 throw err; // throw again
             }).then(function () {
@@ -1758,50 +1683,17 @@ BGAPI.prototype.accountChanged = function (username) {
     this.distributeTasks[username].start();
 };
 
-// Returns a promise that resolves to true if keys for the given
-// account name can be posted.
-BGAPI.prototype.postKeys = function (username) {
+// Promises true if the certificate for the given account is posted successfully.
+BGAPI.prototype.postKeys = function (account) {
     "use strict";
 
-    console.debug("postKeys:", username);
-
-    var ident = Vault.getAccount(username);
     var ts = Date.now();
 
-    if (!ident) {
-        console.error("postKeys for", username, ": nonexistent account");
-        return Promise.reject(new Error("account name does not exist: " + username));
-    }
-
-    // var postedOn = Date.now() / 1000.0;
-    // account.groups.forEach(grp => {
-    //     grp.lastSentOn = postedOn;
-    //     grp.numSent += 1;
-    // });
-    // return Vault.saveAccount(account, true);
-
-    return Twitter.getUserInfo().then(function (twitterInfo) {
-        var token = twitterInfo.token;
-        var twitterUser = twitterInfo.twitterUser;
-        var twitterId = twitterInfo.twitterId;
-
-        if (twitterId === null || twitterUser === null) {
-            throw new Fail(Fail.PUBSUB,
-                           "failed to retrieve current user information on Twitter." +
-                           "Make sure you are logged in to twitter (in any tab).");
-        }
-
-        if (twitterUser !== ident.primaryHandle || twitterId !== ident.primaryId) {
-            throw new Fail(Fail.PUBSUB,
-                           "Twitter authenticated under a different username. Found '" +
-                           twitterId + ":" + twitterUser + "' but expected  '" +
-                           ident.primaryId + ":" + ident.primaryHandle + "'.");
-        }
-
-        var pubKey = ident.key.toPubKey();
+    return new Promise(resolve => {
+        var pubKey = account.key.toPubKey();
         var min = pubKey.minify();
 
-        var groupNames = ident.groups.map(groupStats => groupStats.name);
+        var groupNames = account.groups.map(groupStats => groupStats.name);
         groupNames.sort();
 
         var groupString = groupNames.map(name => "#" + name).join(" ");
@@ -1810,187 +1702,93 @@ BGAPI.prototype.postKeys = function (username) {
         var expiration = ts + Certs.UserCert.DEFAULT_EXPIRATION_MS;
 
         var sigText = [
-            ident.primaryHandle,
-            ident.primaryId,
+            account.primaryHandle,
+            account.primaryId,
             min.encrypt,
             min.sign,
             ts,
             expiration,
             groupNames.join(" ")
         ].join("");
-        var signature = ident.signText(sigText);
+
+        var signature = account.key.signText(sigText);
 
         var sigStatus = "#keysig " + ts + " " + expiration + " " + signature + " " + groupString;
 
-        return {tweets: [encryptStatus, signStatus, sigStatus], token: token};
-
-    }).then(function (tweetInfo) {
-
-        function isTwitterCtx(ctx) {
-            return (!ctx.isMaimed && ctx.app === "twitter.com");
+        if (encryptStatus.length > 140) {
+            throw new Fail(Fail.PUBSUB, "encryption key cert tweet too long (" + encryptStatus.length + "B > 140B)");
+        }
+        if (signStatus.length > 140) {
+            throw new Fail(Fail.PUBSUB, "signing key cert tweet too long (" + signStatus.length + "B > 140B)");
+        }
+        if (sigStatus.length > 140) {
+            throw new Fail(Fail.PUBSUB, "cert signature tweet too long (" + sigStatus.length + "B > 140B)");
         }
 
-        var twitterCtx = CryptoCtx.filter(isTwitterCtx);
-        var authToken = tweetInfo.token;
-        var tweets = tweetInfo.tweets;
-        var ti;
-        var promisesPromises = [];
-
-        if (twitterCtx.length <= 0) {
-            throw new Fail(Fail.PUBSUB, "Twitter context not available, must have twitter tab open.");
-        }
-
-        for (ti = 0; ti < tweets.length; ti++) {
-            promisesPromises.push(twitterCtx[0].callCS("post_public", {tweet: tweets[ti], authToken: authToken}));
-        }
-
-        return Promise.all(promisesPromises).then(function () {
-            // All tweets pushed.
-            return true;
-        });
+        resolve(API.postTweets(account,
+                               [ {msg: encryptStatus, groups: groupNames},
+                                 {msg: signStatus, groups: groupNames},
+                                 {msg: sigStatus, groups: groupNames}
+                               ])
+                .then(() => true));
     });
 };
 
-BGAPI.prototype.postTweets = function (username, messages) {
+/**
+   Tweets each msgSpec. Promises an array of tweetids.
+   Fails with PUBSUB if any of the messages could not be
+   posted.
+
+   This will update the groupStats on the account.
+
+   each msgSpec is:
+    { msg: text string of message,
+      groups: names of groups concerned with msg
+    }
+*/
+BGAPI.prototype.postTweets = function (account, msgSpecs) {
     "use strict";
 
-    console.debug("[BGAPI] postTweets:", username);
-
-    var ident = Vault.getAccountKP(username);
-    var ts = Date.now();
-
-    if (!ident) {
-        console.error("postTweets for", username, ": nonexistent account");
-        return Promise.reject(new Error("account name does not exist: " + username));
+    // in case account got deleted
+    if (!account || !Vault.accountExists(account.primaryHandle)) {
+        return Promise.reject(new Fail(Fail.NOENT, "account name does not exist: " + account.primaryHandle));
     }
 
-    return new Promise(function (resolve, reject) {
-
-        // find the auth token and the twitter userid;
-        // promises:
-        //   { token: <tok>,
-        //     twitterId: <id>,
-        //     twitterUser: <username>,
-        //   }
-
-        // fetch the user's twitter homepage
-        var preq = new XMLHttpRequest();
-        preq.open("GET", "https://twitter.com", true);
-        preq.onerror = function () {
-            console.error("Problem loading twitter homepage", [].slice.apply(arguments));
-            reject(new Error("error loading twitter homepage"));
-        };
-
-        preq.onload = function () {
-            // parse the response
-            var parser = new DOMParser();
-            var xmlDoc = parser.parseFromString(preq.responseText, "text/html");
-
-            var tokens = xmlDoc.getElementsByName("authenticity_token");
-            if (tokens.length < 1) {
-                return reject(new Fail(Fail.GENERIC, "Could not find auth token"));
-            }
-
-            // the value of the token is always the same so just look at the first
-            // this may be null
-            var token = tokens[0].getAttribute("value");
-
-            var currentUsers = xmlDoc.getElementsByClassName("current-user");
-            if (currentUsers === null || currentUsers.length !== 1) {
-                return reject(new Fail(Fail.GENERIC, "failed to find current-user element for userid and username. Make sure you are logged in to twitter (in any tab)."));
-            }
-
-            var accountGroups = currentUsers[0].getElementsByClassName("account-group");
-            if (accountGroups === null || accountGroups.length !== 1) {
-                console.error("account-group userid fetch failed due to changed format.");
-                return reject(new Fail(Fail.GENERIC, "account-group userid fetch failed due to changed format."));
-            }
-
-            var accountElement = accountGroups[0];
-            var twitterId = accountElement.getAttribute("data-user-id");
-            var twitterUser = accountElement.getAttribute("data-screen-name");
-
-            if (twitterId === null || twitterUser === null) {
-                return reject(new Fail(Fail.GENERIC, "failed to extract ID or username."));
-            }
-
-            if (twitterUser !== username) {
-                return reject(new Fail(Fail.PUBSUB,
-                                       "Twitter authenticated under a different username. Found '" +
-                                       twitterUser + "' but expected  '" + username + "'."));
-            }
-
-            resolve(
-                {token: token,
-                 twitterId: twitterId,
-                 twitterUser: twitterUser,
-                 tweets: messages
-                });
-        };
-        //send the profile request
-        preq.send();
-    }).then(function (twitterInfo) {
-        var token = twitterInfo.token;
-        var twitterUser = twitterInfo.twitterUser;
-        var twitterId = twitterInfo.twitterId;
-        var messages = twitterInfo.tweets;
-
-        var pubKey = ident.toPubKey();
-        var min = pubKey.minify();
-        var encryptKey = min.encrypt;
-        var signKey = min.sign;
-        var encryptStatus = "#encryptkey " + ts + " " + encryptKey;
-        var signStatus = "#signkey " + ts + " " + signKey;
-
-        // Generate signature tweet
-        // Expiration is 30 days
-        var expiration = ts + (60 * 60 * 24 * 30) * 1000;
-
-        var sigText = twitterUser + twitterId + encryptKey + signKey + ts + expiration;
-        var signature = ident.signText(sigText);
-
-        var sigStatus = "#keysig " + ts + " " + expiration + " " + signature;
-
-        return {tweets: messages, token: token};
-
-    }).then(function (tweetInfo) {
-
-        function isTwitterCtx(ctx) {
-            return (!ctx.isMaimed && ctx.app === "twitter.com");
+    return Twitter.postTweets(account.primaryApp, msgSpecs.map(spec => spec.msg)).then(tweetids => {
+        var errorIndex = tweetids.findIndex(tid => (tid instanceof Error));
+        if (errorIndex > -1) {
+            console.error("Error posting tweet:", tweetids[errorIndex]);
+            throw new Fail(Fail.PUBSUB, "Could not post one or more tweets.");
         }
 
-        var twitterCtx = CryptoCtx.filter(isTwitterCtx);
-        var authToken = tweetInfo.token;
-        var tweets = tweetInfo.tweets;
-        var ti;
-        var promisesPromises = [];
+        var counts = {};
 
-        if (twitterCtx.length <= 0) {
-            throw new Fail(Fail.PUBSUB, "Twitter context not available, must have twitter tab open.");
-        }
-
-
-        for (ti = 0; ti < tweets.length; ti++) {
-            promisesPromises.push(twitterCtx[0].callCS("post_public", {tweet: tweets[ti], authToken: authToken}));
-        }
-
-        return Promise.all(promisesPromises).then(values => {
-            console.log("promises ", values);
-            // All tweets pushed.
-            var ret = [];
-            var j = 0;
-            for (var i =0; i<values.length; i++) {
-                if (values[i]) {
-                    j++;
-                }
-                console.log("promise ", JSON.parse(values[i]).tweet_id);
-                ret.push(JSON.parse(values[i]).tweet_id);
+        // for each successful tweet bump send count
+        tweetids.forEach((tid, index) => {
+            if (!tid || tid instanceof Error) {
+                return;
             }
-            console.log("there were " + j + " tweets");
-            return ret;
+            var spec = msgSpecs[index];
+            spec.groups.forEach(grp => {
+                counts[grp] = (counts[grp] || 0) + 1;
+            });
         });
+        var postedOn = Date.now() / 1000.0;
+
+        account.groups.forEach(grpStats => {
+            if (counts[grpStats.name]) {
+                grpStats.lastSentOn = postedOn;
+                grpStats.numSent += counts[grpStats.name];
+            }
+        });
+        if (tweetids.length > 0) {
+            return Vault.saveAccount(account, true).then(() => tweetids);
+        } else {
+            return tweetids;
+        }
     });
 };
+
 
 /**
    closes the tab containing a context.
@@ -2001,6 +1799,11 @@ BGAPI.prototype.closeContextTab = function (tabId) {
     if (tabId >= 0) {
         chrome.tabs.remove(tabId);
     }
+};
+
+BGAPI.prototype.filterContext = function (filter) {
+    "use strict";
+    return CryptoCtx.filter(filter);
 };
 
 /**
@@ -2929,39 +2732,6 @@ var handlers = {
         rpc.params = assertType(rpc.params, {username: ""});
 
         ctx.getFriend(rpc.params.username).then(function (res) {
-            ctx.port.postMessage({callid: rpc.callid, result: res});
-        }).catch(function (err) {
-            console.error(err);
-            ctx.port.postMessage({callid: rpc.callid, error: Fail.toRPC(err)});
-        });
-    },
-
-    post_keys: function (ctx, rpc) {
-        "use strict";
-        rpc.params = assertType(rpc.params, {username: ""});
-        ctx.postKeys(rpc.params.username).then(function (res) {
-            ctx.port.postMessage({callid: rpc.callid, result: res});
-        }).catch(function (err) {
-            console.error(err);
-            ctx.port.postMessage({callid: rpc.callid, error: Fail.toRPC(err)});
-        });
-    },
-
-    post_tweets: function (ctx, rpc) {
-        "use strict";
-        rpc.params = assertType(rpc.params, {tags: [], keys: []});
-        ctx.postTweets(rpc.params.tags, rpc.params.keys).then(function (res) {
-            ctx.port.postMessage({callid: rpc.callid, result: res});
-        }).catch(function (err) {
-            console.error(err);
-            ctx.port.postMessage({callid: rpc.callid, error: Fail.toRPC(err)});
-        });
-    },
-
-    open_twitter_stream: function (ctx, rpc) {
-        "use strict";
-        rpc.params = assertType(rpc.params, {hashtag: ""});
-        ctx.openTwitterStream(rpc.params.hashtag).then(function (res) {
             ctx.port.postMessage({callid: rpc.callid, result: res});
         }).catch(function (err) {
             console.error(err);
