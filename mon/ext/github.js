@@ -56,5 +56,5 @@ var Github = (function() {
     };
 
     return new Github();
-});
+})();
 
