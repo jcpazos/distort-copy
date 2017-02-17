@@ -29,6 +29,7 @@
 		    "vault.js",
 		    "ui.js",
 		    "twitter.js",
+			"github.js",
 		    "background.js"
 		   ]
     },

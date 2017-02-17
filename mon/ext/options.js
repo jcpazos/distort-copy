@@ -6,6 +6,7 @@ var BG = chrome.extension.getBackgroundPage();
 var $ = BG.$;
 var Vault = BG.Vault;
 var Twitter = BG.Twitter;
+var Github = BG.Github;
 var $doc = $(document);
 var Fail = BG.Fail;
 
@@ -565,6 +566,16 @@ function loadPage() {
         }).catch(function (err) {
             updateStatus(err, true);
             throw err;
+        });
+
+        // TODO why isn't this function defined?
+        Github.getGithubUserInfo().then(function (githubInfo) {
+            if (githubInfo.githubUser === null) {
+                updateStatus("Please log in to Github in a new tab.", true);
+                return;
+            }
+            updateStatus("Github information retrieved.");
+            $doc.find("input[name='secondary-id']").val(githubInfo.githubUser);
         });
     });
 
