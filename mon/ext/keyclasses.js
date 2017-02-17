@@ -21,7 +21,7 @@
 /*global
   sjcl, RSAKey,
   Fail, escape,
-  _extends, Utils
+  Utils
 */
 
 /**
@@ -368,7 +368,7 @@ function PubKey(signPem, encryptPem) {
     }
 }
 
-PubKey.prototype = {
+Utils._extends(PubKey, Object, {
     toStore: function () {
         "use strict";
 
@@ -397,7 +397,7 @@ PubKey.prototype = {
         "use strict";
         return this.encrypt.encrypt(aesKey);
     }
-};
+});
 
 PubKey.fromStore = function (obj) {
     "use strict";
@@ -429,7 +429,7 @@ function KeyPair(signPem, encryptPem) {
         this.encrypt.readPrivateKeyFromPEMString(encryptPem.priv);
     }
 }
-_extends(KeyPair, PubKey, {
+Utils._extends(KeyPair, PubKey, {
     toStore: function () {
         "use strict";
 
@@ -519,7 +519,7 @@ ECCPubKey.unminify = function (minified) {
     return ECCPubKey.fromStore(storeFormat);
 };
 
-ECCPubKey.prototype = {
+Utils._extends(ECCPubKey, Object, {
     toStore: function () {
         "use strict";
 
@@ -613,7 +613,7 @@ ECCPubKey.prototype = {
         if (typeof this !== typeof other) {
             return false;
         }
-        
+
         function arrayEquals(a, b) {
             var i;
 
@@ -634,7 +634,7 @@ ECCPubKey.prototype = {
             arrayEquals(this.encrypt.pub.get().x, other.encrypt.pub.get().x) &&
             arrayEquals(this.encrypt.pub.get().y, other.encrypt.pub.get().y);
     }
-};
+});
 
 ECCPubKey.fromStore = function (obj) {
     "use strict";
@@ -724,7 +724,7 @@ Object.defineProperty(ECCKeyPair, "curve", {
     }
 });
 
-_extends(ECCKeyPair, ECCPubKey, {
+Utils._extends(ECCKeyPair, ECCPubKey, {
     toStore: function () {
         "use strict";
 

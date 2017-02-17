@@ -840,7 +840,7 @@
 
             // render private area UI
             sroot.appendChild(parea.render());
-            
+
             // mark all nodes in the parea and the shadowroot
             brandPrivateTree(sroot, areaNumber);
 
@@ -962,7 +962,7 @@
                 var url = "https://twitter.com/i/tweet/create";
                 tpost.open("POST", url, true);
                 tpost.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
-                
+
                 var postData = "authenticity_token=" + encodeURIComponent(token) + "&status=" + encodeURIComponent(tweet);
                 console.debug("Generated post: ", postData, " LENGTH: ", postData.length);
 
@@ -1022,7 +1022,7 @@
                     //resolve(true);
                 }
                 waitForDocument();
-            });          
+            });
         },
 
         create_twitter_app: function (opts) {
@@ -1057,13 +1057,13 @@
             });
         },
     };
-        
+
 
     //handlers that come after background call
     var sdom_backhandlers = {
         darken_elGamal: function (opts) {
             var params = opts.params;
-             
+
             // if the parea doesn't exist, complain
             if (!pareas[params.parent]) {
                 //TODO do something intelligent

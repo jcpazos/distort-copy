@@ -17,7 +17,7 @@
     <http://www.gnu.org/licenses/>.
 **/
 
-/*global Emitter, BGAPI */
+/*global Emitter, BGAPI, Certs */
 
 
 /**
@@ -29,6 +29,3 @@ window.Events = new Emitter();
    Background API
 */
 window.API = new BGAPI();
-
-
-

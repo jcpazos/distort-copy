@@ -20,7 +20,7 @@
 /*global
   chrome, Promise, performance,
   ECCPubKey, AESKey, KeyLoader, Friendship,
-  UI, Utils, Vault, Twitter,
+  UI, Utils, Vault, Twitter, Certs,
   Events, API,
   getHost, Fail, assertType, OneOf, KH_TYPE, MSG_TYPE, _extends
 */
@@ -341,7 +341,7 @@ KAPEngine.prototype = {
             kap.friendship.reject(err);
             throw err;
         }
-        
+
         console.log("received kap2 in state:", kap.state, kap);
 
         if (msg.hdr.AFID !== kap.aId) {
@@ -385,7 +385,7 @@ KAPEngine.prototype = {
         if (!KAP._verifySignature(msg, kap.otherIdent)) {
             failKAP(new Fail(Fail.KAPERROR, "bad signature"));
         }
-        
+
         if (msg.hdr.AFID !== kap.aId) {
             console.error("msg AFID:", msg.hdr.AFID, "kap.aId:", kap.aId);
             failKAP(kap, new Fail(Fail.KAPERROR, "different AFID expected"));
@@ -543,7 +543,6 @@ function CryptoCtx(port) {
     this.extCallId = -1;
     this.promptId = 0;
     this.tweetStreamerID = '';
-    this.pKeyStreamerID = '';
 
     // content script pending call structures
     this._csCalls = {};
@@ -604,7 +603,6 @@ CryptoCtx.prototype = {
     close: function () {
         "use strict";
         API.streamerManager.removeStreamer(this.tweetStreamerID);
-        API.streamerManager.removeStreamer(this.pKeyStreamerID);
         this.port = null;
         this.tabId = -1;
         if (this.kapEngine) {
@@ -1221,7 +1219,7 @@ CryptoCtx.prototype = {
         "use strict";
 
         var that = this;
-        
+
         if (!this.kr) {
             console.debug("[message] incoming message");
         } else {
@@ -1243,81 +1241,6 @@ CryptoCtx.prototype = {
             default:
                 reject(new Fail(Fail.BADTYPE, "unknown message"));
             }
-        });
-    },
-
-
-    //TODO: remove.
-    postKeys: function (message) {
-        "use strict";
-        var that = this;
-
-        var prompt = UI.prompt(that, that.promptId++,
-                               "Beeswax will post public keys to twitter account " + "'@" + message + "'\n Do you wish to continue?",
-                               [UI.Prompt.ACCEPT, UI.Prompt.REFUSE]);
-        return prompt.getPromise().then(function (triggered) {
-            if (triggered !== UI.Prompt.ACCEPT) {
-                throw new Fail(Fail.REFUSED, "Posting Keys not accepted: " + triggered);
-            } else {
-                // Accepted
-                that.openKeyring(message).then(function () {
-                    console.log("opened keyring " + message);
-                    return API.postKeys(that.kr.username).catch(function (err) {
-                        UI.log("error reposting(" + err.code + "): " + err);
-                        throw err; // throw again
-                    }).then(function () {
-                        UI.log("Key for @" + that.kr.username + " posted.");
-                    });
-                })["catch"](function (err) {
-                    console.error("failed to open keyring " + message, err);
-                    if (err.code === "NOKEYRING") {
-                        return that.newKeyring(message).then(function () {
-                            console.log("new keyring created");
-                            return API.postKeys(that.kr.username).catch(function (err) {
-                                UI.log("error reposting(" + err.code + "): " + err);
-                                throw err; // throw again
-                            }).then(function () {
-                                UI.log("Key for @" + that.kr.username + " reposted.");
-                            });
-                        });
-                    } else {
-                        throw err;
-                    }
-                });
-            }
-        });
-    },
-
-    postTweets: function (tags, keys) {
-        "use strict";
-        var that = this;
-        var i;
-
-        if (that.kr === null) {
-            return new Fail(Fail.NOKEYRING, "Keyring not open.");
-        }
-
-        var prompt = UI.prompt(that, that.promptId++,
-           "Beeswax will post your messages to twitter account " + "'@" + that.kr.username + "'\n Do you wish to continue?",
-           [UI.Prompt.ACCEPT, UI.Prompt.REFUSE]);
-        return prompt.getPromise().then(function (triggered) {
-            if (triggered !== UI.Prompt.ACCEPT) {
-                throw new Fail(Fail.REFUSED, "Posting Tweets not accepted: " + triggered);
-            }
-        }).then(function () {
-            return API.postTweets(that.kr.username, keys);
-        }).then(function (tweetIDs) {
-            var baseString = " https://twitter.com/" + encodeURIComponent(that.kr.username) + "/status/";
-            UI.log("Tweets for @" + that.kr.username + " posted.");
-            for (i = 0; i < tags.length; i++) {
-                tags[i] = tags[i] + baseString + tweetIDs[i];
-            }
-            return API.postTweets(that.kr.username, tags);
-        }).then(function () {
-            UI.log("Replies for @" + that.kr.username + " posted.");
-        }).catch(function (err) {
-            UI.log("error posting messages(" + err.code + "): " + err);
-            throw err;
         });
     },
 
@@ -1427,7 +1350,7 @@ CryptoCtx.prototype = {
         }).then(function (tpost) {
             UI.log("Stream for @" + that.kr.username + " acquired.");
             return tpost;
-        });   
+        });
     },
 
     encryptMessage: function (principals, plaintext) {
@@ -1437,7 +1360,7 @@ CryptoCtx.prototype = {
         var result = [];
         var promisesPromises = [];
         var i;
-        
+
         for (i = 0; i < principals.length; i++) {
             promisesPromises.push(API.fetchPublic(principals[i]));
         }
@@ -1466,11 +1389,9 @@ CryptoCtx.prototype = {
 
     },
 
-    setStreamerIDs: function (tweetStreamerID, pKeyStreamerID) {
+    setStreamerIDs: function (tweetStreamerID) {
         "use strict";
         this.tweetStreamerID = tweetStreamerID;
-        this.pKeyStreamerID = pKeyStreamerID;
-
     }
 };
 
@@ -1487,7 +1408,7 @@ function PeriodicTask(periodMs) {
 
 PeriodicTask.prototype.stop = function () {
     "use strict";
-    
+
     if (this.timer > -1) {
         window.clearInterval(this.timer);
     }
@@ -1568,15 +1489,15 @@ _extends(DistributeTask, PeriodicTask, {
         //  if a different key is found: raise an alarm
         //
 
-        var checkTime = Date.now();
-        var ident = Vault.getAccountKP(that.username);
+        var checkTime = Date.now() / 1000.0;
+        var account = Vault.getAccount(that.username);
 
-        if (!ident) {
+        if (!account) {
             throw new Fail(Fail.NOIDENT, "No identity attached with username", that.username);
         }
 
         function _repostKey() {
-            return API.postKeys(that.username).catch(function (err) {
+            return API.postKeys(account).catch(function (err) {
                 UI.log("error reposting(" + err.code + "): " + err);
                 throw err; // throw again
             }).then(function () {
@@ -1584,24 +1505,30 @@ _extends(DistributeTask, PeriodicTask, {
             });
         }
 
-        return API.fetchTwitter(that.username).then(function (twitterKeyContainer) {
-            var twitterKey = twitterKeyContainer.key;
-            var myKey = ident.toPubKey();
-            var keyAgeMs = checkTime - twitterKeyContainer.ts;
+        return Twitter.fetchLatestCertFromFeed(that.username).then(function (twitterCert) {
+            var myKey = account.key.toPubKey();
+            var keyAgeMs = (checkTime - twitterCert.validFrom) * 1000;
 
-            if (!twitterKey.equalTo(myKey)) {
+            if (!twitterCert.key.equalTo(myKey)) {
                 console.error("Key of @" + that.username + " was found to be different on twitter.");
                 UI.raiseWarning(null, "Your own key (@" + that.username + ") is different on twitter.");
                 throw new Fail(Fail.INVALIDKEY, "Key of @" + that.username, " was found to be different on twitter.");
             }
 
-            if (checkTime > twitterKeyContainer.expiration) {
+            if (checkTime > twitterCert.validUntil) {
                 UI.log("Key for @" + that.username + " has expired. Reposting.");
                 return _repostKey();
             }
 
             if (keyAgeMs > BGAPI.MAX_KEY_POST_AGE_MS) {
                 UI.log("Key for @" + that.username + " has aged. Reposting.");
+                return _repostKey();
+            }
+
+            var accountGroupNames = account.groups.map(gstat => gstat.name);
+            var intersection = accountGroupNames.filter(name => twitterCert.groups.includes(name));
+            if (intersection.length !== account.groups.length || intersection.length !== twitterCert.groups) {
+                UI.log("Group memberships for @" + that.username + " have changed. Reposting.");
                 return _repostKey();
             }
 
@@ -1642,6 +1569,7 @@ function BGAPI() {
     // accountid => Vault.Account
     this.activeAccounts = {};
     this.streamerManager = new Twitter.StreamerManager();
+    Certs.listenForTweets(this.streamerManager);
 
     Events.on('account:updated', this.accountUpdated, this);
     Events.on('account:deleted', this.accountDeleted, this);
@@ -1755,224 +1683,112 @@ BGAPI.prototype.accountChanged = function (username) {
     this.distributeTasks[username].start();
 };
 
-// Returns a promise that resolves to true if keys for the given
-// account name can be posted.
-BGAPI.prototype.postKeys = function (username) {
+// Promises true if the certificate for the given account is posted successfully.
+BGAPI.prototype.postKeys = function (account) {
     "use strict";
 
-    console.debug("postKeys:", username);
-
-    var ident = Vault.getAccountKP(username);
     var ts = Date.now();
 
-    if (!ident) {
-        console.error("postKeys for", username, ": nonexistent account");
-        return Promise.reject(new Error("account name does not exist: " + username));
-    }
-
-    return Twitter.getUserInfo().then(function (twitterInfo) {
-        var token = twitterInfo.token;
-        var twitterUser = twitterInfo.twitterUser;
-        var twitterId = twitterInfo.twitterId;
-        
-        if (twitterId === null || twitterUser === null) {
-            throw new Fail(Fail.PUBSUB,
-                           "failed to retrieve current user information on Twitter." +
-                           "Make sure you are logged in to twitter (in any tab).");
-        }
-
-        if (twitterUser !== username) {
-            throw new Fail(Fail.PUBSUB,
-                           "Twitter authenticated under a different username. Found '" +
-                           twitterUser + "' but expected  '" + username + "'.");
-        }
-
-        
-        var pubKey = ident.toPubKey();
+    return new Promise(resolve => {
+        var pubKey = account.key.toPubKey();
         var min = pubKey.minify();
-        var encryptKey = min.encrypt;
-        var signKey = min.sign;
-        var encryptStatus = "#encryptkey " + ts + " " + encryptKey;
-        var signStatus = "#signkey " + ts + " " + signKey;
 
-        // Generate signature tweet
-        // Expiration is 30 days
-        var expiration = ts + (60 * 60 * 24 * 30) * 1000;
+        var groupNames = account.groups.map(groupStats => groupStats.name);
+        groupNames.sort();
 
-        var sigText = twitterUser + twitterId + encryptKey + signKey + ts + expiration;
-        var signature = ident.signText(sigText);
+        var groupString = groupNames.map(name => "#" + name).join(" ");
+        var encryptStatus = "#encryptkey " + ts + " " + min.encrypt + " " + groupString;
+        var signStatus = "#signkey " + ts + " " + min.sign + " " + groupString;
+        var expiration = ts + Certs.UserCert.DEFAULT_EXPIRATION_MS;
 
-        var sigStatus = "#keysig " + ts + " " + expiration + " " + signature;
+        var sigText = [
+            account.primaryHandle,
+            account.primaryId,
+            min.encrypt,
+            min.sign,
+            ts,
+            expiration,
+            groupNames.join(" ")
+        ].join("");
 
-        return {tweets: [encryptStatus, signStatus, sigStatus], token: token};
+        var signature = account.key.signText(sigText);
 
-    }).then(function (tweetInfo) {
+        var sigStatus = "#keysig " + ts + " " + expiration + " " + signature + " " + groupString;
 
-        function isTwitterCtx(ctx) {
-            return (!ctx.isMaimed && ctx.app === "twitter.com");
+        if (encryptStatus.length > 140) {
+            throw new Fail(Fail.PUBSUB, "encryption key cert tweet too long (" + encryptStatus.length + "B > 140B)");
+        }
+        if (signStatus.length > 140) {
+            throw new Fail(Fail.PUBSUB, "signing key cert tweet too long (" + signStatus.length + "B > 140B)");
+        }
+        if (sigStatus.length > 140) {
+            throw new Fail(Fail.PUBSUB, "cert signature tweet too long (" + sigStatus.length + "B > 140B)");
         }
 
-        var twitterCtx = CryptoCtx.filter(isTwitterCtx);
-        var authToken = tweetInfo.token;
-        var tweets = tweetInfo.tweets;
-        var ti;
-        var promisesPromises = [];
-
-        if (twitterCtx.length <= 0) {
-            throw new Fail(Fail.PUBSUB, "Twitter context not available, must have twitter tab open.");
-        }
-
-        
-        for (ti = 0; ti < tweets.length; ti++) {
-            promisesPromises.push(twitterCtx[0].callCS("post_public", {tweet: tweets[ti], authToken: authToken}));
-        }
-
-        return Promise.all(promisesPromises).then(function () {
-            // All tweets pushed.
-            return true;
-        });
+        resolve(API.postTweets(account,
+                               [ {msg: encryptStatus, groups: groupNames},
+                                 {msg: signStatus, groups: groupNames},
+                                 {msg: sigStatus, groups: groupNames}
+                               ])
+                .then(() => true));
     });
 };
 
-BGAPI.prototype.postTweets = function (username, messages) {
+/**
+   Tweets each msgSpec. Promises an array of tweetids.
+   Fails with PUBSUB if any of the messages could not be
+   posted.
+
+   This will update the groupStats on the account.
+
+   each msgSpec is:
+    { msg: text string of message,
+      groups: names of groups concerned with msg
+    }
+*/
+BGAPI.prototype.postTweets = function (account, msgSpecs) {
     "use strict";
 
-    console.debug("[BGAPI] postTweets:", username);
-    
-    var ident = Vault.getAccountKP(username);
-    var ts = Date.now();
-
-    if (!ident) {
-        console.error("postTweets for", username, ": nonexistent account");
-        return Promise.reject(new Error("account name does not exist: " + username));
+    // in case account got deleted
+    if (!account || !Vault.accountExists(account.primaryHandle)) {
+        return Promise.reject(new Fail(Fail.NOENT, "account name does not exist: " + account.primaryHandle));
     }
 
-    return new Promise(function (resolve, reject) {
-
-        // find the auth token and the twitter userid;
-        // promises:
-        //   { token: <tok>,
-        //     twitterId: <id>,
-        //     twitterUser: <username>,
-        //   }
-
-        // fetch the user's twitter homepage
-        var preq = new XMLHttpRequest();
-        preq.open("GET", "https://twitter.com", true);
-        preq.onerror = function () {
-            console.error("Problem loading twitter homepage", [].slice.apply(arguments));
-            reject(new Error("error loading twitter homepage"));
-        };
-
-        preq.onload = function () {
-            // parse the response
-            var parser = new DOMParser();
-            var xmlDoc = parser.parseFromString(preq.responseText, "text/html");
-
-            var tokens = xmlDoc.getElementsByName("authenticity_token");
-            if (tokens.length < 1) {
-                return reject(new Fail(Fail.GENERIC, "Could not find auth token"));
-            }
-
-            // the value of the token is always the same so just look at the first
-            // this may be null
-            var token = tokens[0].getAttribute("value");
-
-            var currentUsers = xmlDoc.getElementsByClassName("current-user");
-            if (currentUsers === null || currentUsers.length !== 1) {
-                return reject(new Fail(Fail.GENERIC, "failed to find current-user element for userid and username. Make sure you are logged in to twitter (in any tab)."));
-            }
-
-            var accountGroups = currentUsers[0].getElementsByClassName("account-group");
-            if (accountGroups === null || accountGroups.length !== 1) {
-                console.error("account-group userid fetch failed due to changed format.");
-                return reject(new Fail(Fail.GENERIC, "account-group userid fetch failed due to changed format."));
-            }
-
-            var accountElement = accountGroups[0];
-            var twitterId = accountElement.getAttribute("data-user-id");
-            var twitterUser = accountElement.getAttribute("data-screen-name");
-
-            if (twitterId === null || twitterUser === null) {
-                return reject(new Fail(Fail.GENERIC, "failed to extract ID or username."));
-            }
-
-            if (twitterUser !== username) {
-                return reject(new Fail(Fail.PUBSUB,
-                                       "Twitter authenticated under a different username. Found '" +
-                                       twitterUser + "' but expected  '" + username + "'."));
-            }
-
-            resolve(
-                {token: token,
-                 twitterId: twitterId,
-                 twitterUser: twitterUser,
-                 tweets: messages
-                });
-        };
-        //send the profile request
-        preq.send();
-    }).then(function (twitterInfo) {
-        var token = twitterInfo.token;
-        var twitterUser = twitterInfo.twitterUser;
-        var twitterId = twitterInfo.twitterId;
-        var messages = twitterInfo.tweets;
-
-        var pubKey = ident.toPubKey();
-        var min = pubKey.minify();
-        var encryptKey = min.encrypt;
-        var signKey = min.sign;
-        var encryptStatus = "#encryptkey " + ts + " " + encryptKey;
-        var signStatus = "#signkey " + ts + " " + signKey;
-
-        // Generate signature tweet
-        // Expiration is 30 days
-        var expiration = ts + (60 * 60 * 24 * 30) * 1000;
-
-        var sigText = twitterUser + twitterId + encryptKey + signKey + ts + expiration;
-        var signature = ident.signText(sigText);
-
-        var sigStatus = "#keysig " + ts + " " + expiration + " " + signature;
-
-        return {tweets: messages, token: token};
-
-    }).then(function (tweetInfo) {
-     
-
-        function isTwitterCtx(ctx) {
-            return (!ctx.isMaimed && ctx.app === "twitter.com");
+    return Twitter.postTweets(account.primaryApp, msgSpecs.map(spec => spec.msg)).then(tweetids => {
+        var errorIndex = tweetids.findIndex(tid => (tid instanceof Error));
+        if (errorIndex > -1) {
+            console.error("Error posting tweet:", tweetids[errorIndex]);
+            throw new Fail(Fail.PUBSUB, "Could not post one or more tweets.");
         }
 
-        var twitterCtx = CryptoCtx.filter(isTwitterCtx);
-        var authToken = tweetInfo.token;
-        var tweets = tweetInfo.tweets;
-        var ti;
-        var promisesPromises = [];
+        var counts = {};
 
-        if (twitterCtx.length <= 0) {
-            throw new Fail(Fail.PUBSUB, "Twitter context not available, must have twitter tab open.");
-        }
-
-
-        for (ti = 0; ti < tweets.length; ti++) {
-            promisesPromises.push(twitterCtx[0].callCS("post_public", {tweet: tweets[ti], authToken: authToken}));
-        }
-
-        return Promise.all(promisesPromises).then(values => {
-            console.log("promises ", values);
-            // All tweets pushed.
-            var ret = [];
-            var j = 0;
-            for (var i =0; i<values.length; i++) {
-                if (values[i]) j++;
-                console.log("promise ", JSON.parse(values[i]).tweet_id);
-                ret.push(JSON.parse(values[i]).tweet_id);
+        // for each successful tweet bump send count
+        tweetids.forEach((tid, index) => {
+            if (!tid || tid instanceof Error) {
+                return;
             }
-            console.log("there were " + j + " tweets");
-            return ret;
+            var spec = msgSpecs[index];
+            spec.groups.forEach(grp => {
+                counts[grp] = (counts[grp] || 0) + 1;
+            });
         });
+        var postedOn = Date.now() / 1000.0;
+
+        account.groups.forEach(grpStats => {
+            if (counts[grpStats.name]) {
+                grpStats.lastSentOn = postedOn;
+                grpStats.numSent += counts[grpStats.name];
+            }
+        });
+        if (tweetids.length > 0) {
+            return Vault.saveAccount(account, true).then(() => tweetids);
+        } else {
+            return tweetids;
+        }
     });
 };
+
 
 /**
    closes the tab containing a context.
@@ -1983,6 +1799,11 @@ BGAPI.prototype.closeContextTab = function (tabId) {
     if (tabId >= 0) {
         chrome.tabs.remove(tabId);
     }
+};
+
+BGAPI.prototype.filterContext = function (filter) {
+    "use strict";
+    return CryptoCtx.filter(filter);
 };
 
 /**
@@ -2082,7 +1903,7 @@ BGAPI.prototype.openTwitterStream = function (hashtag, username) {
     "use strict";
     var that = this;
 
-    return new Promise(function (resolve, reject) { 
+    return new Promise(function (resolve, reject) {
         console.debug("[BGAPI] getting Twitter Stream for :", username);
         // assumes a single tabId will be returned
         var ctx;
@@ -2109,7 +1930,6 @@ BGAPI.prototype.openTwitterStream = function (hashtag, username) {
                             throw err;
                         }).then(function (keyObj) {
                             var tweetStreamer = that.streamerManager.addStreamer(hashtag, Twitter.TweetStreamer, keyObj);
-                            var pKeyStreamer = that.streamerManager.addStreamer(hashtag, Twitter.PkeyStreamer, keyObj);
                             tweetStreamer.on('sendTweet', function (tweet) {
                                 console.log('new tweet received', tweet);
                                 //TOOD: -fix bug with ctx not having the keyring open
@@ -2118,236 +1938,13 @@ BGAPI.prototype.openTwitterStream = function (hashtag, username) {
                             });
                             console.log('ctx tab id', ctx.tabId);
                             //console.log('setting tweetStreamerID to ', tweetStreamer.streamerID);
-                            ctx.setStreamerIDs(tweetStreamer.streamerID, pKeyStreamer.streamerID);
+                            ctx.setStreamerIDs(tweetStreamer.streamerID);
                             tweetStreamer.send(tweetStreamer.postData);
-                            pKeyStreamer.send(pKeyStreamer.postData);
                         });
                     }
                 }
             }
         });
-    });
-};
-
-// Fetches user's latest public key on Twitter
-//
-// Promises {key: public key, (an ECCPubKey)
-//           ts: the publication timestamp (ms since epoch)
-//           expiration: expiration timestamp (ms since epoch)}
-//
-// Fails with NOIDENT if keys can't be found (expired or not)
-// Fails with GENERIC if any other problem arises
-//
-// FIXME check that timestamp in the tweet is close-ish to
-//       timestamp of the posted date.
-BGAPI.prototype.fetchTwitter = function (username) {
-    "use strict";
-
-    var sign = {};
-    var encrypt = {};
-    var signature = {};
-    var expiration = {};
-    var timestamp = null;
-    var twitterId = null;
-
-    //function that will look for a given tag, and call a function effect if it finds it, returns true/false
-    function findtag(tag, element) {
-        //look through each hashtag for the given element
-        var hashtags = element.getElementsByClassName("twitter-hashtag");
-        for (var i = 0; i < hashtags.length; i++)  {
-            //if it matches the one we're looking for, do the side effect with the element
-            if (hashtags[i].innerText === tag) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    //look through the tweets in xmldoc for tags
-    function looktweet(xmlDoc) {
-        //run through tweets looking for the right hashtag
-        var tweets = xmlDoc.getElementsByClassName("js-tweet-text");
-        var toks;
-
-        // TODO(rjsumi): use something other than element.closest so we don't require Chrome >= 41.
-        for (var i = 0; i < tweets.length; i++) {
-
-            var tweet = tweets[i];
-            var content = tweet.closest(".content");
-            if (!content) {
-                console.debug("No .content element. in tweet. skipping.", tweet);
-                continue;
-            }
-
-            var profileLinks = content.getElementsByClassName("js-user-profile-link");
-            if (profileLinks.length < 1) {
-                continue;
-            }
-
-            //<span class="_timestamp js-short-timestamp " data-aria-label-part="last" data-time="1448867714" data-time-ms="1448867714000" data-long-form="true">29 Nov 2015</span>
-            var timeContainer = content.getElementsByClassName("js-short-timestamp");
-            if (timeContainer.length < 1) {
-                // no timestamp
-                continue;
-            }
-            var postTime = Number(timeContainer[0].getAttribute("data-time-ms"));
-            console.log("Tweet post time:", postTime);
-
-            var id = profileLinks[0].getAttribute("data-user-id");
-            // The format of a tweeted key triple is:
-            // #encryptkey <timestamp> <encryption key>
-            // #signkey <timestamp> <signing key>
-            // #keysig <timestamp> <expiration> <signature(username, twitterid, enckey, signkey, ts, expiration)>
-            //look through each tweet for the hashtag for signing
-            if (findtag("#signkey", tweet)) {
-                toks = tweet.innerText.split(/\s+/);
-                if (toks.length === 3 && sign[toks[1]] === undefined && Number(toks[1])) {
-                    sign[toks[1]] = {tweet: toks[2], twitterid: id};
-                } else {
-                    console.warn("#signkey tweet for user", username, "is malformed:", tweet);
-                    continue; // try next tweet
-                }
-            }
-
-            //look through each tweet for the hashtag for encrypting
-            if (findtag("#encryptkey", tweet)) {
-                toks = tweet.innerText.split(/\s+/);
-                if (toks.length === 3 && encrypt[toks[1]] === undefined && Number(toks[1])) {
-                    encrypt[toks[1]] = {tweet: toks[2], twitterid: id};
-                } else {
-                    console.warn("#encryptkey tweet for user", username, "is malformed:", tweet);
-                    continue; // try next tweet
-                }
-            }
-
-            //look through each tweet for the hashtag for encrypting
-            if (findtag("#keysig", tweet)) {
-                toks = tweet.innerText.split(/\s+/);
-                if (toks.length === 4 && signature[toks[1]] === undefined && Number(toks[1]) && Number(toks[2])) {
-                    expiration[toks[1]] = {tweet: toks[2], twitterid: id};
-                    signature[toks[1]] = {tweet: toks[3], twitterid: id};
-                } else {
-                    console.warn("#keysig tweet for user", username, "is malformed:", tweet);
-                    continue; // try next tweet
-                }
-            }
-        }
-
-        var timestamps = [];
-        // Determine timestamps for which we have entire triples.
-        for (var ts in signature) {
-            if (sign[ts] && encrypt[ts] && sign[ts].twitterid === signature[ts].twitterid && encrypt[ts].twitterid === signature[ts].twitterid) {
-                timestamps.push(ts);
-            }
-        }
-        timestamps.sort(function (a, b) {
-            // We want a descending order so negative should be returned when the second is larger.
-            return Number(b) - Number(a);
-        });
-
-        // If we find no timestamps, that is a problem.
-        if (timestamps.length === 0) {
-            // TODO(rjsumi): error reporting
-            sign = null;
-            encrypt = null;
-            signature = null;
-            expiration = null;
-            return;
-        }
-
-        // Check for the newest one i.e. the highest timestamp.
-        timestamp = timestamps[0];
-
-        sign = sign[timestamp].tweet;
-        encrypt = encrypt[timestamp].tweet;
-        twitterId = signature[timestamp].twitterid;
-        signature = signature[timestamp].tweet;
-        expiration = expiration[timestamp].tweet;
-    }
-
-    return new Promise(function (resolve, reject) {
-
-        // return ECCPubKey
-        function parseKey() {
-            //we found both keys, persist them
-            var minified = {
-                encrypt: encrypt,
-                sign: sign
-            };
-            var key = ECCPubKey.unminify(minified);
-            
-            var signedMessage = username + twitterId + encrypt + sign + timestamp + expiration;
-            if (!key.verifySignature(signedMessage, signature)) {
-                console.error("Failed to verify signature: ", sign, encrypt, signature);
-                throw new Fail(Fail.GENERIC, "verification failed");
-            }
-            return key;
-        }
-
-        // fetch the corresponding username's tweets
-        // get the signing key and the encrypting key
-        var preq = new XMLHttpRequest();
-        preq.open("GET", "https://twitter.com/" + encodeURIComponent(username), true);
-        preq.onerror = function () {
-            console.error("Prolem loading tweets", [].slice.apply(arguments));
-            reject(new Fail(Fail.GENERIC, "Ajax failed."));
-        };
-        preq.onload = function () {
-            //parse the response
-            var parser = new DOMParser();
-            var xmlDoc = parser.parseFromString(preq.responseText, "text/html");
-            var loadedkey;
-
-            //look through the response to find keys
-            looktweet(xmlDoc);
-
-            if (sign !== null && encrypt !== null && signature !== null) {
-                try {
-                    loadedkey = parseKey(); // captures sign, encrypt, timestamp, expiration, etc.
-                } catch (err) {
-                    console.error("Failed to parse key: ", sign, encrypt, signature, err);
-                    reject(new Fail(Fail.NOIDENT, "Could not parse keys found."));
-                    return;
-                }
-                resolve({key: loadedkey,
-                         ts: Number(timestamp),
-                         expiration: Number(expiration)});
-            } else {
-                //we failed, do another pass on the search page
-                var sreq = new XMLHttpRequest();
-                sreq.open("GET", "https://twitter.com/search?q=%23signkey%20OR%20%23encryptkey%20OR%20%23signature%20from%3A" + username, true);
-                sreq.onerror = function () {
-                    console.error("Prolem loading tweets (search)", [].slice.apply(arguments));
-                    reject(new Fail(Fail.GENERIC, "Ajax failed."));
-                };
-
-                sreq.onload = function () {
-                    //parse the response to find the key
-                    var parser = new DOMParser();
-                    var xmlDoc = parser.parseFromString(sreq.responseText, "text/html");
-                    looktweet(xmlDoc);
-                    if (sign !== null && encrypt !== null && signature !== null) {
-                        try {
-                            resolve({key: parseKey(),
-                                     ts: Number(timestamp),
-                                     expiration: Number(expiration)});  // captures sign, encrypt, timestamp, expiration, etc.
-                        } catch (err) {
-                            console.error("Failed to parse key: ", sign, encrypt, signature, err);
-                            reject(new Fail(Fail.NOIDENT, "Could not parse keys found."));
-                            return;
-                        }
-                    } else {
-                        console.error("failed to find both keys and signature for @" + username, sign, encrypt, signature);
-                        reject(new Fail(Fail.NOIDENT, "Could not find key in tweets."));
-                        return;
-                    }
-                };
-                //send the search request
-                sreq.send();
-            }
-        };
-        //send the profile request
-        preq.send();
     });
 };
 
@@ -3135,39 +2732,6 @@ var handlers = {
         rpc.params = assertType(rpc.params, {username: ""});
 
         ctx.getFriend(rpc.params.username).then(function (res) {
-            ctx.port.postMessage({callid: rpc.callid, result: res});
-        }).catch(function (err) {
-            console.error(err);
-            ctx.port.postMessage({callid: rpc.callid, error: Fail.toRPC(err)});
-        });
-    },
-
-    post_keys: function (ctx, rpc) {
-        "use strict";
-        rpc.params = assertType(rpc.params, {username: ""});
-        ctx.postKeys(rpc.params.username).then(function (res) {
-            ctx.port.postMessage({callid: rpc.callid, result: res});
-        }).catch(function (err) {
-            console.error(err);
-            ctx.port.postMessage({callid: rpc.callid, error: Fail.toRPC(err)});
-        });
-    },
-
-    post_tweets: function (ctx, rpc) {
-        "use strict";
-        rpc.params = assertType(rpc.params, {tags: [], keys: []});
-        ctx.postTweets(rpc.params.tags, rpc.params.keys).then(function (res) {
-            ctx.port.postMessage({callid: rpc.callid, result: res});
-        }).catch(function (err) {
-            console.error(err);
-            ctx.port.postMessage({callid: rpc.callid, error: Fail.toRPC(err)});
-        });
-    },
-
-    open_twitter_stream: function (ctx, rpc) {
-        "use strict";
-        rpc.params = assertType(rpc.params, {hashtag: ""});
-        ctx.openTwitterStream(rpc.params.hashtag).then(function (res) {
             ctx.port.postMessage({callid: rpc.callid, result: res});
         }).catch(function (err) {
             console.error(err);

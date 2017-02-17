@@ -22,6 +22,7 @@
     },
     "background": {
 	"scripts": ["lib/jquery-1.11.3.min.js",
+                    "lib/twitter-text.js",
 		    "sjcl.js",
 		    "utils.js",
 		    "emitter.js",

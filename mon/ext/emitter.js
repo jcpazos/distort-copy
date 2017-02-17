@@ -26,6 +26,9 @@ window.Emitter = (function() {
     }
 
     Emitter.prototype = {
+        // to support _extends() inheritance
+        constructor: Emitter,
+
         _addListener: function (eventName, cb, thisArg, runOnce) {
             if (typeof cb !== "function") {
                 throw new Error("only functions are supported as callbacks.");

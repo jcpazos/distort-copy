@@ -18,20 +18,18 @@
 **/
 
 /*global
-  Promise, Fail, $, Utils,_extends,
+  Promise, Fail, $, Utils,
   API,
-
-  ECCPubKey,
-
-  Emitter,
-
-  CryptoCtx
+  Emitter, Certs
 */
 
 /*exported Twitter */
 
 var Twitter = (function (module) {
     "use strict";
+
+    // lib/twitter-text.js
+    var TT = window.twttr;
 
     /** returns an XMLHttpRequest with appropriate authorize headers
         for the given URL, using App-Only and user auth.
@@ -121,13 +119,11 @@ var Twitter = (function (module) {
     function Streamer(hashtags, streamerID, accountCredentials) {
         Streamer.__super__.constructor.apply(this, arguments);
 
-        this._callbacks = {sendTweet:[]};
         this.streamerID = streamerID;
         this.creds = accountCredentials;
 
         this.hashtags = (typeof hashtags === "string") ? hashtags.split(",") : hashtags.slice();
 
-        this.index = 0;
         this.stream_buffer = '';
         this.tweetCount = 0;
         this.connectedOn = 0; // UNIX timestamp in seconds;
@@ -136,20 +132,26 @@ var Twitter = (function (module) {
     }
 
     //addListener
-    _extends(Streamer, Emitter, {
+    Utils._extends(Streamer, Emitter, {
         _initXHR: function () {
             if (this.tpost) {
                 this.tpost.abort();
             }
-
+            var streamer = this;
             var track = this.hashtags.join(",");
             this.postData = "track=" + encodeURIComponent(track);
             var url = 'https://stream.twitter.com/1.1/statuses/filter.json';
+
+            this.index = 0;
             this.tpost = _appOnlyXHR("POST", url, [['track', track]], this.creds);
+            this.tpost.onreadystatechange = function () {
+                return streamer.onReadyStateChange(this /*the xhr*/);
+            };
         },
 
-        sendTweet: function (tweet) {
-            this._callbacks.sendTweet[0](tweet);
+        onReadyStateChange: function (xhr) {
+            /*jshint unused: false */
+            throw new Error("not implemented");
         },
 
         send: function () {
@@ -164,17 +166,99 @@ var Twitter = (function (module) {
 
     module.Streamer = Streamer;
 
-    function TweetStreamer(hashtag, streamerID, accountCredentials) {
-        TweetStreamer.__super__.constructor.call(this, hashtag, streamerID, accountCredentials);
+    function BasicStreamer(hashtag, streamerID, accountCredentials) {
+        BasicStreamer.__super__.constructor.call(this, hashtag, streamerID, accountCredentials);
+    }
 
-        this.tpost.onreadystatechange = (function () {
+    Utils._extends(BasicStreamer, Streamer, {
+        onReadyStateChange: function (xhr) {
+            if (xhr !== this.tpost) {
+                console.error("receiving event for previous XHR");
+                return;
+            }
+
             // 0 unsent
             // 1 opened
             // 2 headers received
             // 3 loading
             // 4 done
-            if (this.tpost.readyState > 2)  {
-                if (this.tpost.status >= 200 && this.tpost.status <= 400) {
+            if (xhr.readyState > 2)  {
+                if (xhr.status >= 200 && xhr.status <= 400) {
+                    //parse pkey info and save into database
+                    //start at the index we left off
+                    //console.log('responseText ', this.tpost.responseText);
+                    this.stream_buffer = xhr.responseText.substr(this.index);
+
+                    //remove possible leading whitespace from tpost.responseText
+
+                    //Twitter periodically sends lines of whitespace if there is no
+                    //message to keep the TCP stream warm (and forcing clients to
+                    //ingest to stay connected).
+                    this.stream_buffer = this.stream_buffer.replace(/^\s+/g, "");
+
+                    // FIXME this line parsing is wrong. doesn't take into account
+                    // partial lines, and stops parsing if there are blanks in the
+                    // middle of the chunk.
+
+                    while (this.stream_buffer.length !== 0 &&
+                           this.stream_buffer[0] !== '\n' &&
+                           this.stream_buffer[0] !== '\r') {
+                        var curr_index = this.stream_buffer.indexOf('\n');
+                        this.index += this.stream_buffer.indexOf('\n')+1;
+
+                        var json = this.stream_buffer.substr(0, curr_index);
+
+                        if (json.length > 0) {
+                            try {
+                                var tweet = JSON.parse(json);
+                                this.emit("tweet", tweet);
+                            } catch (error) {
+                                console.error("ERR: ", error, json);
+                            }
+                        }
+                        this.stream_buffer = this.stream_buffer.substr(curr_index+1);
+                    }
+
+                    if (xhr.length >= 10000) {
+                        //FIXME -- not tested -- do the partial tweets stick around?
+                        this._initXHR();
+                        this.tweetCount = 0;
+                    }
+
+                } else {
+                    // fixme. do restart
+                    console.error("Stream connection failed.", this.tpost.status, this.tpost.responseText);
+                    this.abort();
+                }
+            }
+        }
+    });
+
+    module.BasicStreamer = BasicStreamer;
+
+    function TweetStreamer(hashtag, streamerID, accountCredentials) {
+        TweetStreamer.__super__.constructor.call(this, hashtag, streamerID, accountCredentials);
+
+        this.tpost.onerror = function () {
+            console.error("Problem streaming tweets.", [].slice.apply(arguments));
+            //return reject(new Fail(Fail.GENERIC, "Failed to stream tweets."));
+        };
+    }
+
+    Utils._extends(TweetStreamer, Streamer, {
+        onReadyStateChange: function (xhr) {
+            if (xhr !== this.tpost) {
+                console.error("receiving event for previous XHR");
+                return;
+            }
+
+            // 0 unsent
+            // 1 opened
+            // 2 headers received
+            // 3 loading
+            // 4 done
+            if (xhr.readyState > 2)  {
+                if (xhr.status >= 200 && xhr.status <= 400) {
                     //start at the index we left off
 
                     // twitter will periodically send whitespace, just to keep
@@ -231,172 +315,35 @@ var Twitter = (function (module) {
                     this.abort();
                 }
             }
-        }).bind(this);
-
-        this.tpost.onerror = function () {
-            console.error("Problem streaming tweets.", [].slice.apply(arguments));
-            //return reject(new Fail(Fail.GENERIC, "Failed to stream tweets."));
-        };
-    }
-
-    _extends(TweetStreamer, Streamer, {
-
+        }
     });
 
     module.TweetStreamer = TweetStreamer;
 
-    function PKeyStreamer(hashtags, streamerID, accountCredentials) {
-        PKeyStreamer.__super__.constructor.call(this, "encryptkey,keysig,signkey", streamerID, accountCredentials);
-        function parseKey(sign, encrypt, expiration, signature, timestamp, twitterId, username) {
-            //we found both keys, persist them
-            var minified = {
-                encrypt: encrypt,
-                sign: sign
-            };
-            var key = ECCPubKey.unminify(minified);
 
-            var signedMessage = username + twitterId + encrypt + sign + timestamp + expiration;
-            if (!key.verifySignature(signedMessage, signature)) {
-                console.error("Failed to verify signature: ", sign, encrypt, signature);
-                throw new Fail(Fail.GENERIC, "verification failed");
-            }
-            return {key:  key,
-                    ts: Number(timestamp),
-                    expiration: Number(expiration)};
-        }
+    /**
+       The manager is the class that manages a series of Twitter streams
+       based on group memberships. The caller "subscribes" and "unsubscribes"
+       to groups, and this class will create the corresponding HTTPS connections
+       to twitter to receive those tags.
 
-        var users = {};
-        this.tpost.onreadystatechange = (function () {
-            if (this.tpost.readyState > 2)  {
-                if (this.tpost.status >= 200 && this.tpost.status <= 400) {
-                    //parse pkey info and save into database
-                    //start at the index we left off
-                    //console.log('responseText ', this.tpost.responseText);
-                    this.stream_buffer = this.tpost.responseText.substr(this.index);
-                    //remove possible leading whitespace from tpost.responseText
-                    this.stream_buffer = this.stream_buffer.replace(/^\s+/g, "");
-                    while (this.stream_buffer.length !== 0 &&
-                           this.stream_buffer[0] !== '\n' &&
-                           this.stream_buffer[0] !== '\r') {
-                        var curr_index = this.stream_buffer.indexOf('\n');
-                        this.index += this.stream_buffer.indexOf('\n')+1;
-                        var toks;
+       When a tweet is received, the StreamerManager will emit the 'tweet' event.
 
-                        //list.push(tpost.stream_buffer.substr(0,curr_index));
+       Event "tweet" param: {
+                tweet: { twitter object for the tweet },
+                hashtags: [ list of hashtags without the '#' contained in the message],
+                groups: [the list of groupnames interested in the tweet],
+                refs: [the list of refNames interested in the tweet (passed to subscribe)]
+       }
 
-                        var json = this.stream_buffer.substr(0, curr_index);
-
-                        if (json.length > 0) {
-                            try {
-                                var tweet = JSON.parse(json);
-                                console.log('tweet: ' + tweet.text);
-
-                                //0 is sign, 1 is encrypt, 2 is expiration, 3 is signature, 4 is timestamp
-                                if (!users[tweet.user.id_str]) {
-                                    users[tweet.user.id_str] = [undefined, undefined, undefined, undefined, undefined];
-                                }
-                                var username = tweet.user.screen_name;
-                                var userID = tweet.user.id_str;
-
-
-                                if (tweet.text.includes('#signkey')) {
-                                    toks = tweet.text.split(/\s+/);
-                                    if (toks.length === 3 &&
-                                        users[userID][0] === undefined && Number(toks[1])) {
-
-                                        users[tweet.user.id_str][0] = toks[2];
-                                        users[tweet.user.id_str][4] = toks[1];
-
-                                    } else {
-                                        console.warn("#signkey tweet for user", username, "is malformed:", tweet);
-                                    }
-                                } else if (tweet.text.includes('#encryptkey')) {
-                                    toks = tweet.text.split(/\s+/);
-                                    if (toks.length === 3 &&
-                                        users[userID][1] === undefined && Number(toks[1])) {
-
-                                        users[tweet.user.id_str][1] = toks[2];
-
-                                    } else {
-                                        console.warn("#encryptkey tweet for user", username, "is malformed:", tweet);
-                                    }
-                                } else if (tweet.text.includes('#keysig')) {
-                                    toks = tweet.text.split(/\s+/);
-                                    if (toks.length === 4 && users[userID][3] === undefined &&
-                                        Number(toks[1]) && Number(toks[2])) {
-
-                                        users[tweet.user.id_str][2] = toks[2];
-                                        users[tweet.user.id_str][3] = toks[3];
-
-                                    } else {
-                                        console.warn("#keysig tweet for user", username, "is malformed:", tweet);
-                                    }
-                                }
-
-                                //check if we have all the user info needed
-                                var userDone = true;
-                                for (var i=0; i<4; i++){
-                                    var userInfo = users[userID];
-                                    if (userInfo[i] === undefined) {
-                                        userDone = false;
-                                    }
-                                }
-
-                                if (userDone) {
-                                    var storageName = CryptoCtx.globalKeyName(username, "@");
-
-                                    var pubKeyContainer = parseKey(users[userID][0], users[userID][1],
-                                                                   users[userID][2], users[userID][3],
-                                                                   users[userID][4], userID, username);
-                                    var pubKey = pubKeyContainer.key;
-                                    var stale = pubKeyContainer.expiration < Date.now();
-                                    if (stale) {
-                                        throw new Fail(Fail.STALE, "Found only a stale key for " + username);
-                                    } else {
-                                        delete users[tweet.user.id_str];
-                                        /*jshint loopfunc: true */
-                                        API.storeKey(storageName, pubKey).then(function () {
-                                            console.log('stored key for username ', username);
-                                        });
-                                    }
-                                }
-                            } catch (error) {
-                                console.error("ERR: ", error);
-                            }
-                        }
-                        this.stream_buffer = this.stream_buffer.substr(curr_index+1);
-                    }
-
-                    if (this.tpost.length >= 10000) {
-                        //context and streamerManager keep the ID of the first streamer
-                        var tmp_streamer = new PKeyStreamer(Utils.randomStr128());
-                        tmp_streamer.send();
-                        tmp_streamer._callbacks = this._callbacks;
-                        this.abort();
-                        this.tpost = tmp_streamer;
-                    }
-
-                } else {
-                    console.error("Failed to stream public keys, closing connection: ",
-                                  this.tpost.status, this.tpost.responseText);
-                    this.abort();
-                }
-            }
-        }).bind(this);
-
-        this.tpost.onerror = function () {
-            console.error("Problem streaming public keys.", [].slice.apply(arguments));
-            //return reject(new Fail(Fail.GENERIC, "Failed to stream public keys."));
-        };
-    }
-
-    _extends(PKeyStreamer, Streamer, {
-
-    });
-
-    module.PkeyStreamer = PKeyStreamer;
-
+       It is important to not delay the processing of this event to
+       utilize the network as best as possible. Twitter penalizes slow
+       streams. If processing on the tweet is needed, clients should
+       buffer/queue the tweets.
+    */
     function StreamerManager() {
+        StreamerManager.__super__.constructor.apply(this, arguments);
+
         // Stores active streams
         this.streamers = {};
 
@@ -406,7 +353,8 @@ var Twitter = (function (module) {
         this.ref2hash  = {};  // refName => [hashtag, hashtag, ...]
     }
 
-    StreamerManager.prototype = {
+
+    Utils._extends(StreamerManager, Emitter, {
         _updateSub: function (hashtag, refName, creds) {
 
             var subs, hashes;
@@ -449,6 +397,37 @@ var Twitter = (function (module) {
                     }
                 }
             }
+        },
+
+        // one of the managed streamers received a tweet
+        onTweet: function (tweet) {
+            var containedHashes = TT.txt.extractHashtagsWithIndices(tweet.text).map(tok => tok.hashtag);
+
+            // just the hashtags we are subscribed to
+            var groupTags = containedHashes.filter(hashtag => (this.hash2ref[hashtag] || []).length > 0);
+
+            if (groupTags.length === 0) {
+                // not subscribed to any group tag mentioned.
+                // probably means we're out of sync with the streaming.
+                return;
+            }
+
+            // get the list of accounts and hashtags concerned with the incoming tweet
+            var affectedRefs = [];
+            groupTags.forEach(hashtag => {
+                this.hash2ref[hashtag].forEach(ref => {
+                    if (affectedRefs.indexOf(ref) === -1) {
+                        affectedRefs.push(ref);
+                    }
+                });
+            });
+
+            this.emit("tweet", {
+                tweet: tweet,
+                hashtags: containedHashes,
+                groups: groupTags,
+                refs: affectedRefs
+            });
         },
 
         /**
@@ -620,7 +599,11 @@ var Twitter = (function (module) {
                 }
 
 
-                var newStreamer = this.addStreamer(afterHashes, TweetStreamer, this.ref2creds[growRef]);
+                var newStreamer = this.addStreamer(afterHashes, BasicStreamer, this.ref2creds[growRef]);
+                newStreamer.on('tweet', tweet => {
+                    this.onTweet(tweet, newStreamer);
+                });
+
                 newStreamer.send();
                 return this._scheduleStreamUpdate();
             }
@@ -663,10 +646,9 @@ var Twitter = (function (module) {
                 delete this.streamers[id];
             }
         }
-    };
-
-
+    });
     module.StreamerManager = StreamerManager;
+
     /*
       getUserInfo:
 
@@ -1024,5 +1006,233 @@ var Twitter = (function (module) {
             xhr.send();
         });
     };
+
+    // Fetches user's latest public key on Twitter
+    //
+    // Promises UserCert
+    //
+    // Fails with NOIDENT if keys can't be found (expired or not)
+    // Fails with GENERIC if any other problem arises
+    //
+    module.fetchLatestCertFromFeed = function (handle) {
+
+        //tags include the # sign.
+        //look through the tweets in xmldoc for tags
+        function looktweet(xmlDoc) {
+            //run through tweets looking for the right hashtag
+
+            var tweets = xmlDoc.getElementsByClassName("js-tweet-text");
+            var certFeed = new Certs.PartialCertFeed();
+            var fullCerts = {};
+
+            // tweets is an HTMLCollection object. so we schmumpf it into an array.
+            [].slice.apply(tweets).forEach(tweet => {
+                var content = tweet.closest(".content");
+
+                if (!content) {
+                    console.debug("No .content element. in tweet. skipping.", tweet);
+                    return;
+                }
+
+                var profileLinks = content.getElementsByClassName("js-user-profile-link");
+                if (profileLinks.length < 1) {
+                    return;
+                }
+
+                //<span class="_timestamp js-short-timestamp "
+                //data-aria-label-part="last" data-time="1448867714"
+                //data-time-ms="1448867714000"
+                //data-long-form="true">29 Nov 2015</span>
+                var timeContainer = content.getElementsByClassName("js-short-timestamp");
+                if (timeContainer.length < 1) {
+                    // no timestamp
+                    return;
+                }
+
+                var id = profileLinks[0].getAttribute("data-user-id");
+                var authorHandle = profileLinks[0].getElementsByClassName("username")[0];
+                if (!authorHandle) {
+                    console.error("revise syntax");
+                    return;
+                }
+                // @foo
+                authorHandle = authorHandle.textContent;
+                if (!authorHandle) {
+                    console.error("revise syntax");
+                    return;
+                }
+                authorHandle = authorHandle.substr(1);
+                if (authorHandle !== handle) {
+                    console.debug("skipping tweet. different author. found " + authorHandle + " but expected " + handle);
+                    return;
+                }
+
+                var postTimeMs = Number(timeContainer[0].getAttribute("data-time-ms"));
+                if (!postTimeMs) {
+                    return;
+                }
+
+                try {
+                    var fullCert = certFeed.feedTweet(tweet.innerText, {
+                        primaryId: id,
+                        primaryHdl: authorHandle,
+                        createdAtMs: postTimeMs
+                    });
+                    if (fullCert) {
+                        fullCerts[fullCert.primaryId] = (fullCerts[fullCert.primaryId] || []);
+                        fullCerts[fullCert.primaryId].push(fullCert);
+                    }
+                } catch (err) {
+                    if ((err instanceof Fail) && [Fail.BADPARAM, Fail.STALE].includes(err.code)) {
+                        return;
+                    }
+                    throw err;
+                }
+            });
+
+            var allIds = Object.keys(fullCerts);
+            if (allIds.length > 1) {
+                console.error("Retrieved tweets from the user handle with differing twitter ids: ", allIds);
+                return null;
+            }
+
+            if (allIds.length === 0) {
+                // no cert could be found
+                return null;
+            }
+            var userid = allIds[0];
+
+            // put latest at the front
+            fullCerts[userid].sort((a, b) => {
+                if (a.primaryTs < b.primaryTs) {
+                    return 1;
+                } else if (a.primaryTs > b.primaryTs) {
+                    return -1;
+                } else {
+                    return 0;
+                }
+            });
+
+            return fullCerts[userid][0] || null;
+        }
+
+        return new Promise(function (resolve, reject) {
+            // fetch the corresponding username's tweets
+            // get the signing key and the encrypting key
+            var preq = new XMLHttpRequest();
+            preq.open("GET", "https://twitter.com/" + encodeURIComponent(handle), true);
+            preq.onerror = function () {
+                console.error("Prolem loading tweets", [].slice.apply(arguments));
+                reject(new Fail(Fail.GENERIC, "Ajax failed."));
+            };
+            preq.onload = function () {
+                //parse the response
+                var parser = new DOMParser();
+                var xmlDoc = parser.parseFromString(preq.responseText, "text/html");
+
+                //look through the response to find keys
+                var latest = looktweet(xmlDoc);
+
+                if (!latest) {
+                    return reject(new Fail(Fail.NOIDENT, "Could not parse keys found."));
+                }
+
+                resolve(latest);
+            };
+            //send the profile request
+            preq.send();
+
+        }).catch(err => {
+            if (!(err instanceof Fail) || err.code !== Fail.NOIDENT) {
+                throw err;
+            }
+
+            //we failed, do another pass on the search page
+            console.debug("getting directly from " + handle + "'s feed failed. trying search page...");
+            return new Promise((resolve, reject) => {
+                var sreq = new XMLHttpRequest();
+                var tagsearch = Certs.PartialCert.POUND_TAGS.map(tag => encodeURIComponent(tag)).join("%20OR%20");
+                sreq.open("GET", "https://twitter.com/search?q=" + tagsearch +
+                          "%20from%3A" + encodeURIComponent(handle), true);
+                sreq.onerror = function () {
+                    console.error("Prolem loading tweets (search)", [].slice.apply(arguments));
+                    reject(new Fail(Fail.GENERIC, "Ajax failed."));
+                };
+                sreq.onload = function () {
+                    //parse the response to find the key
+                    var parser = new DOMParser();
+                    var xmlDoc = parser.parseFromString(sreq.responseText, "text/html");
+
+                    var latest = looktweet(xmlDoc);
+                    if (!latest) {
+                        return reject(new Fail(Fail.NOIDENT, "could not retrieve key"));
+                    }
+                    resolve(latest);
+                };
+                //send the search request
+                sreq.send();
+            });
+        });
+    };
+
+    /**
+       posts the given messages to the given account app
+
+       Promises an array of result values for each message, in the
+       same order as the messages. The result is either a tweetId
+       if a message is posted successfully, otherwise an error object.
+
+       Callers should make sure that all returned values are non Errors.
+    */
+    module.postTweets = function postTweets(accountCredentials, messages) {
+        return module.getUserInfo().then(twitterInfo => {
+            if (twitterInfo.twitterId === null || twitterInfo.twitterUser === null) {
+                throw new Fail(Fail.BADAUTH, "Make sure you are logged in to twitter (in any tab).");
+            }
+            if (twitterInfo.twitterId !== accountCredentials.appOwnerId ||
+                twitterInfo.twitterUser !== accountCredentials.appOwner) {
+                throw new Fail(Fail.BADAUTH,
+                               "Twitter authenticated under a different username. Found '" +
+                               twitterInfo.twitterId + ":" + twitterInfo.twitterUser + "' but expected  '" +
+                               accountCredentials.appOwnerId + ":" + accountCredentials.appOwner + "'.");
+            }
+
+            function isTwitterCtx(ctx) {
+                return (!ctx.isMaimed && ctx.app === "twitter.com");
+            }
+
+            var twitterContexts = API.filterContext(isTwitterCtx);
+            if (twitterContexts.length > 0) {
+                return {
+                    token: twitterInfo.token,
+                    twitterId: twitterInfo.twitterId,
+                    twitterUser: twitterInfo.twitterUser,
+                    ctx: twitterContexts[0]
+                };
+            } else {
+                return API.openContext("https://twitter.com/").then(function (ctx) {
+                    return {
+                        token: twitterInfo.token,
+                        twitterId: twitterInfo.twitterId,
+                        twitterUser: twitterInfo.twitterUser,
+                        ctx: ctx
+                    };
+                });
+            }
+        }).then(twitterCtx => {
+            var allPromises = messages.map(msg => {
+                return twitterCtx.ctx.callCS("post_public", {tweet: msg, authToken: twitterCtx.token})
+                    .then(resp => {
+                        var obj = JSON.parse(resp);
+                        return obj.tweet_id;
+                    })
+                    .catch(err => {
+                        return err;
+                    });
+            });
+            return Promise.all(allPromises);
+        });
+    };
+
     return module;
 })(window.Twitter || {});

@@ -222,6 +222,7 @@ Fail.NOIDENT     = "NOIDENT"; // could not resolve the recipient's identity */
 Fail.STALE       = "STALE"; // stale key
 Fail.PUBSUB      = "PUBSUB"; // fail to authenticate or to post to the pub/sub service
 Fail.NOTIMPL     = "NOTIMPL"; // not implemented
+Fail.BADAUTH     = "BADAUTH"; // bad authentication
 Fail.toRPC = function (err) {
     "use strict";
 
@@ -875,6 +876,9 @@ var KH_TYPE = {keyid: ""};
 var MSG_TYPE = {type: "", hdr: { to: "", from: "" }};
 
 var Utils = {
+
+    _extends: _extends,
+
     // string made from 128 random bits
     randomStr128: function () {
         "use strict";
