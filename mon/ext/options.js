@@ -6,6 +6,7 @@ var BG = chrome.extension.getBackgroundPage();
 var $ = BG.$;
 var Vault = BG.Vault;
 var Twitter = BG.Twitter;
+var Github = BG.Github;
 var $doc = $(document);
 var Fail = BG.Fail;
 var DateUtil = BG.DateUtil;
@@ -130,11 +131,22 @@ function stepButtonClick(evt) {
         case "start":
             switch(bName) {
             case "next":
-                showStep(stepClass, "twitter-app");
+                showStep(stepClass, "start-github");
                 break;
             default:
                 showPage("main");
                 break;
+            }
+            break;
+
+        case "start-github":
+            switch(bName) {
+                case "next":
+                    showStep(stepClass, "twitter-app");
+                    break;
+                default:
+                    showPage("main");
+                    break;
             }
             break;
 
@@ -272,6 +284,9 @@ function initStep(className, stepNo) {
     switch(className + "." + stepNo) {
     case "new-account-step.start":
         $stepDiv.find("#twitter-info").hide();
+        break;
+    case "new-account-step.start-github":
+        $stepDiv.find("#github-info").hide();
         break;
     case "new-account-step.twitter-app":
         $stepDiv.find("#twitter-app-existing").html("<option value='new'>Create a new Application</option>");
@@ -627,6 +642,29 @@ function loadPage() {
                              true);
                 return;
             }
+
+            enableByName({"next": true});
+        }).catch(function (err) {
+            updateStatus(err, true);
+            throw err;
+        });
+    });
+
+    $doc.find("#connect-github").click(function () {
+        enableByName({next: false});
+        updateStatus("Connecting to Github...");
+
+        Github.getGithubUserInfo().then(function (githubInfo) {
+            if (githubInfo.githubUser === null) {
+                updateStatus("Please log in to Github in a new tab.", true);
+                return;
+            }
+            updateStatus("Github information retrieved.");
+            $doc.find("input[name='secondary-handle']").val(githubInfo.githubUser);
+            $doc.find("input[name='secondary-id']").val(githubInfo.githubID);
+            $doc.find("#github-info").show();
+
+            // TODO do we need to check Vault here for an existing account?
 
             enableByName({"next": true});
         }).catch(function (err) {

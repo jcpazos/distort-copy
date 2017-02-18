@@ -31,6 +31,7 @@
 		    "ui.js",
 		    "twitter.js",
 		    "certs.js",
+			"github.js",
 		    "background.js",
 		    "main.js"
 		   ]
