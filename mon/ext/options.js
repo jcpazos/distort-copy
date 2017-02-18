@@ -568,14 +568,15 @@ function loadPage() {
             throw err;
         });
 
-        // TODO why isn't this function defined?
+        // TODO call this function from another tab/step
         Github.getGithubUserInfo().then(function (githubInfo) {
             if (githubInfo.githubUser === null) {
                 updateStatus("Please log in to Github in a new tab.", true);
                 return;
             }
             updateStatus("Github information retrieved.");
-            $doc.find("input[name='secondary-id']").val(githubInfo.githubUser);
+            $doc.find("input[name='secondary-handle']").val(githubInfo.githubUser);
+            $doc.find("input[name='secondary-id']").val(githubInfo.githubID);
         });
     });
 

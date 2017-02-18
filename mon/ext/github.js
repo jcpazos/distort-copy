@@ -33,20 +33,30 @@ var Github = (function() {
 
                     var userLogin = xmlDoc.getElementsByName("user-login");
                     if (userLogin === null || userLogin.length !== 1) {
-                        console.error("user-login userid fetch failed due to changed format");
-                        return reject(new Fail(Fail.GENERIC, "user-login userid fetch failed due to changed format"));
+                        console.error("user-login username fetch failed due to changed format");
+                        return reject(new Fail(Fail.GENERIC, "user-login username fetch failed due to changed format"));
                     }
 
                     var githubUser = userLogin[0].content;
                     if (githubUser === null) {
-                        return reject(new Fail(Fail.GENERIC, "failed to extract username"));
+                        return reject(new Fail(Fail.GENERIC, "failed to extract github username"));
+                    }
+
+                    var userID = xmlDoc.getElementsByName("octolytics-actor-id");
+                    if (userID === null || userID.length !== 1) {
+                        console.error("octolytics-actor-id userid fetch failed due to changed format");
+                        return reject(new Fail(Fail.GENERIC, "octolytics-actor-id userid fetch failed due to changed format"));
+                    }
+
+                    var githubID = userID[0].content;
+                    if (githubID === null) {
+                        return reject(new Fail(Fail.GENERIC, "failed to extract github userid"));
                     }
 
                     resolve(
-                        {
-                        githubUser: githubUser
+                        {githubUser: githubUser,
+                         githubID: githubID
                         });
-
                 };
 
                 //send the profile request
