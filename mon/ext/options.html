@@ -133,20 +133,30 @@
 
   </style>
 
+  <script type="text/template" data-name="small-spinner">
+    <i title="processing..." class="fa spinner fa-spin fa-spinner fa-2x" aria-hidden="true">
+      <div class="hidden spinner-contents"></div>
+    </i>
+  </script>
+
   <script type="text/template" data-name="join-group-row">
     <div class="row">
       <div class="col" style="width: 50%">
-	<span class="action-trigger" data-action="join-group">
-	  <a class="join-group">join...</a>
-        </span>
-	<span class="action-confirm" data-action="join-group" data-username="">
-	  <form name="new-group-form">
-	    <input placeholder="enter group name, e.g. #twistor" type="text" name="new-group-name"></input>
-	    <!-- actions -->
-	    <i title="Save" class="action-button action-join fa fa-check"></i>
-	    <i title="Close" class="action-button action-cancel fa fa-close"></i>
-	  </form>
+
+	<span class="action-group" data-action="join-group">
+	  <span class="action-trigger">
+	    <a class="join-group">join...</a>
+          </span>
+	  <span class="action-confirm" data-username="">
+	    <form name="new-group-form">
+	      <input placeholder="enter group name, e.g. #twistor" type="text" name="new-group-name"></input>
+	      <!-- actions -->
+	      <i title="Save" class="action-button action-join fa fa-check"></i>
+	      <i title="Close" class="action-button action-cancel fa fa-close"></i>
+	    </form>
+	  </span>
 	</span>
+
       </div>
     </div>
   </script>
@@ -163,12 +173,14 @@
 	<br />
 	<span class="bullet"># Sent:</span><span data-field="numSent"></span>
       </div>
-      <div class="col" class="actions group-leave">
-	<span class="action-trigger" data-action="leave">Leave</span>
-	<span class="action-confirm" data-action="leave">
-	  <span>Sure?</span>
-          <span class="action-button action-cancel">NO</span>
-	  <span class="action-button leave-yes">YES</span>
+      <div class="col actions group-leave">
+	<span class="action-group" data-action="leave">
+	  <span class="action-trigger">Leave</span>
+	  <span class="action-confirm">
+	    <span>Sure?</span>
+            <span class="action-button action-cancel">NO</span>
+	    <span class="action-button leave-yes">YES</span>
+	  </span>
 	</span>
       </div>
     </div>
@@ -187,13 +199,15 @@
       <div class="col user" />
       <div class="col account-status" />
       <div class="col actions account-delete">
-	<span class="action-trigger" data-action="delete">
-          <i title="Delete user" class="action-button fa fa-trash-o"></i>
-        </span>
-	<span class="action-confirm" data-action="delete" data-username="">
-	  <span>Sure?</span>
-	  <span class="action-button delete-yes">YES</span>
-          <span class="action-button action-cancel">NO</span>
+	<span class="action-group" data-action="delete">
+	  <span class="action-trigger" data-action="delete">
+            <i title="Delete user" class="action-button fa fa-trash-o"></i>
+          </span>
+	  <span class="action-confirm" data-username="">
+	    <span>Sure?</span>
+	    <span class="action-button delete-yes">YES</span>
+            <span class="action-button action-cancel">NO</span>
+	  </span>
 	</span>
       </div>
     </div>

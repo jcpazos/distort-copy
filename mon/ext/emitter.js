@@ -26,6 +26,9 @@ window.Emitter = (function() {
     }
 
     Emitter.prototype = {
+        // to support _extends() inheritance
+        constructor: Emitter,
+
         _addListener: function (eventName, cb, thisArg, runOnce) {
             if (typeof cb !== "function") {
                 throw new Error("only functions are supported as callbacks.");
@@ -99,7 +102,7 @@ window.Emitter = (function() {
            first, before finishing the last. in other words, no
            queueing.
         */
-        function (eventName /*, args... */ ) {
+        emit: function (eventName /*, args... */ ) {
 
             var args = Array.prototype.slice.call(arguments, 1);
             var that = this;
@@ -120,12 +123,12 @@ window.Emitter = (function() {
                 }
 
                 // give a fresh (shallow) copy of the arguments
-                cb.apply(listener.thisArg === undefined ? that : listener.thisArg, 
+                cb.apply(listener.thisArg === undefined ? that : listener.thisArg,
                          args.slice());
             });
 
             // remove all dead callbacks.
-            this._listeners[eventName] = (this._listeneres[eventName] || []).filter(function (listener) {
+            this._listeners[eventName] = (this._listeners[eventName] || []).filter(function (listener) {
                 return (listener.cb !== that._tombstone);
             });
 
@@ -138,3 +141,8 @@ window.Emitter = (function() {
 
     return Emitter;
 })();
+
+/**
+   Global event emitter/listener object
+*/
+var Events = new Emitter();

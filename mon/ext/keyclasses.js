@@ -21,7 +21,7 @@
 /*global
   sjcl, RSAKey,
   Fail, escape,
-  _extends, Utils
+  Utils
 */
 
 /**
@@ -60,7 +60,13 @@ KeyLoader.registerClass = function (typId, klass) {
 KeyLoader.fromStore = function (obj) {
     "use strict";
 
-    var typ = obj.typ;
+    var typ;
+
+    if (!obj) {
+        return null;
+    }
+
+    typ = obj.typ;
     if (!typ || KeyLoader.classes[typ] === undefined) {
         return null;
     }
@@ -193,7 +199,7 @@ AESKey.prototype = {
         }
         return null;
     },
-            
+
     toHex: function () {
         "use strict";
         return sjcl.codec.hex.fromBits(this.key);
@@ -218,7 +224,7 @@ AESKey.prototype = {
 
     decryptText: function (cipherText) {
         "use strict";
-        
+
         return sjcl.decrypt(this.key, cipherText);
     },
 
@@ -249,7 +255,7 @@ AESKey.prototype = {
         newBits = sjcl.codec.base64.fromBits(newKey);
         return new AESKey(newBits);
     },
-    
+
     // derive a new key from this key, using @text as input.  calling
     // this function again with the same @text value will produce the
     // same key.
@@ -287,7 +293,7 @@ AESKey.fromHex = function (hexString) {
 
 AESKey.fromStore = function (obj) {
     "use strict";
-    
+
     if (obj.typ !== "aes") {
         return null;
     }
@@ -362,7 +368,7 @@ function PubKey(signPem, encryptPem) {
     }
 }
 
-PubKey.prototype = {
+Utils._extends(PubKey, Object, {
     toStore: function () {
         "use strict";
 
@@ -391,7 +397,7 @@ PubKey.prototype = {
         "use strict";
         return this.encrypt.encrypt(aesKey);
     }
-};
+});
 
 PubKey.fromStore = function (obj) {
     "use strict";
@@ -423,7 +429,7 @@ function KeyPair(signPem, encryptPem) {
         this.encrypt.readPrivateKeyFromPEMString(encryptPem.priv);
     }
 }
-_extends(KeyPair, PubKey, {
+Utils._extends(KeyPair, PubKey, {
     toStore: function () {
         "use strict";
 
@@ -513,7 +519,7 @@ ECCPubKey.unminify = function (minified) {
     return ECCPubKey.fromStore(storeFormat);
 };
 
-ECCPubKey.prototype = {
+Utils._extends(ECCPubKey, Object, {
     toStore: function () {
         "use strict";
 
@@ -607,7 +613,7 @@ ECCPubKey.prototype = {
         if (typeof this !== typeof other) {
             return false;
         }
-        
+
         function arrayEquals(a, b) {
             var i;
 
@@ -628,7 +634,7 @@ ECCPubKey.prototype = {
             arrayEquals(this.encrypt.pub.get().x, other.encrypt.pub.get().x) &&
             arrayEquals(this.encrypt.pub.get().y, other.encrypt.pub.get().y);
     }
-};
+});
 
 ECCPubKey.fromStore = function (obj) {
     "use strict";
@@ -718,7 +724,7 @@ Object.defineProperty(ECCKeyPair, "curve", {
     }
 });
 
-_extends(ECCKeyPair, ECCPubKey, {
+Utils._extends(ECCKeyPair, ECCPubKey, {
     toStore: function () {
         "use strict";
 
@@ -816,7 +822,7 @@ AnonKey.prototype.toStore = function (keyid) {
 
 AnonKey.fromStore = function (obj) {
     "use strict";
-    
+
     if (obj.typ !== "anon") {
         return null;
     }
