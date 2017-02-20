@@ -290,7 +290,7 @@ window.Certs = (function (module) {
                 sortedGroups.join(" ")
             ].join("");
 
-            if (!key.verifySignature(signedMessage, this.keysig)) {
+            if (!key.verifySignature(signedMessage, this.keysig, 'hex')) {
                 console.error("Failed to verify signature in cert");
                 throw new Fail(Fail.GENERIC, "verification failed");
             }

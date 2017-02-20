@@ -20,7 +20,7 @@
 /*global
   chrome, Promise, performance,
   ECCPubKey, AESKey, KeyLoader, Friendship,
-  UI, Utils, Vault, Twitter, Certs,
+  UI, Utils, Vault, Twitter, Certs, base16k,
   Events, API,
   getHost, Fail, assertType, OneOf, KH_TYPE, MSG_TYPE, _extends
 */
@@ -1691,29 +1691,29 @@ BGAPI.prototype.postKeys = function (account) {
 
     return new Promise(resolve => {
         var pubKey = account.key.toPubKey();
-        var min = pubKey.minify();
+        var pkPacked = pubKey.nanify();
 
         var groupNames = account.groups.map(groupStats => groupStats.name);
         groupNames.sort();
 
         var groupString = groupNames.map(name => "#" + name).join(" ");
-        var encryptStatus = "#encryptkey " + ts + " " + min.encrypt + " " + groupString;
-        var signStatus = "#signkey " + ts + " " + min.sign + " " + groupString;
+        var encryptStatus = "#encryptkey " + ts + " " + base16k.fromHex(pkPacked.encrypt) + " " + groupString;
+        var signStatus = "#signkey " + ts + " " + base16k.fromHex(pkPacked.sign) + " " + groupString;
         var expiration = ts + Certs.UserCert.DEFAULT_EXPIRATION_MS;
 
         var sigText = [
             account.primaryHandle,
             account.primaryId,
-            min.encrypt,
-            min.sign,
+            pkPacked.encrypt,
+            pkPacked.sign,
             ts,
             expiration,
             groupNames.join(" ")
         ].join("");
 
-        var signature = account.key.signText(sigText);
+        var signature = account.key.signText(sigText, 'hex');
 
-        var sigStatus = "#keysig " + ts + " " + expiration + " " + signature + " " + groupString;
+        var sigStatus = "#keysig " + ts + " " + expiration + " " + base16k.fromHex(signature) + " " + groupString;
 
         if (encryptStatus.length > 140) {
             throw new Fail(Fail.PUBSUB, "encryption key cert tweet too long (" + encryptStatus.length + "B > 140B)");

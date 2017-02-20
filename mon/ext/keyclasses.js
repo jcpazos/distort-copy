@@ -509,6 +509,26 @@ function ECCPubKey(signBits, encryptBits) {
     this.valid = true;
 }
 
+ /* constructs ECCPubKey from the output of nanify */
+ECCPubKey.unnanify = function (minified) {
+    "use strict";
+
+    function unpackPoint(ptstring) {
+        var toks = [ptstring.substr(0, ptstring.length / 2), ptstring.substr(ptstring.length / 2)];
+        var hexX = toks[0], hexY = toks[1];
+        return {x: sjcl.codec.hex.toBits(hexX), y: sjcl.codec.hex.toBits(hexY)};
+    }
+
+    var storeFormat = {
+        typ: "eccPubk",
+        sign: {pub: unpackPoint(minified.sign)},
+        encrypt: {pub: unpackPoint(minified.encrypt)},
+        valid: true
+    };
+
+    return ECCPubKey.fromStore(storeFormat);
+};
+
  /* constructs ECCPubKey from the output of minify */
 ECCPubKey.unminify = function (minified) {
     "use strict";
@@ -528,6 +548,7 @@ ECCPubKey.unminify = function (minified) {
 
     return ECCPubKey.fromStore(storeFormat);
 };
+
 
 Utils._extends(ECCPubKey, Object, {
     toStore: function () {
@@ -571,6 +592,18 @@ Utils._extends(ECCPubKey, Object, {
         };
     },
 
+    nanify: function () {
+        "use strict";
+        var out = this.toStore();
+        function packPoint(pt) {
+            return sjcl.codec.hex.fromBits(pt.x) + sjcl.codec.hex.fromBits(pt.y);
+        }
+        return {
+            encrypt: packPoint(out.encrypt.pub),
+            sign: packPoint(out.sign.pub)
+        };
+    },
+
     xport: function () {
         "use strict";
 
@@ -580,9 +613,15 @@ Utils._extends(ECCPubKey, Object, {
         return out;
     },
 
-    verifySignature: function (message, signature) {
+    /*
+      - message to sha256 hash
+      - signature (over message) to verify
+      - encoding for signature. defaults to 'hex'
+    */
+    verifySignature: function (message, signature, codec) {
         "use strict";
-        var sigBits = sjcl.codec.hex.toBits(signature);
+        codec = (codec === undefined) ? 'hex': codec;
+        var sigBits = sjcl.codec[codec].toBits(signature);
         var hashMsg = sjcl.hash.sha256.hash(message);
         var pKey = this.sign.pub;
         return pKey.verify(hashMsg, sigBits);
@@ -772,12 +811,16 @@ Utils._extends(ECCKeyPair, ECCPubKey, {
         return atob(sjcl.decrypt(sKem, ct));
     },
 
-    signText: function (message) {
+    //codec is one of:
+    //  'hex' (default)
+    //  'base64'
+    signText: function (message, codec /* 'hex' */) {
         "use strict";
+        codec = (codec === undefined) ? 'hex' : codec;
 
         var hashMsg = sjcl.hash.sha256.hash(message);
         var sKey = this.sign.sec;
-        return sjcl.codec.hex.fromBits(sKey.sign(hashMsg, ECCKeyPair.getParanoia()));
+        return sjcl.codec[codec].fromBits(sKey.sign(hashMsg, ECCKeyPair.getParanoia()));
     },
 
     toPubKey: function () {
