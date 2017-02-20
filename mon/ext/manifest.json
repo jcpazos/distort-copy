@@ -25,6 +25,7 @@
                     "lib/twitter-text.js",
 		    "sjcl.js",
 		    "utils.js",
+                    "base16k.js",
 		    "emitter.js",
 		    "keyclasses.js",
 		    "vault.js",
