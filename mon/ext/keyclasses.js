@@ -321,31 +321,41 @@ KeyLoader.registerClass("aes", AESKey);
 function calc_y_p192(x)  {
     "use strict";
 
-    var two = new sjcl.bn(2);
-    var two_64 = two;
-    var i;
-
-    for (i = 0; i < 63; i++) {
-        two_64 = two_64.mul(two).trim();
-    }
-
-    //fixme reuse
-    var two_128 = two_64.mul(two_64).trim();
-    var two_192 = two_128.mul(two_64).trim();
-    var prime = two_192.sub(new sjcl.bn(1)).normalize();
-    prime = prime.sub(two_64).normalize();
-    var exponent;
-    exponent = prime.add(new sjcl.bn(1)).normalize();
+    var PRIME = calc_y_p192.CONST.CURVE_PRIME;
+    var B = calc_y_p192.CONST.CURVE_B;
+    var exponent = PRIME.add(new sjcl.bn(1)).normalize();
     exponent.halveM();
     exponent.halveM();
 
-    var x_cubed = x.mulmod(x, prime).mulmod(x, prime);
-    var three_x = x.mulmod(new sjcl.bn(3), prime);
-    var a = ((x_cubed.sub(three_x)).add(new sjcl.bn("0x64210519e59c80e70fa7e9ab72243049feb8deecc146b9b1"))).mod(prime);
-    var pos_root = a.powermod(exponent, prime);
-    var neg_root = prime.sub(pos_root);
+    var x_cubed = x.mulmod(x, PRIME).mulmod(x, PRIME);
+    var three_x = x.mulmod(new sjcl.bn(3), PRIME);
+    var a = ((x_cubed.sub(three_x)).add(B)).mod(PRIME);
+    var pos_root = a.powermod(exponent, PRIME);
+    var neg_root = PRIME.sub(pos_root);
     return [neg_root.toBits(), pos_root.toBits()];
 }
+calc_y_p192.CONST = {
+    // b in : y^2 = x^3 + ax + b
+    // a is -3 in NIST curves
+    CURVE_B: new sjcl.bn("0x64210519e59c80e70fa7e9ab72243049feb8deecc146b9b1"),
+    // prime order
+    CURVE_PRIME: (function () {
+        "use strict";
+        var two = new sjcl.bn(2);
+        var two_64 = two;
+        var i;
+
+        for (i = 0; i < 63; i++) {
+            two_64 = two_64.mul(two).trim();
+        }
+
+        var two_128 = two_64.mul(two_64).trim();
+        var two_192 = two_128.mul(two_64).trim();
+        var prime = two_192.sub(new sjcl.bn(1)).normalize();
+        prime = prime.sub(two_64).normalize();
+        return prime;
+    })()
+};
 
 /**
  * Asymmetric keys with only 'public' information
