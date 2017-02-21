@@ -1691,29 +1691,47 @@ BGAPI.prototype.postKeys = function (account) {
 
     return new Promise(resolve => {
         var pubKey = account.key.toPubKey();
-        var pkPacked = pubKey.nanify();
+        var pkPacked = pubKey.hexify();
 
         var groupNames = account.groups.map(groupStats => groupStats.name);
         groupNames.sort();
 
         var groupString = groupNames.map(name => "#" + name).join(" ");
-        var encryptStatus = "#encryptkey " + ts + " " + base16k.fromHex(pkPacked.encrypt) + " " + groupString;
-        var signStatus = "#signkey " + ts + " " + base16k.fromHex(pkPacked.sign) + " " + groupString;
-        var expiration = ts + Certs.UserCert.DEFAULT_EXPIRATION_MS;
+        var encryptStatus = [
+            "#" + Certs.PartialCert.ENCRYPTKEY,
+            ts.toString(16),
+            base16k.fromHex(pkPacked.encrypt),
+            groupString
+        ].join(" ");
+
+        var signStatus = [
+            "#" + Certs.PartialCert.SIGNKEY,
+            ts.toString(16),
+            base16k.fromHex(pkPacked.sign),
+            groupString
+        ].join(" ");
+
+        var expiration = Certs.UserCert.DEFAULT_EXPIRATION_MS;
 
         var sigText = [
             account.primaryHandle,
             account.primaryId,
             pkPacked.encrypt,
             pkPacked.sign,
-            ts,
-            expiration,
-            groupNames.join(" ")
+            ts.toString(16),
+            expiration.toString(16),
+            groupNames.join(" ") // no #
         ].join("");
 
         var signature = account.key.signText(sigText, 'hex');
 
-        var sigStatus = "#keysig " + ts + " " + expiration + " " + base16k.fromHex(signature) + " " + groupString;
+        var sigStatus = [
+            "#" + Certs.PartialCert.KEYSIG,
+            ts.toString(16),
+            expiration.toString(16),
+            base16k.fromHex(signature),
+            groupString
+        ].join(" ");
 
         if (encryptStatus.length > 140) {
             throw new Fail(Fail.PUBSUB, "encryption key cert tweet too long (" + encryptStatus.length + "B > 140B)");

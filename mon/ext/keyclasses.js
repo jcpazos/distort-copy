@@ -509,8 +509,8 @@ function ECCPubKey(signBits, encryptBits) {
     this.valid = true;
 }
 
- /* constructs ECCPubKey from the output of nanify */
-ECCPubKey.unnanify = function (minified) {
+ /* constructs ECCPubKey from the output of hexify */
+ECCPubKey.unhexify = function (hexified) {
     "use strict";
 
     function unpackPoint(ptstring) {
@@ -521,8 +521,8 @@ ECCPubKey.unnanify = function (minified) {
 
     var storeFormat = {
         typ: "eccPubk",
-        sign: {pub: unpackPoint(minified.sign)},
-        encrypt: {pub: unpackPoint(minified.encrypt)},
+        sign: {pub: unpackPoint(hexified.sign)},
+        encrypt: {pub: unpackPoint(hexified.encrypt)},
         valid: true
     };
 
@@ -592,7 +592,7 @@ Utils._extends(ECCPubKey, Object, {
         };
     },
 
-    nanify: function () {
+    hexify: function () {
         "use strict";
         var out = this.toStore();
         function packPoint(pt) {
