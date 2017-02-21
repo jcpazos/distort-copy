@@ -155,7 +155,7 @@ window.Certs = (function (module) {
         this.groups = opts.groups || [];
 
         this.primaryTs = opts.primaryTs || 0; /* ts string. ms. unix. */
-        this.expirationTs = opts.expirationTs || 0; /* ts string. ms. unix. */
+        this.expirationTs = opts.expirationTs || 0; /* ts string. ms. relative from primaryTs. */
 
         // stored as strings until verification
         this.signkey =  opts.signkey || null;
@@ -257,7 +257,7 @@ window.Certs = (function (module) {
             // var sigStatus = "#keysig " + ts + " " + expiration + " " + signature;
             if (toks.length >= 4 && _posNum(toks[1], 16) && _posNum(toks[2]), 16) {
                 this._updateTs(toks[1]);
-                this.expirationTs = this.primaryTs + _posNum(toks[2], 16);
+                this.expirationTs = _posNum(toks[2], 16);
                 this.keysig = base16k.toHex(toks[3]);
                 // find all tags that follow -- assume they are groups for this cert
                 this._setGroups(toks.slice(4).filter(tok => tok && tok.substr(0, 1) === "#"));
@@ -296,9 +296,9 @@ window.Certs = (function (module) {
                 this.primaryId,
                 this.encryptkey,
                 this.signkey,
-                this.primaryTs,
-                this.expirationTs,
-                sortedGroups.join(" ")
+                this.primaryTs.toString(16),
+                this.expirationTs.toString(16),
+                sortedGroups.join(" ") // no #
             ].join("");
 
             if (!key.verifySignature(signedMessage, this.keysig, 'hex')) {
@@ -307,7 +307,7 @@ window.Certs = (function (module) {
             }
 
             var pubKeyContainer = {
-                expiration: this.expirationTs,
+                expiration: this.primaryTs + this.expirationTs,
                 ts: this.primaryTs,
                 key: key
             };
@@ -324,7 +324,7 @@ window.Certs = (function (module) {
                 validUntil: pubKeyContainer.expiration / 1000,
                 completedOn: Date.now() / 1000,
                 verifiedOn: 0,
-
+                key: pubKeyContainer.key,
                 // groups is set on the first key tweet
                 groups: sortedGroups,
             };

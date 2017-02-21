@@ -1527,7 +1527,7 @@ _extends(DistributeTask, PeriodicTask, {
 
             var accountGroupNames = account.groups.map(gstat => gstat.name);
             var intersection = accountGroupNames.filter(name => twitterCert.groups.includes(name));
-            if (intersection.length !== account.groups.length || intersection.length !== twitterCert.groups) {
+            if (intersection.length !== account.groups.length || intersection.length !== twitterCert.groups.length) {
                 UI.log("Group memberships for @" + that.username + " have changed. Reposting.");
                 return _repostKey();
             }
@@ -1713,7 +1713,7 @@ BGAPI.prototype.postKeys = function (account) {
 
         var expiration = Certs.UserCert.DEFAULT_EXPIRATION_MS;
 
-        var sigText = [
+        var signedMessage = [
             account.primaryHandle,
             account.primaryId,
             pkPacked.encrypt,
@@ -1723,7 +1723,7 @@ BGAPI.prototype.postKeys = function (account) {
             groupNames.join(" ") // no #
         ].join("");
 
-        var signature = account.key.signText(sigText, 'hex');
+        var signature = account.key.signText(signedMessage, 'hex');
 
         var sigStatus = [
             "#" + Certs.PartialCert.KEYSIG,
