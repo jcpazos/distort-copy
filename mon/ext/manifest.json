@@ -30,6 +30,7 @@
 		    "keyclasses.js",
 		    "vault.js",
 		    "ui.js",
+                    "outbox.js",
 		    "twitter.js",
 		    "certs.js",
 		    "background.js",
