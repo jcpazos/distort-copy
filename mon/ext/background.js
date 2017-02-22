@@ -1395,89 +1395,13 @@ CryptoCtx.prototype = {
     }
 };
 
-function PeriodicTask(periodMs) {
-    "use strict";
-
-    this.periodMs = periodMs;
-    this.timer = -1;
-    this.stopped = true;
-    this.lastRun = null;
-    this.nextRun = null;
-    this.status = "stopped";
-}
-
-PeriodicTask.prototype.stop = function () {
-    "use strict";
-
-    if (this.timer > -1) {
-        window.clearInterval(this.timer);
-    }
-
-    this.stopped = true;
-    this.timer = -1;
-    this.nextRun = null;
-    this.status = "stopped";
-};
-
-PeriodicTask.prototype._run = function () {
-    "use strict";
-
-    var that = this;
-    return new Promise(function (resolve) {
-        resolve(that.run());
-    });
-};
-
-PeriodicTask.prototype.run = function () {
-    "use strict";
-    throw new Fail(Fail.GENERIC, "run() must be implemented by subclasses");
-};
-
-PeriodicTask.prototype.start = function () {
-    "use strict";
-
-    var that = this;
-
-    this.stopped = false;
-
-    if (this.timer > -1) {
-        // already scheduled;
-        return;
-    }
-
-    function _fire() {
-        that.timer = -1;
-        if (!that.stopped) {
-            that.start();
-        }
-    }
-
-    function _reschedule() {
-        that.lastRun = new Date();
-        that.nextRun = new Date(that.lastRun.getTime() + that.periodMs);
-        that.timer = window.setTimeout(_fire, that.periodMs);
-    }
-
-    this.status = "running";
-
-    this._run().then(function () {
-        that.status = "completed";
-        _reschedule();
-    }).catch(function (err) {
-        console.error("Periodic task failed:", err);
-        that.status = "error";
-        _reschedule();
-    });
-};
-
-
 function DistributeTask(periodMs, username) {
     "use strict";
     DistributeTask.__super__.constructor.call(this, periodMs);
     this.username = username;
 }
 
-_extends(DistributeTask, PeriodicTask, {
+_extends(DistributeTask, Utils.PeriodicTask, {
     run: function () {
         "use strict";
         var that = this;
@@ -1551,7 +1475,7 @@ function ValidateTask(periodMs, username) {
     this.username = username;
 }
 
-_extends(ValidateTask, PeriodicTask, {
+_extends(ValidateTask, Utils.PeriodicTask, {
     run: function () {
         "use strict";
         API.refreshAllFriends().then(function (count) {
