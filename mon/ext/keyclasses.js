@@ -484,7 +484,6 @@ function ECCPubKey(signBits, encryptBits) {
     var pub_xy, pub_pointbits, pubkey;
 
     if (!signBits) {
-        console.warn("ECCPubKey contructor called without signBits.");
         //this.sign = {pub: x, sec: y}
         this.sign = sjcl.ecc.ecdsa.generateKeys(ECCKeyPair.curve, ECCKeyPair.getParanoia());
     } else {
@@ -495,7 +494,6 @@ function ECCPubKey(signBits, encryptBits) {
     }
 
     if (!encryptBits) {
-        console.warn("ECCPubKey contructor called without encryptBits.");
         //this.encrypt = {pub: x, sec: y}
         this.encrypt = sjcl.ecc.elGamal.generateKeys(ECCKeyPair.curve, ECCKeyPair.getParanoia());
     } else {
