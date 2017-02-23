@@ -142,7 +142,7 @@ function AESKey(b64key) {
     } else {
         bits = sjcl.codec.base64.toBits(b64key);
         var bitLength = sjcl.bitArray.bitLength(bits);
-        if (bitLength !== AESKey.KEYSIZE_BITS) {
+        if (bitLength !== AESKey.KEYSIZE_BITS && bitLength !== AESKey.KEYSIZE_BITS_ALT) {
             console.error("Invalid number of bits in key.");
             throw new Fail(Fail.INVALIDKEY, "Invalid number of bits in key. Expected " + AESKey.KEYSIZE_BITS + " but got " +
                            bitLength + " bits.");
@@ -163,6 +163,7 @@ function AESKey(b64key) {
 }
 
 AESKey.KEYSIZE_BITS = 256;
+AESKey.KEYSIZE_BITS_ALT = 128;
 
 AESKey.prototype = {
     toStore: function () {
@@ -216,10 +217,119 @@ AESKey.prototype = {
         return this.principals;
     },
 
+    /*
+
+      SJCL returns a json-encoded object of parameters which were used
+      in the encryption.  The presence of the 'ks' parameter is
+      misleading. It is ignored when the key is passed directly as an
+      array.
+
+      For AES256.encryptText("foo") this returns (the IV is random):
+        '{"adata":"","cipher":"aes","ct":"zZ0xgJBJmYAqOEQ=","iter":10000,"iv":"WrFv/FWOsOO6Zh2yy8iaOQ==","ks":128,"mode":"ccm","ts":64,"v":1}'
+
+        ts is the tag length ct is the ciphertext ("zZ0xgJBJmYAqOEQ="
+        is 11*8 = 88 bits of data. The last 64 bits of which are the
+        tag.)
+
+        ciphertext bitlength is equal to : bitlen(tag) + bitlen(payload).
+
+        except for encoding the empty string.  encoding the
+        empty string is 3B + ts = 11B. Bug?
+
+      For AES128.encryptText("foo") the output is undistinguishable from 256 bit:
+        '{"adata":"","cipher":"aes","ct":"nkNVOh4UQiZKYNo=","iter":10000,"iv":"sc5PdvwWguyHuE1t3xFZuA==","ks":128,"mode":"ccm","ts":64,"v":1}'
+
+      iv: sjcl.random.randomWords(4,0) # 16B = 128bits
+
+    */
     encryptText: function (plainText) {
         "use strict";
 
         return sjcl.encrypt(this.key, plainText);
+    },
+
+    /**
+       return AES ciphertext of given plaintext, in the
+       given encoding.
+
+       @returns hex string containing the ciphertext and aux information.
+                sizeof(output) === sizeof(plainText) + sizeof(iv) + sizeof(tag)
+                               === sizeof(plainText) +  16bytes   +    8 bytes
+
+       @encoding applies to string plainText, and
+                 is one of:
+
+           'domstring': plainText is a DOMString. e.g. a string taken
+                        from a UI or the DOM. The message will be
+                        encoded into utf-8 first before being passed
+                        through AES. == this might inflate the size of
+                        the output ciphertext w.r.t. plainText.length.
+
+           'hex':       plainText is a hex-encoded string.
+
+           'base64':    plainText is a base64-encoded string.
+
+    */
+    encryptBytes: function (plainText, encoding) {
+        "use strict";
+        if (typeof plainText === 'string') {
+            switch (encoding) {
+            case 'hex':
+                plainText = sjcl.codec.hex.toBits(plainText);
+                break;
+            case 'base64':
+                plainText = sjcl.codec.base64.toBits(plainText);
+                break;
+            case 'domstring':
+                plainText = sjcl.codec.utf8String.toBits(plainText);
+                break;
+            default:
+                throw new Error("encoding missing");
+            }
+        }
+        var iv = sjcl.random.randomWords(4, ECCKeyPair.getParanoia()); // 128bit
+        var sboxes = new sjcl.cipher.aes(this.key);
+        var associatedData = "";
+        var ct = sjcl.mode.ccm.encrypt(sboxes, plainText, iv, associatedData, 64); // messagecipher + 64bit tag
+        return sjcl.codec.hex.fromBits(sjcl.bitArray.concat(ct, iv));
+    },
+
+    /**
+       does the opposite of encryptBytes. returns plainText.
+       The encoding provided to encryptBytes is applied to
+       the plaintext before returning. Set to null to keep
+       in the bitarray format.
+
+    */
+    decryptBytes: function (cipherText, encoding) {
+        "use strict";
+
+        if (cipherText.length < 24 * 2) {
+            throw new Error("invalid ciphertext. too short");
+        }
+        if (cipherText.length % 2 === 1) {
+            throw new Error("invalid ciphertext. must be byte-aligned.");
+        }
+
+        var W = sjcl.bitArray, bitlen = cipherText.length * 4;
+        var cipherBits = sjcl.codec.hex.toBits(cipherText);
+        const IV_BITLEN = 128;
+        var ct = W.clamp(cipherBits, bitlen - IV_BITLEN);
+        var iv = W.bitSlice(cipherBits, bitlen - IV_BITLEN);
+        var sboxes = new sjcl.cipher.aes(this.key);
+        var associatedData = "";
+        var pt = sjcl.mode.ccm.decrypt(sboxes, ct, iv, associatedData, 64);
+
+        switch (encoding) {
+        case "domstring":
+            return sjcl.codec.utf8String.fromBits(pt);
+        case "hex":
+            return sjcl.codec.hex.fromBits(pt);
+        case "base64":
+            return sjcl.codec.base64.fromBits(pt);
+        default:
+            return pt;
+        }
     },
 
     decryptText: function (cipherText) {

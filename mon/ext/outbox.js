@@ -26,7 +26,8 @@ window.Outbox = (function (module) {
     var randomPubKey = new ECCPubKey();
 
     /**
-       posts at regular intervals.
+       posts a message from a queue at regular intervals. if no
+       message is available, it generates a random noise message.
 
        opts: {
           periodMs: average period in milliseconds between sends
@@ -55,6 +56,10 @@ window.Outbox = (function (module) {
 
                 resolve(true);
             });
+        },
+
+        generateNoise: function () {
+            return Message.compose(randomPubKey, "");
         }
     });
 
@@ -77,9 +82,9 @@ window.Outbox = (function (module) {
         }
     }
 
-    Message.compose = function (recipientId, body) {
+    Message.compose = function (recipient, body) {
         var msg = new Message({
-            to: recipientId,
+            to: recipient,
             payload: body,
             state: Message.STATE_DRAFT
         });

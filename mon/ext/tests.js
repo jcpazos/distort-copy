@@ -16,7 +16,13 @@
     License along with Beeswax.  If not, see
     <http://www.gnu.org/licenses/>.
 **/
-/*global sjcl, ECCPubKey, Stats, calc_y_p192*/
+/*global sjcl,
+  ECCPubKey,
+  ECCKeyPair,
+  AESKey,
+  calc_y_p192,
+  Stats
+*/
 
 window.Tests = (function (module) {
     "use strict";
@@ -80,13 +86,40 @@ window.Tests = (function (module) {
         }
     };
 
-    module.test_encrypt = function () {
-        var pubKey = new ECCPubKey();
-        var message = "foo";
-        var pKem = pubKey.encrypt.pub.kem();
-        var ct = sjcl.json.encrypt(pKem.key, sjcl.codec.utf8String.toBits(message));
-        console.log("CIPHERTEXT", ct);
+    module.test_symmetric = function (msg) {
+        msg = msg || "foo";
+        var AESBITS = 256;
+        var bin = sjcl.random.randomWords(AESBITS / 32, ECCKeyPair.getParanoia());
+        var bits = sjcl.bitArray.clamp(bin, AESBITS);
+        var aes = new AESKey(sjcl.codec.base64.fromBits(bits));
+        return aes.encryptText(msg);
     };
+
+    module.test_encrypt_bytes = function (msg, encoding) {
+        msg = msg || "foo";
+        encoding = (encoding === undefined) ? "domstring" : encoding;
+        var AESBITS = 128;
+        var bin = sjcl.random.randomWords(AESBITS / 32, ECCKeyPair.getParanoia());
+        var bits = sjcl.bitArray.clamp(bin, AESBITS);
+        var aes = new AESKey(sjcl.codec.base64.fromBits(bits));
+
+        var ct = aes.encryptBytes(msg, encoding);
+
+        if (!ct || ct === msg) {
+            throw new Error("should return something encrypted.");
+        }
+
+        var pt = aes.decryptBytes(ct, encoding);
+
+        if ((typeof pt) === 'string') {
+            if (pt !== msg) {
+                throw new Error("failed to reobtain the same string");
+            }
+        }
+
+        return [ct, pt];
+    };
+
     return module;
 
 })(window.Tests || {});
