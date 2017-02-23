@@ -25,10 +25,6 @@ window.Tests = (function (module) {
         repeats = (repeats === undefined)? 10 : repeats;
 
         var pubKey = new ECCPubKey();
-        var pKem = pubKey.encrypt.pub.kem();
-        var len = sjcl.bitArray.bitLength(pKem.tag);
-        var x = sjcl.bn.fromBits(sjcl.bitArray.bitSlice(pKem.tag, 0, len / 2));
-        var y = sjcl.bitArray.bitSlice(pKem.tag, len / 2);
 
         var poscount = 0, negcount = 0;
 
@@ -38,23 +34,41 @@ window.Tests = (function (module) {
 
             var start = performance.now();
             var roots = null;
+
+            var tag = pubKey.encrypt.pub.kem().tag;
+            // var tag = [-1002950414, -890843264, // pKem.tag
+            //            -701543249, 862063544,
+            //            -305842461, 1079141360,
+            //            16137026, -1204973108,
+            //            -656853187, -695392866,
+            //            -1348350964, -42083616];
+            var len = sjcl.bitArray.bitLength(tag);
+            var x = sjcl.bn.fromBits(sjcl.bitArray.bitSlice(tag, 0, len / 2));
+            var y = sjcl.bitArray.bitSlice(tag, len / 2);
+            var pt = new sjcl.ecc.point(sjcl.ecc.curves.c192, x, sjcl.bn.fromBits(y));
+            if (!pt.isValid()) {
+                throw new Error("invalid tag point");
+            }
+
             for (i = 0; i < n; i++) {
                 roots = calc_y_p192(x);
-
                 if (sjcl.bitArray.equal(roots[0], y)) {
                     poscount += 1;
                 } else {
                     negcount += 1;
                 }
             }
+            var end = performance.now();
+
             if (roots) {
                 // sanity -- make sure the function works correctly
-                if (!sjcl.bitArray.equal(roots[0], y) &&
-                    !sjcl.bitArray.equal(roots[1], y)) {
+                if (!roots[0].equals(pt.y) &&
+                    !roots[1].equals(pt.y)) {
+                    console.error("no matching root found", pt.y, roots);
                     throw new Error("no root!");
                 }
             }
-            var end = performance.now();
+
             return 1000 / ((end - start) / n);
         }
 

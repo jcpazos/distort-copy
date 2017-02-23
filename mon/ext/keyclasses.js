@@ -314,51 +314,37 @@ KeyLoader.registerClass("aes", AESKey);
 //calculates the y-coordinate of a point on the curve p-192 given the
 //x-coordinate.
 //
-// y^2 = x^3 + ax + b
+// y^2 = x^3 + ax + b   mod p
+//
+//   if p is congruent 3 mod 4, then
+//   a root of A mod P is:  A ^ ((P + 1)/4) mod P
 //
 // see http://course1.winona.edu/eerrthum/13Spring/SquareRoots.pdf
 //
 function calc_y_p192(x)  {
     "use strict";
 
+    var curve = sjcl.ecc.curves.c192;
     var C = calc_y_p192.CONST;
 
     //B + (X * (A + X^2))
+    if (x instanceof sjcl.bn) {
+        x = new curve.field(x);
+    }
 
-    var x_cubed = x.mulmod(x, C.PRIME).mulmod(x, C.PRIME);
-    var three_x = x.mulmod(new sjcl.bn(3), C.PRIME);
-    var a = ((x_cubed.sub(three_x)).add(C.B)).mod(C.PRIME);
-    var pos_root = a.powermod(C.EXPONENT, C.PRIME);
-    var neg_root = C.PRIME.sub(pos_root);
-    return [neg_root.toBits(), pos_root.toBits()];
+    var y_squared = curve.b.add(x.mul(curve.a.add(x.square())));
+    var pos_root = y_squared.power(C.EXPONENT);
+    var neg_root = pos_root.mul(-1); // modulus - pos_root
+    return [neg_root, pos_root];
 }
+
 calc_y_p192.CONST = (function (C) {
     "use strict";
 
-    // b in : y^2 = x^3 + ax + b
-    // a is -3 in NIST curves
-    C.B = new sjcl.bn("0x64210519e59c80e70fa7e9ab72243049feb8deecc146b9b1");
-
-    // prime order
-    C.PRIME = (function () {
-        var two = new sjcl.bn(2);
-        var two_64 = two;
-        var i;
-
-        for (i = 0; i < 63; i++) {
-            two_64 = two_64.mul(two).trim();
-        }
-
-        var two_128 = two_64.mul(two_64).trim();
-        var two_192 = two_128.mul(two_64).trim();
-        var prime = two_192.sub(new sjcl.bn(1)).normalize();
-        prime = prime.sub(two_64).normalize();
-        return prime;
-    })();
-
-    // (prime + 1) / 4
+    // (modulus + 1) / 4
     C.EXPONENT = (function () {
-        var exponent = C.PRIME.add(new sjcl.bn(1)).normalize();
+        var P = sjcl.ecc.curves.c192.field.modulus; //2^192 - 2^64 - 1
+        var exponent = P.add(new sjcl.bn(1)).normalize();
         exponent.halveM();
         exponent.halveM();
         return exponent;
