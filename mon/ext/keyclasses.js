@@ -321,26 +321,26 @@ KeyLoader.registerClass("aes", AESKey);
 function calc_y_p192(x)  {
     "use strict";
 
-    var PRIME = calc_y_p192.CONST.CURVE_PRIME;
-    var B = calc_y_p192.CONST.CURVE_B;
-    var exponent = PRIME.add(new sjcl.bn(1)).normalize();
-    exponent.halveM();
-    exponent.halveM();
+    var C = calc_y_p192.CONST;
 
-    var x_cubed = x.mulmod(x, PRIME).mulmod(x, PRIME);
-    var three_x = x.mulmod(new sjcl.bn(3), PRIME);
-    var a = ((x_cubed.sub(three_x)).add(B)).mod(PRIME);
-    var pos_root = a.powermod(exponent, PRIME);
-    var neg_root = PRIME.sub(pos_root);
+    //B + (X * (A + X^2))
+
+    var x_cubed = x.mulmod(x, C.PRIME).mulmod(x, C.PRIME);
+    var three_x = x.mulmod(new sjcl.bn(3), C.PRIME);
+    var a = ((x_cubed.sub(three_x)).add(C.B)).mod(C.PRIME);
+    var pos_root = a.powermod(C.EXPONENT, C.PRIME);
+    var neg_root = C.PRIME.sub(pos_root);
     return [neg_root.toBits(), pos_root.toBits()];
 }
-calc_y_p192.CONST = {
+calc_y_p192.CONST = (function (C) {
+    "use strict";
+
     // b in : y^2 = x^3 + ax + b
     // a is -3 in NIST curves
-    CURVE_B: new sjcl.bn("0x64210519e59c80e70fa7e9ab72243049feb8deecc146b9b1"),
+    C.B = new sjcl.bn("0x64210519e59c80e70fa7e9ab72243049feb8deecc146b9b1");
+
     // prime order
-    CURVE_PRIME: (function () {
-        "use strict";
+    C.PRIME = (function () {
         var two = new sjcl.bn(2);
         var two_64 = two;
         var i;
@@ -354,8 +354,17 @@ calc_y_p192.CONST = {
         var prime = two_192.sub(new sjcl.bn(1)).normalize();
         prime = prime.sub(two_64).normalize();
         return prime;
-    })()
-};
+    })();
+
+    // (prime + 1) / 4
+    C.EXPONENT = (function () {
+        var exponent = C.PRIME.add(new sjcl.bn(1)).normalize();
+        exponent.halveM();
+        exponent.halveM();
+        return exponent;
+    })();
+    return C;
+})(calc_y_p192.CONST || {});
 
 /**
  * Asymmetric keys with only 'public' information
