@@ -22,6 +22,9 @@
 window.Outbox = (function (module) {
     "use strict";
 
+    /** used as the recipient for noise messages */
+    var randomPubKey = new ECCPubKey();
+
     /**
        posts at regular intervals.
 
@@ -42,6 +45,14 @@ window.Outbox = (function (module) {
     Utils._extends(PeriodicSend, Utils.PeriodicTask, {
         run: function () {
             return new Promise(resolve => {
+                if (!this.queue) {
+                    throw new Fail(Fail.GENERIC, "no associated queue");
+                }
+                var next = this.queue.dequeue();
+                if (next === null) {
+                    next = this.generateNoise();
+                }
+
                 resolve(true);
             });
         }
