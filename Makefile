@@ -4,10 +4,16 @@ sjcl/sjcl.js:
 	git submodule init
 	[ -f sjcl/configure ] || git submodule update
 	cd sjcl && \
-	  ./configure --with-ecc && \
+	  ./configure \
+	     --with-ecc \
+	     --with-ctr \
+	&& \
 	  make
 
 ext:
 	$(MAKE) -C mon/ext
 
-.PHONY: ext
+clean:
+	rm -f sjcl/sjcl.js
+
+.PHONY: ext clean

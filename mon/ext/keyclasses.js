@@ -165,6 +165,13 @@ function AESKey(b64key) {
 AESKey.KEYSIZE_BITS = 256;
 AESKey.KEYSIZE_BITS_ALT = 128;
 
+AESKey._loadCtr = function () {
+    "use strict";
+    if (!sjcl.mode.ctr) {
+        sjcl.beware["CTR mode is dangerous because it doesn't protect message integrity."]();
+    }
+};
+
 AESKey.prototype = {
     toStore: function () {
         "use strict";
