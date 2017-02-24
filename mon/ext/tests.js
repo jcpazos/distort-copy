@@ -95,21 +95,43 @@ window.Tests = (function (module) {
         return aes.encryptText(msg);
     };
 
-    module.test_encrypt_bytes = function (msg, encoding) {
+    module.test_encrypt_ecc = function (msg, mac, opts) {
         msg = msg || "foo";
-        encoding = (encoding === undefined) ? "domstring" : encoding;
+        mac = mac || "some stuff";
+        opts = opts || {};
+        opts.encoding = opts.encoding || "domstring";
+        opts.macEncoding = opts.macEncoding || "domstring";
+        opts.outEncoding = (opts.outEncoding === undefined) ? "domstring" : opts.outEncoding;
+        var kp = new ECCKeyPair();
+        var ct = kp.encryptBytes(msg, mac, {encoding: opts.encoding,
+                                            macEncoding: opts.macEncoding,
+                                            outEncoding: null,
+                                           });
+
+        var pt = kp.decryptBytes(ct, mac, {encoding: null,
+                                           macEncoding: opts.macEncoding,
+                                           outEncoding: opts.outEncoding});
+        return pt;
+    };
+
+    module.test_encrypt_aes = function (msg, opts) {
+        msg = msg || "foo";
+        opts = opts || {};
+        opts.encoding = opts.encoding || "domstring";
+        opts.outEncoding = (opts.outEncoding  === undefined) ? "domstring" : opts.outEncoding;
+
         var AESBITS = 128;
         var bin = sjcl.random.randomWords(AESBITS / 32, ECCKeyPair.getParanoia());
         var bits = sjcl.bitArray.clamp(bin, AESBITS);
         var aes = new AESKey(sjcl.codec.base64.fromBits(bits));
 
-        var ct = aes.encryptBytes(msg, encoding);
+        var ct = aes.encryptBytes(msg, {mode:'ctr', encoding: opts.encoding});
 
         if (!ct || ct === msg) {
             throw new Error("should return something encrypted.");
         }
 
-        var pt = aes.decryptBytes(ct, encoding);
+        var pt = aes.decryptBytes(ct, {mode: 'ctr', encoding: null, outEncoding: opts.outEncoding});
 
         if ((typeof pt) === 'string') {
             if (pt !== msg) {

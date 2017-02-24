@@ -223,6 +223,7 @@ Fail.STALE       = "STALE"; // stale key
 Fail.PUBSUB      = "PUBSUB"; // fail to authenticate or to post to the pub/sub service
 Fail.NOTIMPL     = "NOTIMPL"; // not implemented
 Fail.BADAUTH     = "BADAUTH"; // bad authentication
+Fail.CORRUPT     = "CORRUPT"; // integrity failed.
 Fail.toRPC = function (err) {
     "use strict";
 
