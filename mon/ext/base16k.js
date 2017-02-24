@@ -28,6 +28,13 @@
 
    https://sites.google.com/site/markusicu/unicode/base16k
 
+   Every code point in that range is also a starter symbol for
+   NFC-normalized forms (the character can compose with a following
+   character, but it never composes with a previous character)
+
+   http://unicode.org/reports/tr15/#Detecting_Normalization_Forms
+   http://www.unicode.org/Public/UCD/latest/ucd/DerivedNormalizationProps.txt
+
    Number of input bytes      Number of output (unicode) characters
    7N                         4N
    7N+1                       4N+1
