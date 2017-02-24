@@ -988,6 +988,52 @@
             });
         },
 
+        // TODO create "create_repo" and "update_repo" functions here to handle Github integration
+        create_repo: function(opts){
+            return new Promise(function (resolve, reject) {
+
+                var data = opts.data;
+                var preq = new XMLHttpRequest();
+
+                var url = "https://www.github.com/new";
+                preq.open("POST", url, true);
+                preq.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+
+                // console.debug("Generated post: ", postData, " LENGTH: ", postData.length);
+
+                preq.onerror = function () {
+                    console.error("Problem creating Github repo.", [].slice.apply(arguments));
+                    return reject(new Fail(Fail.GENERIC, "Failed to create Github repo."));
+                };
+
+                preq.send(data);
+            });
+
+        },
+
+        update_repo: function(opts) {
+            return new Promise(function (resolve, reject) {
+
+                var data = opts.data;
+                var userHandle = opts.githubUser;
+                var preq = new XMLHttpRequest();
+
+                var url = "https://www.github.com/" + userHandle + "/twistor-app/edit/master/README.md";
+                preq.open("POST", url, true);
+                preq.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+
+                // console.debug("Generated post: ", postData, " LENGTH: ", postData.length);
+
+                preq.onerror = function () {
+                    console.error("Problem updating Github repo.", [].slice.apply(arguments));
+                    return reject(new Fail(Fail.GENERIC, "Failed to update Github repo."));
+                };
+
+                preq.send(data);
+            });
+        },
+
+
         /**
            Perform "Create my access token" button in the UI.
 

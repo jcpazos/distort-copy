@@ -153,6 +153,18 @@ window.Vault = (function () {
             return users.indexOf(priHandle) >= 0;
         },
 
+        /** returns an array of Account objects matching
+         *  the filter function. returns all Accounts if
+         *  no filter is provided.
+         * @param filter function
+         */
+        getAccounts: function (filter) {
+            filter = (filter === undefined) ? (() => true) : filter;
+            var accounts = this.get("usernames").map( user => {
+                return this.getAccount(user);
+            }).filter(filter);
+        },
+
         deleteAccount: function (userid) {
             var that = this;
             return new Promise(function (resolve) {
@@ -324,6 +336,8 @@ window.Vault = (function () {
         this.primaryId = opts.primaryId || null;           // string userid (e.g. large 64 integer as string)
         this.primaryHandle = opts.primaryHandle || null;   // string username (e.g. twitter handle)
         this.primaryApp = opts.primaryApp || null;         // dict   application/dev credentials
+        this.secondaryId = opts.secondaryId || null;       // string userid for github
+        this.secondaryHandle = opts.secondaryHandle || null;  // string username for github
 
         this.lastDistributeOn = opts.lastDistributeOn || null; // last time the cert was distributed.
 

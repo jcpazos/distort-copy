@@ -1704,6 +1704,8 @@ BGAPI.prototype.postKeys = function (account) {
         var sigText = [
             account.primaryHandle,
             account.primaryId,
+            account.secondaryHandle,
+            account.secondaryId,
             min.encrypt,
             min.sign,
             ts,
@@ -1730,7 +1732,7 @@ BGAPI.prototype.postKeys = function (account) {
                                  {msg: signStatus, groups: groupNames},
                                  {msg: sigStatus, groups: groupNames}
                                ])
-                .then(() => true));
+                .then(Github.postGithubKey(account, [encryptStatus, signStatus, sigStatus]).then(() => true)));
     });
 };
 

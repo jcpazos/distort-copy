@@ -92,6 +92,8 @@ function readAccountForm() {
     opts.primaryId = $doc.find("input[name='primary-id']").val();
     opts.primaryHandle = $doc.find("input[name='primary-handle']").val();
     opts.primaryApp = $doc.find("input[name='twitter-app-keys']").data('keys');
+    opts.secondaryId = $doc.find("input[name='secondary-id']").val();
+    opts.secondaryHandle = $doc.find("input[name='secondary-handle']").val();
     // null if a new key is to be generated
     opts.key = $doc.find("textarea[name='key-data']").data("key");
     opts.groups = [];
@@ -149,6 +151,20 @@ function stepButtonClick(evt) {
                     break;
             }
             break;
+
+                   case "twitter-app":
+                       switch(bName) {
+                            case "back":
+                                  showStep(stepClass, "start");
+                                    break;
+                                case "next":
+                                    showStep(stepClass, "import-keys");
+                                    break;
+                                default:
+                                    showPage("main");
+                                    break;
+                                }
+                        break;
 
         case "import-keys":
             switch(bName) {
@@ -664,7 +680,13 @@ function loadPage() {
             $doc.find("input[name='secondary-id']").val(githubInfo.githubID);
             $doc.find("#github-info").show();
 
-            // TODO do we need to check Vault here for an existing account?
+            // TODO fix filter function such that it works properly
+            // if (Vault.getAccounts(accnt => accnt.secondaryHandle === githubInfo.githubUser).length > 0) {
+            //     updateStatus("There is an account linked with this GitHub ID. Please" +
+            //         "log in to another GitHub account or delete the existing Twistor " +
+            //         "account.", true);
+            //     return;
+            // }
 
             enableByName({"next": true});
         }).catch(function (err) {
@@ -729,6 +751,8 @@ function loadPage() {
             });
         }).then(function (keys) {
             updateStatus("Keys received.");
+
+            // TODO do we need similar verification for secondary ID?
 
             var primaryHandle = $doc.find("input[name='primary-handle']").val();
             var primaryId = $doc.find("input[name='primary-id']").val();
