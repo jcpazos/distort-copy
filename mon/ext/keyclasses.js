@@ -139,6 +139,10 @@ window.KeyClasses = (function (module) {
 
     const AES_IV_BITS = 128;
 
+    const AES_SIZE_OVERHEAD_BITS = AES_IV_BITS;
+
+    const ECC_SIZE_OVERHEAD_BITS = ECC_TAG_BITS + ECC_HMAC_BITS + AES_SIZE_OVERHEAD_BITS;
+
     /*
       The encoding option applies if `s` is a string, and is one of:
 
@@ -201,6 +205,9 @@ window.KeyClasses = (function (module) {
         ECC_TAG_BITS,
         ECC_HMAC_BITS,
         AES_IV_BITS,
+
+        AES_SIZE_OVERHEAD_BITS,
+        ECC_SIZE_OVERHEAD_BITS,
 
         stringToBits,
         bitsToString

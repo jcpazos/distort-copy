@@ -17,7 +17,10 @@
     <http://www.gnu.org/licenses/>.
 **/
 
-/*global Fail, Utils, Emitter*/
+/*global Fail, Utils, Emitter,
+  ECCPubKey, KeyClasses,
+  unescape
+*/
 
 window.Outbox = (function (module) {
     "use strict";
@@ -91,6 +94,41 @@ window.Outbox = (function (module) {
         return msg;
     };
 
+    var M = Message;
+
+    // twitter hard limit
+    M.TWEET_COUNT = 140;
+
+    // room for the group of recipient
+    M.TWEET_RCPT_GROUP_COUNT = 19;
+
+    // room for our message content within the tweet text (in twitter chars)
+    M.TWISTOR_BODY_COUNT = M.TWEET_COUNT - M.TWEET_RCPT_GROUP_COUNT - 1;
+
+    // base16k encoding allows encoding a 14bit integer at the cost of
+    // one twitter-char.
+    M.USABLE_BITS_PER_TWITTER_CHAR = 14;
+
+    // usable bits for twistor body
+    M.TWISTOR_BODY_BITS = M.TWISTOR_BODY_COUNT * M.USABLE_BITS_PER_TWITTER_CHAR;
+
+    M.TWISTOR_BASE16K_BYTES = Math.floor(M.TWISTOR_BODY_BITS / 8);
+
+    // max bits that we can encrypt from the user's message
+    M.TWISTOR_MAX_PLAINTEXT_BITS = M.TWISTOR_BODY_BITS - KeyClasses.ECC_SIZE_OVERHEAD_BITS;
+    M.TWISTOR_MAX_PLAINTEXT_BYTES = Math.floor(M.TWISTOR_MAX_PLAINTEXT_BITS / 8);
+
+    // utf8Len
+    //
+    // number of bytes required to encode the given
+    // user message in utf-8
+    M.utf8Len = function (userStr) {
+        if (!userStr || userStr.length === 0) {
+            return 0;
+        }
+        return unescape(encodeURIComponent(userStr));
+    };
+
     Message.STATE_DRAFT = "DRAFT"; // message is being drafted
 
     Message.STATE_QUEUED = "QUEUED"; // message is queued for submission
@@ -108,6 +146,10 @@ window.Outbox = (function (module) {
             if (this.queue) {
                 this.queue.dequeue(this);
             }
+        },
+
+        encodeForTweet1: function () {
+
         }
     });
 
@@ -151,6 +193,10 @@ window.Outbox = (function (module) {
         }
     };
 
-    module.Message = Message;
-    module.Queue = Queue;
+    var exports = {
+        Message,
+        Queue
+    };
+    Object.keys(exports).forEach(k => module[k] = exports[k]);
+    return module;
 })(window.Outbox || {});
