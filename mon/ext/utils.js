@@ -223,6 +223,7 @@ Fail.STALE       = "STALE"; // stale key
 Fail.PUBSUB      = "PUBSUB"; // fail to authenticate or to post to the pub/sub service
 Fail.NOTIMPL     = "NOTIMPL"; // not implemented
 Fail.BADAUTH     = "BADAUTH"; // bad authentication
+Fail.CORRUPT     = "CORRUPT"; // integrity failed.
 Fail.toRPC = function (err) {
     "use strict";
 
@@ -875,64 +876,143 @@ function keyidShortHex(keyid) {
 var KH_TYPE = {keyid: ""};
 var MSG_TYPE = {type: "", hdr: { to: "", from: "" }};
 
-var Utils = {
+window.Utils = (function (module) {
+    "use strict";
 
-    _extends: _extends,
+    /**
+       This abstract class invokes run() every periodMs milliseconds
+       once started.  It starts in a stopped state. start() is called
+       to activate the timer.  The timer can be started/stopped
+       multiple times.
 
-    // string made from 128 random bits
-    randomStr128: function () {
-        "use strict";
-        var arr = sjcl.random.randomWords(4);
-        return sjcl.codec.hex.fromBits(arr);
-    },
-    typeToString: typeToString,
+       The timer is rescheduled whenever run() completes, so run()
+       should return a promise.
 
-    defer: function () {
-        "use strict";
-        var defer = {};
-        defer.promise = new Promise(function (resolve, reject) {
-            defer.resolve = resolve;
-            defer.reject = reject;
+       subclasses should implement a `run` method which returns a
+       promise.
+    */
+    function PeriodicTask(periodMs) {
+        this.periodMs = periodMs;
+        this.timer = -1;
+        this.stopped = true;
+        this.lastRun = null;
+        this.nextRun = null;
+        this.status = "stopped";
+    }
+
+    PeriodicTask.prototype.stop = function () {
+        if (this.timer > -1) {
+            window.clearInterval(this.timer);
+        }
+
+        this.stopped = true;
+        this.timer = -1;
+        this.nextRun = null;
+        this.status = "stopped";
+    };
+
+    PeriodicTask.prototype._run = function () {
+        var that = this;
+        return new Promise(function (resolve) {
+            resolve(that.run());
         });
-        return defer;
-    },
+    };
 
-    /* empty object */
-    isEmpty: function (d) {
-        "use strict";
+    PeriodicTask.prototype.run = function () {
+        throw new Fail(Fail.GENERIC, "run() must be implemented by subclasses");
+    };
 
-        var k;
-        for (k in d) {
-            if (d.hasOwnProperty(k)) {
-                return false;
+    PeriodicTask.prototype.start = function () {
+        var that = this;
+
+        this.stopped = false;
+
+        if (this.timer > -1) {
+            // already scheduled;
+            return;
+        }
+
+        function _fire() {
+            that.timer = -1;
+            if (!that.stopped) {
+                that.start();
             }
         }
-        return true;
-    },
 
-    sortedKeys: function (d) {
-        "use strict";
-        var keys = Object.getOwnPropertyNames(d);
-        keys.sort();
-        return keys;
-    },
+        function _reschedule() {
+            that.lastRun = new Date();
+            that.nextRun = new Date(that.lastRun.getTime() + that.periodMs);
+            that.timer = window.setTimeout(_fire, that.periodMs);
+        }
 
-    utf8_to_b64: function (s) {
-        "use strict";
-        return window.btoa(unescape(encodeURIComponent(s)));
-    },
+        this.status = "running";
 
-    b64_to_utf8: function (s) {
-        "use strict";
-        return decodeURIComponent(window.escape(window.atob(s)));
-    },
+        this._run().then(function () {
+            that.status = "completed";
+            _reschedule();
+        }).catch(function (err) {
+            console.error("Periodic task failed:", err);
+            that.status = "error";
+            _reschedule();
+        });
+    };
 
-    hmac_sha1: function(k, d) {
-        "use strict";
-        return rstr2b64(rstr_hmac_sha1(str2rstr_utf8(k), str2rstr_utf8(d)));
-    },
 
-    DateUtil: DateUtil,
+    var exports = {
+        PeriodicTask,
 
-    keyidShortHex: keyidShortHex
-};
+        _extends,
+
+        // string made from 128 random bits
+        randomStr128: function () {
+            var arr = sjcl.random.randomWords(4);
+            return sjcl.codec.hex.fromBits(arr);
+        },
+
+        typeToString,
+
+        defer: function () {
+            var defer = {};
+            defer.promise = new Promise(function (resolve, reject) {
+                defer.resolve = resolve;
+                defer.reject = reject;
+            });
+            return defer;
+        },
+
+        /* empty object */
+        isEmpty: function (d) {
+            var k;
+            for (k in d) {
+                if (d.hasOwnProperty(k)) {
+                    return false;
+                }
+            }
+            return true;
+        },
+
+        sortedKeys: function (d) {
+            var keys = Object.getOwnPropertyNames(d);
+            keys.sort();
+            return keys;
+        },
+
+        utf8_to_b64: function (s) {
+            return window.btoa(unescape(encodeURIComponent(s)));
+        },
+
+        b64_to_utf8: function (s) {
+            return decodeURIComponent(window.escape(window.atob(s)));
+        },
+
+        hmac_sha1: function(k, d) {
+            return rstr2b64(rstr_hmac_sha1(str2rstr_utf8(k), str2rstr_utf8(d)));
+        },
+
+        DateUtil,
+        keyidShortHex
+    };
+
+    Object.keys(exports).forEach(k => module[k] = exports[k]);
+    return module;
+})(window.Utils || {});

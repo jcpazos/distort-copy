@@ -25,15 +25,19 @@
                     "lib/twitter-text.js",
 		    "sjcl.js",
 		    "utils.js",
+                    "base16k.js",
 		    "emitter.js",
 		    "keyclasses.js",
 		    "vault.js",
 		    "ui.js",
+                    "outbox.js",
 		    "twitter.js",
 		    "certs.js",
 			"github.js",
 		    "background.js",
-		    "main.js"
+		    "main.js",
+		    "stats.js",
+		    "tests.js"
 		   ]
     },
     "options_ui": {

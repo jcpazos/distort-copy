@@ -21,6 +21,7 @@
 /*global
   sjcl, RSAKey,
   Fail, escape,
+  KeyClasses,
   Utils
 */
 
@@ -73,7 +74,6 @@ KeyLoader.fromStore = function (obj) {
     return KeyLoader.classes[typ].fromStore(obj);
 };
 
-
 // encodes a flat structure in a JSON string with sorted keys.
 if (sjcl.json.encodeStable === undefined) {
     sjcl.json.encodeStable = function (obj) {
@@ -125,24 +125,121 @@ if (sjcl.json.encodeStable === undefined) {
     sjcl.json.encode = sjcl.json.encodeStable;
 }
 
+window.KeyClasses = (function (module) {
+    "use strict";
+
+    // sjcl.bn(0xAABB).toBits()
+    const DERIVE_NAME_ENCRYPT_KEY = [17590755459072];
+    // sjcl.bn(0xCCDD).toBits()
+    const DERIVE_NAME_HMAC_KEY = [17591328112640];
+
+    const ECC_TAG_BITS = 192 * 2;  //2 * sjcl.ecc.curves.c192.field.modulus.bitLength()
+
+    const ECC_HMAC_BITS = 32 * 8; // bits we keep from the HMAC when encrypting with ECC
+
+    const AES_IV_BITS = 128;
+
+    const AES_SIZE_OVERHEAD_BITS = AES_IV_BITS;
+
+    const ECC_SIZE_OVERHEAD_BITS = ECC_TAG_BITS + ECC_HMAC_BITS + AES_SIZE_OVERHEAD_BITS;
+
+    /*
+      The encoding option applies if `s` is a string, and is one of:
+
+      'domstring': plainText is a DOMString. e.g. a string taken from
+                   a UI or the DOM.
+
+      'hex':       plainText is a hex-encoded string.
+
+      'base64':    plainText is a base64-encoded string.
+
+      if `s` is not a string, then it is not transformed.
+    */
+    function stringToBits (s, encoding) {
+        if (typeof s === 'string') {
+            switch (encoding) {
+            case 'hex':
+                s = sjcl.codec.hex.toBits(s);
+                break;
+            case 'base64':
+                s = sjcl.codec.base64.toBits(s);
+                break;
+            case 'domstring':
+                s = sjcl.codec.utf8String.toBits(s);
+                break;
+            default:
+                throw new Error("encoding missing");
+            }
+        }
+        return s;
+    }
+
+    /*
+      The encoding option applies if `s` is a string, and is one of:
+
+      'domstring': plainText is a DOMString. e.g. a string taken from a
+                   UI or the DOM.
+
+      'hex':       plainText is a hex-encoded string.
+
+      'base64':    plainText is a base64-encoded string.
+
+     if `s` is not a string, then it is not transformed.
+    */
+    function bitsToString(bits, encoding) {
+        switch (encoding) {
+        case "domstring":
+            return sjcl.codec.utf8String.fromBits(bits);
+        case "hex":
+            return sjcl.codec.hex.fromBits(bits);
+        case "base64":
+            return sjcl.codec.base64.fromBits(bits);
+        default:
+            return bits;
+        }
+    }
+
+    var exports = {
+        DERIVE_NAME_ENCRYPT_KEY,
+        DERIVE_NAME_HMAC_KEY,
+        ECC_TAG_BITS,
+        ECC_HMAC_BITS,
+        AES_IV_BITS,
+
+        AES_SIZE_OVERHEAD_BITS,
+        ECC_SIZE_OVERHEAD_BITS,
+
+        stringToBits,
+        bitsToString
+    };
+
+    Object.keys(exports).forEach(k => module[k] = exports[k]);
+    return module;
+})(window.KeyClasses || {});
+
 /**
  * Symmetric AES key
  */
-function AESKey(b64key) {
+function AESKey(data) {
     "use strict";
     var randomWords, bits;
 
     this.key = null;
 
-    if (!b64key) {
+    if (!data) {
         randomWords = sjcl.random.randomWords(AESKey.KEYSIZE_BITS / 32, ECCKeyPair.getParanoia());
         bits = sjcl.bitArray.clamp(randomWords, AESKey.KEYSIZE_BITS);
         this.keySize = AESKey.KEYSIZE_BITS;
         this.key = bits;
     } else {
-        bits = sjcl.codec.base64.toBits(b64key);
+        if (typeof data === "string") {
+            bits = sjcl.codec.base64.toBits(data);
+        } else {
+            bits = data.slice();
+        }
+
         var bitLength = sjcl.bitArray.bitLength(bits);
-        if (bitLength !== AESKey.KEYSIZE_BITS) {
+        if (bitLength !== AESKey.KEYSIZE_BITS && bitLength !== AESKey.KEYSIZE_BITS_ALT) {
             console.error("Invalid number of bits in key.");
             throw new Fail(Fail.INVALIDKEY, "Invalid number of bits in key. Expected " + AESKey.KEYSIZE_BITS + " but got " +
                            bitLength + " bits.");
@@ -163,6 +260,14 @@ function AESKey(b64key) {
 }
 
 AESKey.KEYSIZE_BITS = 256;
+AESKey.KEYSIZE_BITS_ALT = 128;
+
+AESKey._loadCtr = function () {
+    "use strict";
+    if (!sjcl.mode.ctr) {
+        sjcl.beware["CTR mode is dangerous because it doesn't protect message integrity."]();
+    }
+};
 
 AESKey.prototype = {
     toStore: function () {
@@ -216,10 +321,123 @@ AESKey.prototype = {
         return this.principals;
     },
 
+    /*
+
+      SJCL returns a json-encoded object of parameters which were used
+      in the encryption.  The presence of the 'ks' parameter is
+      misleading. It is ignored when the key is passed directly as an
+      array.
+
+      For AES256.encryptText("foo") this returns (the IV is random):
+        '{"adata":"","cipher":"aes","ct":"zZ0xgJBJmYAqOEQ=","iter":10000,"iv":"WrFv/FWOsOO6Zh2yy8iaOQ==","ks":128,"mode":"ccm","ts":64,"v":1}'
+
+        ts is the tag length ct is the ciphertext ("zZ0xgJBJmYAqOEQ="
+        is 11*8 = 88 bits of data. The last 64 bits of which are the
+        tag.)
+
+        ciphertext bitlength is equal to : bitlen(tag) + bitlen(payload).
+
+        except for encoding the empty string.  encoding the
+        empty string is 3B + ts = 11B. Bug?
+
+      For AES128.encryptText("foo") the output is undistinguishable from 256 bit:
+        '{"adata":"","cipher":"aes","ct":"nkNVOh4UQiZKYNo=","iter":10000,"iv":"sc5PdvwWguyHuE1t3xFZuA==","ks":128,"mode":"ccm","ts":64,"v":1}'
+
+      iv: sjcl.random.randomWords(4,0) # 16B = 128bits
+
+    */
     encryptText: function (plainText) {
         "use strict";
 
         return sjcl.encrypt(this.key, plainText);
+    },
+
+    /**
+       AESKey.encryptBytes()
+
+       return AES ciphertext of given plaintext
+
+       @plainText  the message to encrypt
+
+       @opts: encryption options:
+
+           {
+             mode:        the AES mode. 'ctr' (no integrity) or 'ccm' (integrity. default)
+             encoding:    plainText encoding
+             outEncoding: return value encoding
+           }
+
+       @returns the ciphertext
+                sizeof(output) === sizeof(plainText) + sizeof(iv) + sizeof(tag)
+                               === sizeof(plainText) +  16bytes   +    8 bytes
+    */
+    encryptBytes: function (plainText, opts) {
+        "use strict";
+
+        opts = opts || {};
+
+        var mode = opts.mode || 'ccm';
+        var plainTextBits = KeyClasses.stringToBits(plainText, opts.encoding);
+
+        var tlen;
+        var associatedData;
+        if (mode === "ccm") {
+            tlen = 64;
+            associatedData = "";
+        } else if (mode === "ctr") {
+            tlen = 0;
+            associatedData = "";
+            if (!sjcl.mode.ctr) {
+                AESKey._loadCtr();
+            }
+        }
+
+        if (!sjcl.mode[mode]) {
+            throw new Error("invalid mode");
+        }
+
+        var iv = sjcl.random.randomWords(KeyClasses.AES_IV_BITS / 32, ECCKeyPair.getParanoia());
+        var sboxes = new sjcl.cipher.aes(this.key);
+
+        // ct = messagecipher [+ 64bit tag (in ccm mode)]
+        var ct = sjcl.mode[mode].encrypt(sboxes, plainTextBits, iv, associatedData, tlen);
+        return KeyClasses.bitsToString(sjcl.bitArray.concat(ct, iv), opts.outEncoding);
+    },
+
+    /**
+       AESKey.decryptBytes()
+
+       does the opposite of encryptBytes. returns plainText.
+
+       opts is: object{
+            mode: 'ccm' (default) or 'ctr'
+            encoding: encoding of cipherText
+            outEncoding: encoding for return value
+       }
+    */
+    decryptBytes: function (cipherText, opts) {
+        "use strict";
+
+        opts = opts || {};
+        var mode = opts.mode || 'ctr';
+
+        if (mode === "ctr") {
+            AESKey._loadCtr();
+        }
+
+        if (sjcl.mode[mode] === undefined) {
+            throw new Error("invalid mode given: " + mode);
+        }
+
+        var cipherBits = KeyClasses.stringToBits(cipherText);
+        var W = sjcl.bitArray, bitlen = W.bitLength(cipherBits);
+        var ct = W.clamp(cipherBits, bitlen - KeyClasses.AES_IV_BITS);
+        var iv = W.bitSlice(cipherBits, bitlen - KeyClasses.AES_IV_BITS);
+        var sboxes = new sjcl.cipher.aes(this.key);
+        var associatedData = "";
+        var pt = sjcl.mode[mode].decrypt(sboxes, ct, iv, associatedData, 64);
+
+        return KeyClasses.bitsToString(pt, opts.outEncoding);
     },
 
     decryptText: function (cipherText) {
@@ -314,38 +532,43 @@ KeyLoader.registerClass("aes", AESKey);
 //calculates the y-coordinate of a point on the curve p-192 given the
 //x-coordinate.
 //
-// y^2 = x^3 + ax + b
+// y^2 = x^3 + ax + b   mod p
+//
+//   if p is congruent 3 mod 4, then
+//   a root of A mod P is:  A ^ ((P + 1)/4) mod P
 //
 // see http://course1.winona.edu/eerrthum/13Spring/SquareRoots.pdf
 //
 function calc_y_p192(x)  {
     "use strict";
 
-    var two = new sjcl.bn(2);
-    var two_64 = two;
-    var i;
+    var curve = sjcl.ecc.curves.c192;
+    var C = calc_y_p192.CONST;
 
-    for (i = 0; i < 63; i++) {
-        two_64 = two_64.mul(two).trim();
+    //B + (X * (A + X^2))
+    if (x instanceof sjcl.bn) {
+        x = new curve.field(x);
     }
 
-    //fixme reuse
-    var two_128 = two_64.mul(two_64).trim();
-    var two_192 = two_128.mul(two_64).trim();
-    var prime = two_192.sub(new sjcl.bn(1)).normalize();
-    prime = prime.sub(two_64).normalize();
-    var exponent;
-    exponent = prime.add(new sjcl.bn(1)).normalize();
-    exponent.halveM();
-    exponent.halveM();
-
-    var x_cubed = x.mulmod(x, prime).mulmod(x, prime);
-    var three_x = x.mulmod(new sjcl.bn(3), prime);
-    var a = ((x_cubed.sub(three_x)).add(new sjcl.bn("0x64210519e59c80e70fa7e9ab72243049feb8deecc146b9b1"))).mod(prime);
-    var pos_root = a.powermod(exponent, prime);
-    var neg_root = prime.sub(pos_root);
-    return [neg_root.toBits(), pos_root.toBits()];
+    var y_squared = curve.b.add(x.mul(curve.a.add(x.square())));
+    var pos_root = y_squared.power(C.EXPONENT);
+    var neg_root = pos_root.mul(-1); // modulus - pos_root
+    return [neg_root, pos_root];
 }
+
+calc_y_p192.CONST = (function (C) {
+    "use strict";
+
+    // (modulus + 1) / 4
+    C.EXPONENT = (function () {
+        var P = sjcl.ecc.curves.c192.field.modulus; //2^192 - 2^64 - 1
+        var exponent = P.add(new sjcl.bn(1)).normalize();
+        exponent.halveM();
+        exponent.halveM();
+        return exponent;
+    })();
+    return C;
+})(calc_y_p192.CONST || {});
 
 /**
  * Asymmetric keys with only 'public' information
@@ -474,7 +697,6 @@ function ECCPubKey(signBits, encryptBits) {
     var pub_xy, pub_pointbits, pubkey;
 
     if (!signBits) {
-        console.warn("ECCPubKey contructor called without signBits.");
         //this.sign = {pub: x, sec: y}
         this.sign = sjcl.ecc.ecdsa.generateKeys(ECCKeyPair.curve, ECCKeyPair.getParanoia());
     } else {
@@ -485,7 +707,6 @@ function ECCPubKey(signBits, encryptBits) {
     }
 
     if (!encryptBits) {
-        console.warn("ECCPubKey contructor called without encryptBits.");
         //this.encrypt = {pub: x, sec: y}
         this.encrypt = sjcl.ecc.elGamal.generateKeys(ECCKeyPair.curve, ECCKeyPair.getParanoia());
     } else {
@@ -498,6 +719,26 @@ function ECCPubKey(signBits, encryptBits) {
     }
     this.valid = true;
 }
+
+ /* constructs ECCPubKey from the output of hexify */
+ECCPubKey.unhexify = function (hexified) {
+    "use strict";
+
+    function unpackPoint(ptstring) {
+        var toks = [ptstring.substr(0, ptstring.length / 2), ptstring.substr(ptstring.length / 2)];
+        var hexX = toks[0], hexY = toks[1];
+        return {x: sjcl.codec.hex.toBits(hexX), y: sjcl.codec.hex.toBits(hexY)};
+    }
+
+    var storeFormat = {
+        typ: "eccPubk",
+        sign: {pub: unpackPoint(hexified.sign)},
+        encrypt: {pub: unpackPoint(hexified.encrypt)},
+        valid: true
+    };
+
+    return ECCPubKey.fromStore(storeFormat);
+};
 
  /* constructs ECCPubKey from the output of minify */
 ECCPubKey.unminify = function (minified) {
@@ -518,6 +759,7 @@ ECCPubKey.unminify = function (minified) {
 
     return ECCPubKey.fromStore(storeFormat);
 };
+
 
 Utils._extends(ECCPubKey, Object, {
     toStore: function () {
@@ -561,6 +803,18 @@ Utils._extends(ECCPubKey, Object, {
         };
     },
 
+    hexify: function () {
+        "use strict";
+        var out = this.toStore();
+        function packPoint(pt) {
+            return sjcl.codec.hex.fromBits(pt.x) + sjcl.codec.hex.fromBits(pt.y);
+        }
+        return {
+            encrypt: packPoint(out.encrypt.pub),
+            sign: packPoint(out.sign.pub)
+        };
+    },
+
     xport: function () {
         "use strict";
 
@@ -570,9 +824,15 @@ Utils._extends(ECCPubKey, Object, {
         return out;
     },
 
-    verifySignature: function (message, signature) {
+    /*
+      - message to sha256 hash
+      - signature (over message) to verify
+      - encoding for signature. defaults to 'hex'
+    */
+    verifySignature: function (message, signature, codec) {
         "use strict";
-        var sigBits = sjcl.codec.hex.toBits(signature);
+        codec = (codec === undefined) ? 'hex': codec;
+        var sigBits = sjcl.codec[codec].toBits(signature);
         var hashMsg = sjcl.hash.sha256.hash(message);
         var pKey = this.sign.pub;
         return pKey.verify(hashMsg, sigBits);
@@ -601,6 +861,64 @@ Utils._extends(ECCPubKey, Object, {
         var ret = sjcl.codec.hex.fromBits(x.toBits()) + ":" + btoa(root + ct);
 
         return ret;
+    },
+
+    /*
+      ECCPubKey.encryptBytes()
+
+      encrypt a message with added authentication
+
+      opts can specify {
+           encoding:  the encoding for plainText
+        macEncoding:  the encoding for macText
+        outEncoding:  return value encoding
+      }
+
+      This function:
+        1- uses kem to produce ecc tag and sha256 main key.
+        2- derives 2 keys from main key.
+        3- AES encrypt plaintext with key 1
+        4- compute MAC over (tag + aes ct + macText)
+        5- returns final ct and mac
+
+      returns cipher text ct. sizeof(ct) == 96B + sizeof(plaintext)
+    */
+    encryptBytes: function (plainText, macText, opts) {
+        "use strict";
+
+        opts = opts || {};
+
+        var plainBits = KeyClasses.stringToBits(plainText, opts.encoding || null);
+        var macBits = KeyClasses.stringToBits(macText, opts.macEncoding || null);
+
+        function _deriveKey(k, name) {
+            var hmac = new sjcl.misc.hmac(k, sjcl.hash.sha256);
+            hmac.update(name);
+            return hmac.digest();
+        }
+
+        var pKem = this.encrypt.pub.kem(ECCKeyPair.getParanoia());
+        var eccTag = pKem.tag;
+        var mainKey = pKem.key;
+
+        // derive an aes key from the main key
+        var aesKeyE = new AESKey(_deriveKey(mainKey, KeyClasses.DERIVE_NAME_ENCRYPT_KEY));
+
+        // symmetric encryption over message bits
+        var aesCt = aesKeyE.encryptBytes(plainBits, {mode: 'ctr', encoding: null});
+
+        // compute hmac over (ecc ciphertext + message ciphertext + hmacBits)
+        var aesKeyH = new AESKey(_deriveKey(mainKey, KeyClasses.DERIVE_NAME_HMAC_KEY));
+        var hmac = new sjcl.misc.hmac(aesKeyH, sjcl.hash.sha256);
+        hmac.update(eccTag);
+        if (macBits && macBits.length) {
+            hmac.update(macBits);
+        }
+        hmac.update(aesCt);
+        var hmacDigest = sjcl.bitArray.clamp(hmac.digest(), KeyClasses.ECC_HMAC_BITS);
+
+        var W = sjcl.bitArray, ct = W.concat(W.concat(eccTag, hmacDigest), aesCt);
+        return KeyClasses.bitsToString(ct, opts.outEncoding);
     },
 
     equalTo: function (other) {
@@ -762,12 +1080,99 @@ Utils._extends(ECCKeyPair, ECCPubKey, {
         return atob(sjcl.decrypt(sKem, ct));
     },
 
-    signText: function (message) {
+    /*
+      ECCKeyPair.decryptBytes()
+
+      decrypt a message encrypted with ECCPubKey.encryptBytes().
+
+      If the message cannot be decrypted due to a failed integrity/auth
+      check, it fails with Fail.CORRUPT.
+
+      opts can specify {
+           encoding:  the encoding for cipherText
+        macEncoding:  the encoding for macText
+        outEncoding:  what the output should be decoded as
+      }
+
+      This function:
+        1- splits the input (ecc tag, hmac digest, aes ciphertext)
+        2- obtains sha256 of main key with unkem().
+        3- derives two keys from main key.
+        2- recomputes hmac over (tag, aes ct, macText) . should match.
+        5- returns final plaintext (encoded as outEncoding)
+    */
+    decryptBytes: function (cipherText, macText, opts) {
         "use strict";
+
+        function _deriveKey(k, name) {
+            var hmac = new sjcl.misc.hmac(k, sjcl.hash.sha256);
+            hmac.update(name);
+            return hmac.digest();
+        }
+
+        opts = opts || {};
+
+        var cipherBits = KeyClasses.stringToBits(cipherText, opts.encoding || null);
+        var macBits = KeyClasses.stringToBits(macText, opts.macEncoding || null);
+
+        // unpack items from tuple
+        var eccTag = sjcl.bitArray.bitSlice(cipherBits, 0, KeyClasses.ECC_TAG_BITS);
+
+        var expectedHmac = sjcl.bitArray.bitSlice(cipherBits,
+                                                  KeyClasses.ECC_TAG_BITS,
+                                                  KeyClasses.ECC_TAG_BITS + KeyClasses.ECC_HMAC_BITS);
+
+        var aesCt = sjcl.bitArray.bitSlice(cipherBits,
+                                           KeyClasses.ECC_TAG_BITS + KeyClasses.ECC_HMAC_BITS);
+
+        var mainKey = null;
+        try {
+            mainKey = this.encrypt.sec.unkem(eccTag);
+        } catch (err) {
+            if (err instanceof sjcl.exception.corrupt) {
+                throw new Fail(Fail.CORRUPT, "bad tag: sjcl: " + err.message);
+            }
+        }
+
+        // compute hmac over (ecc ciphertext + message ciphertext + hmacBits)
+        var aesKeyH = new AESKey(_deriveKey(mainKey, KeyClasses.DERIVE_NAME_HMAC_KEY));
+        var hmac = new sjcl.misc.hmac(aesKeyH, sjcl.hash.sha256);
+        hmac.update(eccTag);
+        if (macBits && macBits.length) {
+            hmac.update(macBits);
+        }
+        hmac.update(aesCt);
+        var hmacDigest = sjcl.bitArray.clamp(hmac.digest(), KeyClasses.ECC_HMAC_BITS);
+
+        // verify
+        if (!sjcl.bitArray.equal(hmacDigest, expectedHmac)) {
+            throw new Fail(Fail.CORRUPT, "different MAC");
+        }
+
+        // derive an aes key from the main key
+        var aesKeyE = new AESKey(_deriveKey(mainKey, KeyClasses.DERIVE_NAME_ENCRYPT_KEY));
+
+        // symmetric decryption over message bits
+        return aesKeyE.decryptBytes(aesCt, {mode: 'ctr',
+                                            encoding: null,
+                                            outEncoding: opts.outEncoding});
+    },
+
+    /*
+     * ECC sign the message
+     *
+     * output a signature encoded with @encoding
+     *
+     * the signature should be 2*log2(P) bits.
+     * on the P192 curve, this is 2*192bit = 2*24B = 48B
+     */
+    signText: function (message, encoding /* 'hex' */) {
+        "use strict";
+        encoding = (encoding === undefined) ? 'hex' : encoding;
 
         var hashMsg = sjcl.hash.sha256.hash(message);
         var sKey = this.sign.sec;
-        return sjcl.codec.hex.fromBits(sKey.sign(hashMsg, ECCKeyPair.getParanoia()));
+        return KeyClasses.bitsToString(sKey.sign(hashMsg, ECCKeyPair.getParanoia()), encoding);
     },
 
     toPubKey: function () {

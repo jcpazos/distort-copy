@@ -20,7 +20,7 @@
 /*global
   chrome, Promise, performance,
   ECCPubKey, AESKey, KeyLoader, Friendship,
-  UI, Utils, Vault, Twitter, Certs,
+  UI, Utils, Vault, Twitter, Certs, base16k,
   Events, API,
   getHost, Fail, assertType, OneOf, KH_TYPE, MSG_TYPE, _extends
 */
@@ -1395,89 +1395,13 @@ CryptoCtx.prototype = {
     }
 };
 
-function PeriodicTask(periodMs) {
-    "use strict";
-
-    this.periodMs = periodMs;
-    this.timer = -1;
-    this.stopped = true;
-    this.lastRun = null;
-    this.nextRun = null;
-    this.status = "stopped";
-}
-
-PeriodicTask.prototype.stop = function () {
-    "use strict";
-
-    if (this.timer > -1) {
-        window.clearInterval(this.timer);
-    }
-
-    this.stopped = true;
-    this.timer = -1;
-    this.nextRun = null;
-    this.status = "stopped";
-};
-
-PeriodicTask.prototype._run = function () {
-    "use strict";
-
-    var that = this;
-    return new Promise(function (resolve) {
-        resolve(that.run());
-    });
-};
-
-PeriodicTask.prototype.run = function () {
-    "use strict";
-    throw new Fail(Fail.GENERIC, "run() must be implemented by subclasses");
-};
-
-PeriodicTask.prototype.start = function () {
-    "use strict";
-
-    var that = this;
-
-    this.stopped = false;
-
-    if (this.timer > -1) {
-        // already scheduled;
-        return;
-    }
-
-    function _fire() {
-        that.timer = -1;
-        if (!that.stopped) {
-            that.start();
-        }
-    }
-
-    function _reschedule() {
-        that.lastRun = new Date();
-        that.nextRun = new Date(that.lastRun.getTime() + that.periodMs);
-        that.timer = window.setTimeout(_fire, that.periodMs);
-    }
-
-    this.status = "running";
-
-    this._run().then(function () {
-        that.status = "completed";
-        _reschedule();
-    }).catch(function (err) {
-        console.error("Periodic task failed:", err);
-        that.status = "error";
-        _reschedule();
-    });
-};
-
-
 function DistributeTask(periodMs, username) {
     "use strict";
     DistributeTask.__super__.constructor.call(this, periodMs);
     this.username = username;
 }
 
-_extends(DistributeTask, PeriodicTask, {
+_extends(DistributeTask, Utils.PeriodicTask, {
     run: function () {
         "use strict";
         var that = this;
@@ -1527,7 +1451,7 @@ _extends(DistributeTask, PeriodicTask, {
 
             var accountGroupNames = account.groups.map(gstat => gstat.name);
             var intersection = accountGroupNames.filter(name => twitterCert.groups.includes(name));
-            if (intersection.length !== account.groups.length || intersection.length !== twitterCert.groups) {
+            if (intersection.length !== account.groups.length || intersection.length !== twitterCert.groups.length) {
                 UI.log("Group memberships for @" + that.username + " have changed. Reposting.");
                 return _repostKey();
             }
@@ -1551,7 +1475,7 @@ function ValidateTask(periodMs, username) {
     this.username = username;
 }
 
-_extends(ValidateTask, PeriodicTask, {
+_extends(ValidateTask, Utils.PeriodicTask, {
     run: function () {
         "use strict";
         API.refreshAllFriends().then(function (count) {
@@ -1691,31 +1615,49 @@ BGAPI.prototype.postKeys = function (account) {
 
     return new Promise(resolve => {
         var pubKey = account.key.toPubKey();
-        var min = pubKey.minify();
+        var pkPacked = pubKey.hexify();
 
         var groupNames = account.groups.map(groupStats => groupStats.name);
         groupNames.sort();
 
         var groupString = groupNames.map(name => "#" + name).join(" ");
-        var encryptStatus = "#encryptkey " + ts + " " + min.encrypt + " " + groupString;
-        var signStatus = "#signkey " + ts + " " + min.sign + " " + groupString;
-        var expiration = ts + Certs.UserCert.DEFAULT_EXPIRATION_MS;
+        var encryptStatus = [
+            "#" + Certs.PartialCert.ENCRYPTKEY,
+            ts.toString(16),
+            base16k.fromHex(pkPacked.encrypt),
+            groupString
+        ].join(" ");
 
-        var sigText = [
+        var signStatus = [
+            "#" + Certs.PartialCert.SIGNKEY,
+            ts.toString(16),
+            base16k.fromHex(pkPacked.sign),
+            groupString
+        ].join(" ");
+
+        var expiration = Certs.UserCert.DEFAULT_EXPIRATION_MS;
+
+        var signedMessage = [
             account.primaryHandle,
             account.primaryId,
             account.secondaryHandle,
             account.secondaryId,
-            min.encrypt,
-            min.sign,
-            ts,
-            expiration,
-            groupNames.join(" ")
+            pkPacked.encrypt,
+            pkPacked.sign,
+            ts.toString(16),
+            expiration.toString(16),
+            groupNames.join(" ") // no #
         ].join("");
 
-        var signature = account.key.signText(sigText);
+        var signature = account.key.signText(signedMessage, 'hex');
 
-        var sigStatus = "#keysig " + ts + " " + expiration + " " + signature + " " + groupString;
+        var sigStatus = [
+            "#" + Certs.PartialCert.KEYSIG,
+            ts.toString(16),
+            expiration.toString(16),
+            base16k.fromHex(signature),
+            groupString
+        ].join(" ");
 
         if (encryptStatus.length > 140) {
             throw new Fail(Fail.PUBSUB, "encryption key cert tweet too long (" + encryptStatus.length + "B > 140B)");

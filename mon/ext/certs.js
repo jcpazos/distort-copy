@@ -19,7 +19,7 @@
 
 /*global
   Promise, Fail, Utils, Emitter,
-  KeyLoader, ECCPubKey,
+  KeyLoader, ECCPubKey, base16k,
   IDBKeyRange
 */
 
@@ -28,6 +28,15 @@
 
 window.Certs = (function (module) {
     "use strict";
+
+    function _posNum(s, base) {
+        base = ( base === undefined ) ? 16 : base;
+        if ((typeof s) === "number") {
+            return s > 0 ? s : null;
+        }
+        s = parseInt(s, base);
+        return (isNaN(s) || s <= 0) ? null : s;
+    }
 
     var IDB = window.indexedDB;
 
@@ -62,21 +71,21 @@ window.Certs = (function (module) {
 
             var toks = tweetText.split(/\s+/);
 
-            if (toks.length < 2 || !Number(toks[1])) {
+            if (toks.length < 2 || !_posNum(toks[1], 16)) {
                 throw new Fail(Fail.BADPARAM, "not a partialcert tweet");
             }
-            var primaryTs = toks[1];
+            var primaryMs = _posNum(toks[1], 16);
 
             if (!PartialCert.POUND_TAGS.includes(toks[0])) {
                 throw new Fail(Fail.BADPARAM, "invalid tokens for partialcert");
             }
 
-            if (Math.abs(createdAtMs - Number(toks[1])) > UserCert.MAX_TIME_DRIFT_PRIMARY_MS) {
+            if (Math.abs(createdAtMs - primaryMs) > UserCert.MAX_TIME_DRIFT_PRIMARY_MS) {
                 throw new Fail(Fail.STALE, "Time of post is too distant from certificate timestamp.");
             }
 
             var partialCerts = this._getPartialCert(cert => {
-                return cert.primaryId === primaryId && cert.primaryHdl === primaryHdl && cert.primaryTs === primaryTs;
+                return cert.primaryId === primaryId && cert.primaryHdl === primaryHdl && cert.primaryTs === primaryMs;
             });
 
             var partialCert = partialCerts[0];
@@ -84,7 +93,7 @@ window.Certs = (function (module) {
                 partialCert = new PartialCert({
                     primaryId: primaryId,
                     primaryHdl: primaryHdl,
-                    primaryTs: primaryTs
+                    primaryTs: primaryMs
                 });
                 this._addPartialCert(partialCert);
             }
@@ -145,16 +154,17 @@ window.Certs = (function (module) {
         // taken from first tweet in sequence
         this.groups = opts.groups || [];
 
-        // the following are saved as strings until signature verification
-        this.primaryTs = opts.primaryTs || 0; /* ts string. unix. */
-        this.expirationTs = opts.expirationTs || 0; /* ts string. unix. */
+        this.primaryTs = opts.primaryTs || 0; /* ts string. ms. unix. */
+        this.expirationTs = opts.expirationTs || 0; /* ts string. ms. relative from primaryTs. */
+
+        // stored as strings until verification
         this.signkey =  opts.signkey || null;
         this.encryptkey = opts.encryptkey || null;
         this.keysig = opts.keysig || null;
     }
-    PartialCert.ENCRYPTKEY = "encryptkey";
-    PartialCert.SIGNKEY = "signkey";
-    PartialCert.KEYSIG = "keysig";
+    PartialCert.ENCRYPTKEY = "t1encr";
+    PartialCert.SIGNKEY = "t1sign";
+    PartialCert.KEYSIG = "t1ksig";
     PartialCert.TAGS = [PartialCert.ENCRYPTKEY,
                         PartialCert.SIGNKEY,
                         PartialCert.KEYSIG];
@@ -162,13 +172,14 @@ window.Certs = (function (module) {
 
     PartialCert.prototype = {
         _updateTs: function (ts) {
-            if (ts <= 0) {
+            var ms = _posNum(ts, 16);
+            if (!ms) {
                 throw new Fail(Fail.BADPARAM, "invalid ts: " + ts);
             }
             if (this.primaryTs === 0) {
-                this.primaryTs = ts;
-            } else if (this.primaryTs !== ts) {
-                throw new Fail(Fail.BADPARAM, "expected ts " + this.primaryTs + " but got: " + ts);
+                this.primaryTs = ms;
+            } else if (this.primaryTs !== ms) {
+                throw new Fail(Fail.BADPARAM, "expected ts " + this.primaryTs + " but got: " + ms);
             }
         },
 
@@ -220,9 +231,9 @@ window.Certs = (function (module) {
 
         _parseSignKey: function (toks) {
             // var signStatus = "#signkey " + ts + " " + signKey;
-            if (toks.length >= 3 && Number(toks[1])) {
+            if (toks.length >= 3 && _posNum(toks[1], 16)) {
                 this._updateTs(toks[1]);
-                this.signkey = toks[2];
+                this.signkey = base16k.toHex(toks[2]);
                 // find all tags that follow -- assume they are groups for this cert
                 this._setGroups(toks.slice(3).filter(tok => tok && tok.substr(0, 1) === "#"));
             } else {
@@ -232,9 +243,9 @@ window.Certs = (function (module) {
 
         _parseEncryptKey: function (toks) {
             // var encryptStatus = "#encryptkey " + ts + " " + encryptKey;
-            if (toks.length >= 3 && Number(toks[1])) {
+            if (toks.length >= 3 && _posNum(toks[1], 16)) {
                 this._updateTs(toks[1]);
-                this.encryptkey = toks[2];
+                this.encryptkey = base16k.toHex(toks[2]);
                 // find all tags that follow -- assume they are groups for this cert
                 this._setGroups(toks.slice(3).filter(tok => tok && tok.substr(0, 1) === "#"));
             } else {
@@ -244,10 +255,10 @@ window.Certs = (function (module) {
 
         _parseKeySig: function (toks) {
             // var sigStatus = "#keysig " + ts + " " + expiration + " " + signature;
-            if (toks.length >= 4 && Number(toks[1]) && Number(toks[2])) {
+            if (toks.length >= 4 && _posNum(toks[1], 16) && _posNum(toks[2]), 16) {
                 this._updateTs(toks[1]);
-                this.expirationTs = toks[2];
-                this.keysig = toks[3];
+                this.expirationTs = _posNum(toks[2], 16);
+                this.keysig = base16k.toHex(toks[3]);
                 // find all tags that follow -- assume they are groups for this cert
                 this._setGroups(toks.slice(4).filter(tok => tok && tok.substr(0, 1) === "#"));
             } else {
@@ -275,7 +286,7 @@ window.Certs = (function (module) {
             var sortedGroups = this.groups.slice();
             sortedGroups.sort();
 
-            var key = ECCPubKey.unminify({
+            var key = ECCPubKey.unhexify({
                 encrypt: this.encryptkey,
                 sign: this.signkey
             });
@@ -285,19 +296,19 @@ window.Certs = (function (module) {
                 this.primaryId,
                 this.encryptkey,
                 this.signkey,
-                this.primaryTs,
-                this.expirationTs,
-                sortedGroups.join(" ")
+                this.primaryTs.toString(16),
+                this.expirationTs.toString(16),
+                sortedGroups.join(" ") // no #
             ].join("");
 
-            if (!key.verifySignature(signedMessage, this.keysig)) {
+            if (!key.verifySignature(signedMessage, this.keysig, 'hex')) {
                 console.error("Failed to verify signature in cert");
                 throw new Fail(Fail.GENERIC, "verification failed");
             }
 
             var pubKeyContainer = {
-                expiration: Number(this.expirationTs),
-                ts: Number(this.primaryTs),
+                expiration: this.primaryTs + this.expirationTs,
+                ts: this.primaryTs,
                 key: key
             };
 
@@ -313,7 +324,7 @@ window.Certs = (function (module) {
                 validUntil: pubKeyContainer.expiration / 1000,
                 completedOn: Date.now() / 1000,
                 verifiedOn: 0,
-
+                key: pubKeyContainer.key,
                 // groups is set on the first key tweet
                 groups: sortedGroups,
             };
