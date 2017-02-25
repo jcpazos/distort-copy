@@ -1421,11 +1421,11 @@ _extends(DistributeTask, Utils.PeriodicTask, {
         }
 
         function _repostKey() {
-            return API.postKeys(account).catch(function (err) {
+            return API.postCert(account).catch(function (err) {
                 UI.log("error reposting(" + err.code + "): " + err);
                 throw err; // throw again
             }).then(function () {
-                UI.log("Key for @" + that.username + " reposted.");
+                UI.log("Certificate for account '" + account.id_both + "' reposted.");
             });
         }
 
@@ -1608,7 +1608,7 @@ BGAPI.prototype.accountChanged = function (username) {
 };
 
 // Promises true if the certificate for the given account is posted successfully.
-BGAPI.prototype.postKeys = function (account) {
+BGAPI.prototype.postCert = function (account) {
     "use strict";
 
     var ts = Date.now();
@@ -1669,12 +1669,19 @@ BGAPI.prototype.postKeys = function (account) {
             throw new Fail(Fail.PUBSUB, "cert signature tweet too long (" + sigStatus.length + "B > 140B)");
         }
 
-        resolve(API.postTweets(account,
-                               [ {msg: encryptStatus, groups: groupNames},
-                                 {msg: signStatus, groups: groupNames},
-                                 {msg: sigStatus, groups: groupNames}
-                               ])
-                .then(Github.postGithubKey(account, [encryptStatus, signStatus, sigStatus]).then(() => true)));
+        // Cert is broken into 3 chunks/messages
+        resolve({
+            msgs: [encryptStatus, signStatus, sigStatus],
+            groups: groupNames
+        });
+    }).then(certData => {
+        // post to github first as it will invalidate the currently active cert
+        // on twitter.
+        return Github.postGithubKey(account, certData.msgs).then(() => certData);
+    }).then(certData => {
+        return API.postTweets(account, certData.msgs.map(m => ({msg: m, groups: certData.groups})));
+    }).then(() => {
+        return true;
     });
 };
 
@@ -1683,7 +1690,8 @@ BGAPI.prototype.postKeys = function (account) {
    Fails with PUBSUB if any of the messages could not be
    posted.
 
-   This will update the groupStats on the account.
+   This will update the groupStats on the account. We bump
+   the send() statistics for the groups involved.
 
    each msgSpec is:
     { msg: text string of message,
