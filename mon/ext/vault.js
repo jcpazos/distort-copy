@@ -418,6 +418,8 @@ window.Vault = (function () {
                      primaryId: this.primaryId,
                      primaryHandle: this.primaryHandle,
                      primaryApp: this.primaryApp,
+                     secondaryId: this.secondaryId,
+                     secondaryHandle: this.secondaryHandle,
                      key: this.key.toStore(),
                      groups: this.groups.map(function (grp) { return grp.toStore(); }),
                    };
