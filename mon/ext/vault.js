@@ -353,6 +353,10 @@ window.Vault = (function () {
             return this.primaryHandle;
         },
 
+        get id_both() {
+            return this.primaryHandle + ":" + this.secondaryHandle;
+        },
+
         /**
            Promises true when the group is left. Opposite of joinGroup.
 
