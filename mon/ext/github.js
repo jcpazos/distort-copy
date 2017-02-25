@@ -82,38 +82,38 @@ window.Github = (function() {
                         githubInfo.githubID + ":" + githubInfo.githubUser + "' but expected  '" +
                         account.secondaryId + ":" + account.secondaryHandle + "'.");
                 }
-
-                function isGithubCtx(ctx) {
-                    return (!ctx.isMaimed && ctx.app === "github.com");
-                }
-
-                // Check if repo exists; if not, create it
+                return githubInfo;
+            }).then(githubInfo => {
+                // ensure repo existence
                 var preq = new XMLHttpRequest();
-                preq.open("GET", "https://www.github.com/" + account.secondaryHandle + "/twistor-app", true);
-                preq.onerror = function () {
-                    console.error("Problem loading Github page", [].slice.apply(arguments));
-                    throw new Error("Error loading Github page");
-                };
-
-                preq.send();
-                if (preq.responseText === "Not Found") {
-                    this.createGithubRepo(account);
-                }
+                var repoURL = "https://www.github.com/" + encodeURIComponent(account.secondaryHandle) + "/twistor-app";
+                console.debug("Issuing GET to " + repoURL);
+                return new Promise((resolve, reject) => {
+                    preq.open("GET", "https://www.github.com/" + account.secondaryHandle + "/twistor-app", true);
+                    preq.onerror = function () {
+                        console.error("Problem loading Github page", [].slice.apply(arguments));
+                        reject(new Error("Error loading Github page"));
+                    };
+                    preq.onreadystatechange = () => {
+                        if (preq.readyState === 4)  {
+                            if (preq.status >= 200 && preq.status <= 300) {
+                                return resolve(githubInfo);
+                            } else if (preq.statusText === "Not Found") {
+                                return this.createGithubRepo(account).then(() => githubInfo);
+                            }
+                        }
+                    };
+                    preq.send();
+                });
+            }).then(githubInfo => {
+                // get authenticity token to POST to repo
+                githubInfo.token = null;
 
                 // Get edit page for repo now that we know it exists
-                var preq = new XMLHttpRequest();
-                preq.open("GET", "https://www.github.com/" + account.secondaryHandle + "/twistor-app/edit/master/README.md", true);
-                preq.onerror = function () {
-                    console.error("Problem loading Github page", [].slice.apply(arguments));
-                    throw new Error("Error loading Github page");
-                };
+                // FIXME TOCTTOU -- repo could have ceased to exist by the time you do something to it.
+                //               -- the missing check should be in a loop.
 
-                preq.onload = function () {
-                    // parse the response
-                    var parser = new DOMParser();
-                    var xmlDoc = parser.parseFromString(preq.responseText, "text/html");
-
-
+                function parseToken(xmlDoc) {
                     // TODO figure out where auth_token is in the edit page
                     var editForm = xmlDoc.getElementsByClassName("js-blob-form");
                     if (editForm === null || editForm.length !== 1) {
@@ -121,35 +121,63 @@ window.Github = (function() {
                         throw new Fail(Fail.GENERIC, "js-blob-form edit form fetch failed due to changed format");
                     }
 
-                    authToken = editForm[0].authenticity_token.value;
+                    var authToken = editForm[0].authenticity_token.value;
                     if (authToken === null || authToken.length !== 1) {
                         console.error("authenticity_token authToken fetch failed due to changed format");
                         throw new Fail(Fail.GENERIC, "authenticity_token authToken fetch failed due to changed format");
                     }
-                };
+                    return authToken;
+                }
 
-                preq.send();
+                return new Promise((resolve, reject) => {
+                    var preq = new XMLHttpRequest();
+                    preq.open("GET", "https://www.github.com/" + account.secondaryHandle + "/twistor-app/edit/master/README.md", true);
+                    preq.onerror = function () {
+                        console.error("Problem loading Github page", [].slice.apply(arguments));
+                        reject(new Fail(Fail.GENERIC, "Error loading Github page"));
+                    };
+                    preq.onload = function () {
+                        if (preq.status === 404) {
+                            return reject(new Fail(Fail.NOENT, "repo doesn't exist"));
+                        } else if (preq.status <= 200 || preq.status >= 400) {
+                            return reject(new Fail(Fail.GENERIC, "can't fetch repo edit form"));
+                        }
+                        var parser = new DOMParser();
+                        var xmlDoc = parser.parseFromString(preq.responseText, "text/html");
+                        var token;
+                        try {
+                            token = parseToken(xmlDoc);
+                            githubInfo.token = token;
+                            return resolve(githubInfo);
+                        } catch (err) {
+                            reject(err);
+                        }
+                    };
+                    preq.send();
+                });
+            }).then(githubInfo => {
+                // open a content script context to github
+
+                githubInfo.ctx = null;
+
+                function isGithubCtx(ctx) {
+                    return (!ctx.isMaimed && ctx.app === "github.com");
+                }
 
                 var githubContents = API.filterContext(isGithubCtx);
                 if (githubContents.length > 0) {
-
-                    return {
-                        token: authToken,
-                        githubId: githubInfo.githubID,
-                        githubUser: githubInfo.githubUser,
-                        ctx: githubContents[0]
-                    };
+                    githubInfo.ctx = githubContents[0];
+                    return githubInfo;
                 } else {
-                    return API.openContext("https://github.com/").then(function (ctx) {
-                        return {
-                            token: authToken,
-                            githubId: githubInfo.githubID,
-                            githubUser: githubInfo.githubUser,
-                            ctx: ctx
-                        };
+                    return API.openContext("https://github.com/").then(ctx => {
+                        githubInfo.ctx = ctx;
+                        return githubInfo;
                     });
                 }
-            }).then(githubCtx => {
+            }).then(githubInfo => {
+                // post the form using the context.
+
+                var githubCtx = githubInfo.ctx;
                 var fd = new FormData();
                 fd.append("filename", "README.md");
                 fd.append("authenticity_token", githubCtx.authToken);
@@ -162,13 +190,15 @@ window.Github = (function() {
                 fd.append("commit-choice", "direct");
                 fd.append("target_branch", "master");
 
+                // FIXME -- I don't think the structured clone postMessage() (i.e. to communicate
+                // to the content script) supports passing FormData objects... Does it?
+                // Just pass a dictionary instead and craft the FormData from the content script.
                 return githubCtx.ctx.callCS("update_repo", {data: fd, userHandle: githubCtx.githubUser})
-                        .then(resp => {
-                            // TODO what do we do on successful update?
-                            updateStatus("Updated github repo with new certificate");
-                        })
-                        .catch(err => {
-                            return err;
+                        .then(resp => { /*jshint unused: false */
+
+                            // TODO might want to return a commit id or a timestamp, for our records.
+                            // e.g. What if user wanted to know the last time the post was made.
+                            return true;
                         });
             });
         },
