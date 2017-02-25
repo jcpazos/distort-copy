@@ -366,6 +366,8 @@ function refreshAccounts() {
     "use strict";
 
     var users = Vault.getAccountNames();
+    var accounts = users.map(user => Vault.getAccount(user));
+
     if (users.length < 1) {
         $doc.find(".has-accounts").hide();
         $doc.find(".no-accounts").show();
@@ -383,7 +385,7 @@ function refreshAccounts() {
     for (i = 0; i < users.length; i++) {
         $row = $(getTemplate("user-row"));
         $row.attr("data-username", users[i]).find('[data-username]').attr("data-username", users[i]);
-        $row.find(".user").text("@" + users[i]);
+        $row.find(".user").text("@" + accounts[i].primaryHandle + " (gh: " + accounts[i].secondaryHandle + ")");
         $row.find(".account-status").text(users[i] === defaultUser ? "active" : "inactive");
         $row.appendTo($body);
     }
