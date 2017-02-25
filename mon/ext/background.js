@@ -20,7 +20,7 @@
 /*global
   chrome, Promise, performance,
   ECCPubKey, AESKey, KeyLoader, Friendship,
-  UI, Utils, Vault, Twitter, Certs, base16k,
+  UI, Utils, Vault, Twitter, Github, Certs, base16k,
   Events, API,
   getHost, Fail, assertType, OneOf, KH_TYPE, MSG_TYPE, _extends
 */
