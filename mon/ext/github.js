@@ -14,7 +14,7 @@ window.Github = (function() {
     Github.prototype = {
 
         // promises {githubUser: str, githubID: str}
-        // fails if user is not logged out to github
+        // promises {githubUser: null, githubID: null} if user is not logged in
         getGithubUserInfo: function () {
             return new Promise(function (resolve, reject) {
                 // fetch the user's github homepage
@@ -44,8 +44,11 @@ window.Github = (function() {
                     // Feb 2017 - when user is logged out, this is absent from document
                     var userID = xmlDoc.getElementsByName("octolytics-actor-id");
                     if (userID === null || userID.length !== 1) {
-                        console.error("octolytics-actor-id userid missing. user is logged out or page format changed");
-                        return reject(new Fail(Fail.GENERIC, "octolytics-actor-id userid missing. user is logged out or page format changed"));
+                        //console.error("octolytics-actor-id userid missing. user is logged out or page format changed");
+                        return resolve(
+                            {githubUser: null,
+                             githubID: null
+                            });
                     }
 
                     var githubID = userID[0].content;
