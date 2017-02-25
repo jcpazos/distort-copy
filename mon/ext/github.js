@@ -1,11 +1,11 @@
 
 
 /*global
- Promise, Fail, $,
+ Promise, Fail,
  API
- */
+*/
 
-var Github = (function() {
+window.Github = (function() {
     "use strict";
 
     //
@@ -59,7 +59,7 @@ var Github = (function() {
 
                 //send the profile request
                 preq.send();
-            })
+            });
         },
 
         postGithubKey: function (account, keys) {
