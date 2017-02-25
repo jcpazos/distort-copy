@@ -963,6 +963,22 @@ window.Utils = (function (module) {
 
         _extends,
 
+        stringRepeat: function (pattern, count) {
+            /* jshint bitwise: false */
+            if (count < 1) {
+                return '';
+            }
+            var result = '';
+            while (count > 1) {
+                if (count & 1) {
+                    result += pattern;
+                }
+                count >>>= 1;
+                pattern += pattern;
+            }
+            return result + pattern;
+        },
+
         // string made from 128 random bits
         randomStr128: function () {
             var arr = sjcl.random.randomWords(4);
