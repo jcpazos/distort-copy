@@ -367,6 +367,32 @@ window.Certs = (function (module) {
     };
     KeyLoader.registerClass("ucert", UserCert);
 
+    // use as a sort comparator to identify the
+    // most recent, verified cert (in that order)
+    //
+    UserCert.byValidFrom = function (certA, certB) {
+        function _cmp(a, b) {
+            if (a < b) {
+                return -1;
+            } else if (a > b) {
+                return -1;
+            }
+            return 0;
+        }
+
+        var comp;
+        comp = _cmp(-certA.validFrom, -certB.validFrom);
+        if (comp !== 0) {
+            return comp;
+        }
+        comp = _cmp((certA.status === UserCert.STATUS_OK) ? 0 : 1,
+                    (certB.status === UserCert.STATUS_OK) ? 0 : 1);
+        if (comp !== 0) {
+            return comp;
+        }
+        return 0;
+    };
+
     UserCert.prototype = {
 
         // UserCerts have unique (timestamp, primaryId) tuples
@@ -375,6 +401,27 @@ window.Certs = (function (module) {
                 this._id = (new Date(this.validFrom * 1000)).toISOString() + " " + this.primaryId;
             }
             return this._id;
+        },
+
+        // valid in time
+        isFresh: function (asOfMs) {
+            var ts = (asOfMs === undefined) ? Date.now() : asOfMs;
+            ts = ts / 1000;
+            return (ts > this.validFrom) && (ts < this.validUntil);
+        },
+
+        // has been verified
+        isVerified: function (asOfMs) {
+            var ts = (asOfMs === undefined) ? Date.now() : asOfMs;
+            ts = ts / 1000;
+            return this.verifiedOn > 0 && this.verifiedOn < ts && this.status === UserCert.STATUS_OK;
+        },
+
+        // the caller should also make sure that the certificate is the
+        // latest for that user, before using it to encrypt.
+        // FIXME -- add supercededBy field
+        isUsable: function (asOfMs) {
+            return this.isFresh(asOfMs) && this.isVerified(asOfMs);
         },
 
         toStore: function () {
@@ -438,6 +485,22 @@ window.Certs = (function (module) {
                     console.debug("Database initialized.");
                 };
             }
+        },
+
+        loadCertsByHdl: function (primaryHdl) {
+            return this.open.then(db => {
+                return new Promise((resolve, reject) => {
+                    var trx = db.transaction(["user_cert_os"], "readonly");
+                    trx.onerror = function () {
+                        reject(trx.error);
+                    };
+
+                    var store = trx.objectStore("user_cert_os");
+                    store.index("byHdl").getAll(IDBKeyRange.only([primaryHdl])).onsuccess =  function (e) {
+                        resolve(e.target.result);
+                    };
+                });
+            });
         },
 
         loadCertsById: function (primaryId) {
