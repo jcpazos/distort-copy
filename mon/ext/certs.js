@@ -471,6 +471,20 @@ window.Certs = (function (module) {
                     };
                 });
             }).then(cert => {
+                /** TODO verify new certs with github.
+
+                    when a cert is saved, we emit an event.
+
+                    hook this up with a function that validates this
+                    new cert matches the cert on github. the
+                    verification only needs to happen if the cert
+                    status is STATUS_UNKNOWN.
+
+                    if verification passes, update the cert in the DB
+                    with state STATUS_OK. and update `verifiedOn`.
+
+                    if it fails. use STATUS_FAIL.
+                */
                 this.emit("cert:updated", cert);
                 return cert;
             });

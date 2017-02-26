@@ -1018,7 +1018,11 @@
                 var userHandle = opts.githubUser;
                 var preq = new XMLHttpRequest();
 
-                var url = "https://www.github.com/" + userHandle + "/twistor-app/edit/master/README.md";
+                //TODO check that all parameters are present. throw otherwise
+
+                //TODO assemble FormData here
+
+                var url = "https://www.github.com/" + encodeURIComponent(userHandle) + "/twistor-app/edit/master/README.md";
                 preq.open("POST", url, true);
                 preq.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
 
@@ -1125,7 +1129,7 @@
 
         darken: function (opts) {
             var params = opts.params;
-             
+
             // if the parea doesn't exist, complain
             if (!pareas[params.parent]) {
                 //TODO do something intelligent

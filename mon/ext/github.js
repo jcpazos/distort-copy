@@ -13,6 +13,122 @@ window.Github = (function() {
 
     Github.prototype = {
 
+        // TODO getLatestCert:
+        //
+        // Promises a Certs.UserCert object constructed from the
+        // latest information available on GitHub for the given user.
+        //
+        // if a cert is returned, the caller can assume that its signature
+        // is valid.
+        //
+        // Failures:
+        //   if the latest information is empty, corrupt, or cannot be parsed
+        //   into a cert: Fail.NOENT . this should be assumed to mean that there
+        //   is no cert for that user.
+        //
+        //   if a latest cert is found, but has expired: Fail.STALE
+        //
+        // NOTE: The caller should still authenticate the values in
+        //       the returned cert. Only integrity checks are performed.
+        //
+        getLatestCert: function (ghHdl) {
+            return new Promise((resolve, reject) => {
+                /*
+                  TODO do GET request to README page content.  in the
+                       headers, add a cache-invalidating token
+
+                ex:
+                var xhr = new XMLHttpRequest(); var cacheBust = Utils.randomStr128();
+                xhr.open("GET", "https://raw.githubusercontent.com/web-priv/beeswax/master/README.md?_cb=" +
+                                encodeURIComponent(cacheBust),
+                              true);
+
+                TODO make sure that we only get the bytes we want. this protects against downloading huge amounts of data.
+
+                     The actual size of a cert on disk once it's on github, I'm not sure of. But we care about the max size.
+
+                     There are up to 3*140 unicode bytes to store. (rough)  plus 3 newlines = 343 unicode chars
+
+                     In UCS-2, that's x*2 = 686 bytes.
+
+                     In UTF-8, that's x*3 = 1029 bytes   (unicode codepoints in the range 0x5000 to 0x8fff expand to 3 B)
+
+                     Twitter's default response content-encoding is gzip, which means that the range request is to be done
+                     on the zipped length. So, 1350B is good enough.
+
+                xhr.setRequestHeader('Range', 'bytes=0-1349');
+
+                xhr.send()
+
+                ...
+                */
+
+                // NOTE I couldn't find a way to get either the last
+                //      cert commit's timestamp, or the github actor-id
+                //      from the response of the raw GET
+                //      request. so. we'll have to live without.
+                //
+                //      Have you considered storing the certificate on the
+                //      repo description? Because then, we might be able to
+                //      simply do an API get.... NVM, it's 60 per ip per hour max.
+
+                // TODO create a Certs.PartialCert.  you'll need to
+                //      call the constructor with the primaryId and
+                //      primaryHdl. So the github cert post needs to
+                //      have that info. Also, you'll need to add the
+                //      secondaryId and secondaryHdl in the twitter
+                //      cert format.
+                //
+                //      You give the Partialcert the certificate chunks one by one.
+                //      there's a function feedToks() that does the work. if feedtoks
+                //      returns null, it needs more info. when a certificate is complete,
+                //      feedToks() returns a full-on UserCert.
+
+                throw new Fail(Fail.NOTIMPL, "TODO -- fetch cert");
+            });
+        },
+
+        /**
+           check with github if the UserCert `usercert`, obtained from
+           the primary service (twitter), checks out. The data in
+           `userCert` is compared against the _latest cert_ for the
+           given user at the time of the call.
+
+           promises `userCert`, updated with verification outcome fields.
+
+               if a valid matching cert is found on github, the cert is updated
+               with status OK
+
+               otherwise, it is updated with status FAIL
+        */
+        verifyCertFromPrimary: function (userCert) {
+            return new Promise((resolve, reject) => {
+
+                // fetch cert from github
+
+                // if no valid cert found, update cert status with STATUS_FAIL. resolve.
+
+                // to validate userCert:
+
+                /*
+                  write a UserCert.prototype.matches(other) => bool
+                  function. It compares two certificates assumed to
+                  have valid signatures.
+
+                  Two certs with valid signatures are equivalent
+                  if and only if
+
+                     all fields included in signature generation
+                     are the same.
+
+                  (You could sign the same cert twice and obtain
+                   two different signatures, but the certs would
+                   still be equivalent)
+                */
+                throw new Fail(Fail.NOTIMPL, "verifyCertFromPrimary");
+            });
+        },
+
         // promises {githubUser: str, githubID: str}
         // promises {githubUser: null, githubID: null} if user is not logged in
         getGithubUserInfo: function () {
@@ -20,6 +136,7 @@ window.Github = (function() {
                 // fetch the user's github homepage
                 var preq = new XMLHttpRequest();
                 preq.open("GET", "https://www.github.com", true);
+
                 preq.onerror = function () {
                     console.error("Problem loading Github homepage", [].slice.apply(arguments));
                     reject(new Error("Error loading Github homepage"));
@@ -69,9 +186,9 @@ window.Github = (function() {
         },
 
         postGithubKey: function (account, keys) {
-            return this.getGithubUserInfo().then(githubInfo => {
-                var authToken;
+            var repoURL = "https://www.github.com/" + encodeURIComponent(account.secondaryHandle) + "/twistor-app";
 
+            return this.getGithubUserInfo().then(githubInfo => {
                 if (githubInfo.githubID === null || githubInfo.githubUser === null) {
                     throw new Fail(Fail.BADAUTH, "Make sure you are logged in to Github (in any tab).");
                 }
@@ -86,10 +203,9 @@ window.Github = (function() {
             }).then(githubInfo => {
                 // ensure repo existence
                 var preq = new XMLHttpRequest();
-                var repoURL = "https://www.github.com/" + encodeURIComponent(account.secondaryHandle) + "/twistor-app";
                 console.debug("Issuing GET to " + repoURL);
                 return new Promise((resolve, reject) => {
-                    preq.open("GET", "https://www.github.com/" + account.secondaryHandle + "/twistor-app", true);
+                    preq.open("GET", repoURL, true);
                     preq.onerror = function () {
                         console.error("Problem loading Github page", [].slice.apply(arguments));
                         reject(new Error("Error loading Github page"));
@@ -107,6 +223,7 @@ window.Github = (function() {
                 });
             }).then(githubInfo => {
                 // get authenticity token to POST to repo
+                // add it to githubInfo
                 githubInfo.token = null;
 
                 // Get edit page for repo now that we know it exists
@@ -131,7 +248,7 @@ window.Github = (function() {
 
                 return new Promise((resolve, reject) => {
                     var preq = new XMLHttpRequest();
-                    preq.open("GET", "https://www.github.com/" + account.secondaryHandle + "/twistor-app/edit/master/README.md", true);
+                    preq.open("GET", repoURL + "/edit/master/README.md", true);
                     preq.onerror = function () {
                         console.error("Problem loading Github page", [].slice.apply(arguments));
                         reject(new Fail(Fail.GENERIC, "Error loading Github page"));
@@ -157,7 +274,7 @@ window.Github = (function() {
                 });
             }).then(githubInfo => {
                 // open a content script context to github
-
+                // add it to githubInfo
                 githubInfo.ctx = null;
 
                 function isGithubCtx(ctx) {
@@ -185,14 +302,17 @@ window.Github = (function() {
                 // TODO where do I get commit from??
                 fd.append("same_repo", "1");
                 fd.append("content_changed", "true");
-                fd.append("value", keys[0] + " " + keys[1] + " " + keys[2]);
+                fd.append("value", keys.join(" "));
                 fd.append("message", "Updating certificate");
                 fd.append("commit-choice", "direct");
                 fd.append("target_branch", "master");
 
-                // FIXME -- I don't think the structured clone postMessage() (i.e. to communicate
-                // to the content script) supports passing FormData objects... Does it?
-                // Just pass a dictionary instead and craft the FormData from the content script.
+                // TODO -- The structured clone postMessage() (i.e. mechanism to communicate
+                // from backcround page to the content script) does not support passing FormData objects...
+                // did you find an undocumented feature ?
+                // https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Structured_clone_algorithm
+                //
+                // Just pass a dictionary instead and craft the FormData from the content script's side.
                 return githubCtx.ctx.callCS("update_repo", {data: fd, userHandle: githubCtx.githubUser})
                         .then(resp => { /*jshint unused: false */
 

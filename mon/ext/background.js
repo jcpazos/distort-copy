@@ -1621,6 +1621,23 @@ BGAPI.prototype.postCert = function (account) {
         groupNames.sort();
 
         var groupString = groupNames.map(name => "#" + name).join(" ");
+
+        /**
+           TODO -- add the secondaryId and secondaryHdl to the cert payload
+                   (on one of the three tweets).
+
+                   Update the corresponding code on the parsing side, in
+                   certs.js  PartialCert / UserCert classes.
+        */
+
+        /**
+           TODO -- please add some mention of how big a github id and github handle
+                   can be. we don't want to over the twitter size limit.
+
+                   You can either leave it in plain if it's small, otherwise, if you need
+                   more space, you can base64-encode it (i.e. atob, btoa).
+        */
+
         var encryptStatus = [
             "#" + Certs.PartialCert.ENCRYPTKEY,
             ts.toString(16),
