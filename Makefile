@@ -4,7 +4,7 @@ sjcl/sjcl.js:
 	git submodule init
 	[ -f sjcl/configure ] || git submodule update
 	cd sjcl && \
-	  ./configure \
+	  ./configure --compress=none \
 	     --with-ecc \
 	     --with-ctr \
 	&& \
