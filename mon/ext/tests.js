@@ -98,7 +98,7 @@ window.Tests = (function (module) {
     module.test_point_encoding = function (trials) {
         trials = trials || 1000;
         var msgBits = 184,
-            i, msg, metric = new Stats.Dispersion({supportMedian: true}),
+            i, msg, metric = new Stats.Dispersion({supportMedian: false}),
             start = performance.now(),
             res, failures = 0;
 
@@ -107,11 +107,14 @@ window.Tests = (function (module) {
             msg  = sjcl.bitArray.bitSlice(sjcl.random.randomWords((msgBits + 31) / 32), 0, msgBits);
             try {
                 if (i > 0 && i % 2000 === 0) {
-                    console.log("... working ..." + metric.toString(false));
+                    console.log("... working ..." + metric.toString(false) + " (#failures=" + failures + ")");
                 }
                 res = ECCKeyPair.curve.encodeMsg(msg);
                 if (sjcl.ecc.curve.debug_tries) {
                     metric.update(sjcl.ecc.curve.debug_tries);
+                }
+                if (window._break) {
+                    break;
                 }
             } catch (err) {
                 if (err instanceof sjcl.exception.invalid) {

@@ -20,7 +20,7 @@
 /*global Fail, Utils, Emitter, Vault,
   ECCPubKey, KeyClasses, Certs,
   unescape,
-  sjcl
+  sjcl, base16k
 */
 
 window.Outbox = (function (module) {
@@ -28,6 +28,8 @@ window.Outbox = (function (module) {
 
     /** used as the recipient for noise messages */
     var randomPubKey = new ECCPubKey();
+
+    var BA = sjcl.bitArray;
 
     /**
        posts a message from a queue at regular intervals. if no
@@ -73,21 +75,19 @@ window.Outbox = (function (module) {
         them in sequence.
     */
     function Message(opts) {
+        opts = opts || {};
         this.id = opts.id || Utils.randomStr128();
         this.queue = opts.queue || null;
         this.fromAccount = opts.fromAccount || null;
-        this.to = opts.to || null;
+        this.to = opts.to || null; // Cert
         this.payload = opts.payload || null;
         this.state = opts.state || Message.STATE_DRAFT;
         this.tweetId = opts.tweetId || null;
-
-        if (this.payload.length > Message.MAX_SIZE_B) {
-            throw new Fail(Fail.BADPARAM, "payload exceeds limit");
-        }
     }
 
     Message.compose = function (recipient, userMessage) {
         var account = Vault.getAccount();
+        // todo len check
         var msg = new Message({
             fromAccount: account,
             to: recipient,
@@ -102,55 +102,64 @@ window.Outbox = (function (module) {
     /*
       TWISTOR MESSAGE
 
-      tweet := <recipient_group> 'space' <twistor_envelope>
+      tweet := <twistor_envelope> base16k(<twistor_body>)
 
+      twistor_envelope: <recipient_group>+ 'space'
       recipient_group :=  '#' <group_name>
-
       group_name := valid twitter hashtag
 
-      twistor_envelope :=  base16k(<twistor_body>)
+      twistor_body := <version> <ciphertext> <signature> <unusedbody>
 
-      twistor_body := <version> <encrypted_body>
+      version := 0x01  # 1B
 
-      version := 0x01
+      ciphertext := eg_encrypt(<plaintext>)
 
-      encrypted_body := encrypt_bytes(<twistor_plaintext>, <macdata>)
+      plaintext := <rcptid> <userbody>
 
-      # not transmitted over wire, but involved in calculation of HMAC
-      macdata := <twistor_epoch> <twistor_sender>
+      signature := eg_sign(<twistor_epoch>, <version>, <ciphertext>)
+
       twistor_epoch := ((unix time in sec) >> 8) & 0xffffffff   // 256s is 4 min 16 sec
-      mac_sender := twitterid(sender) ' ' twitter_handle(sender)
 
-      twistor_plaintext := (len(<twistor_plaintext_msg>) & 0xff) <twistor_plaintext_msg> <twistor_plaintext_padding>
-      twistor_plaintext_msg :=  utf8encode(twistor_user_message) // no trailing nul byte
-      twistor_plaintext_padding := ' ' * (TWISTOR_PLAINTEXT_MAXLEN_BYTES - len(twistor_plaintext_msg))
+      rcptid := 64bit twitter id of recipient
+
+      userbody := (len(<usermsg>) & 0xff) utf8encode(<usermsg>)  <padding>*  //this utf8encode has no trailing \0
+      padding := 0x00
     */
 
     var msgConstants = (function () {
+        const MSG_VERSION = 0x01;
+
         const TWEET_COUNT = 140;
         const RECIPIENT_GROUP_COUNT = 19;
-        const ENVELOPE_COUNT = TWEET_COUNT - RECIPIENT_GROUP_COUNT - 1;
-        const USABLE_BITS_PER_TWITTER_CHAR = 14;
-        const BODY_BITS = ENVELOPE_COUNT * USABLE_BITS_PER_TWITTER_CHAR;
+        const ENVELOPE_COUNT = RECIPIENT_GROUP_COUNT + 1;
+        const USABLE_BITS_PER_TWITTER_CHAR = 14; // base16k
+        const TWISTOR_BODY_BITS = (TWEET_COUNT - ENVELOPE_COUNT) * USABLE_BITS_PER_TWITTER_CHAR;
 
+        const SIGNATURE_BITS = KeyClasses.ECC_SIGN_BITS;
         const VERSION_BITS = 8;
-        const ENCRYPTED_BODY_BITS = BODY_BITS - VERSION_BITS;
+        const NUM_ECC_CIPHERS = 3;
+        const CIPHERTEXT_BITS = NUM_ECC_CIPHERS * KeyClasses.ECC_DEFLATED_CIPHER_BITS;
+        const UNUSED_BITS = TWISTOR_BODY_BITS - VERSION_BITS - CIPHERTEXT_BITS - SIGNATURE_BITS;
+        if (UNUSED_BITS < 0) {
+            throw new Error("over budgeting");
+        }
 
-        const PLAINTEXT_BITS = ENCRYPTED_BODY_BITS - KeyClasses.ECC_SIZE_OVERHEAD_BITS;
-        const PLAINTEXT_BYTES = Math.floor(PLAINTEXT_BITS / 8);
+        const PLAINTEXT_BITS = NUM_ECC_CIPHERS * KeyClasses.ECC_EG_MSG_BITS_PER_POINT;
+        const RECPT_ID_BITS = 64;
+        const USER_BODY_BITS = PLAINTEXT_BITS - RECPT_ID_BITS;
 
-        const PLAINTEXT_MSG_LEN_BYTES = 1;
-        const PLAINTEXT_MSG_BYTES = PLAINTEXT_BYTES - PLAINTEXT_MSG_LEN_BYTES;
-        const MAX_PAD_BYTES = PLAINTEXT_MSG_BYTES; // a 0B user message is just padding.
-
-        const PLAINTEXT_MSG_PAD_BUF = Utils.stringRepeat(' ', MAX_PAD_BYTES);
+        const USER_MSG_BITS = USER_BODY_BITS - 8; // 8b for len
+        const USER_MSG_BYTES = Math.floor(USER_MSG_BITS / 8);
+        const USER_MSG_PAD = Utils.stringRepeat('\0', USER_MSG_BYTES);
         return {
+            MSG_VERSION,
             TWEET_COUNT,
             RECIPIENT_GROUP_COUNT,
             ENVELOPE_COUNT,
-            ENCRYPTED_BODY_BITS,
-            PLAINTEXT_MSG_BYTES,
-            PLAINTEXT_MSG_PAD_BUF
+            CIPHERTEXT_BITS,
+            USER_BODY_BITS,
+            USER_MSG_BYTES,
+            USER_MSG_PAD
         };
     })();
     Object.keys(msgConstants).forEach(k => Message[k] = msgConstants[k]);
@@ -167,7 +176,7 @@ window.Outbox = (function (module) {
     };
 
     M.generatePadding = function (msgLenBytes) {
-        return M.PLAINTEXT_MSG_PAD_BUF.substr(0, M.PLAINTEXT_MSG_BYTES - msgLenBytes);
+        return M.USER_MSG_PAD.substr(0, M.USER_MSG_BYTES - msgLenBytes);
     };
 
 
@@ -187,7 +196,7 @@ window.Outbox = (function (module) {
         userStr = userStr || "";
         var quota = {
             cur: M.utf8Len(userStr),
-            quota: M.PLAINTEXT_MSG_BYTES
+            quota: M.USER_MSG_BYTES
         };
         return quota;
     };
@@ -217,13 +226,6 @@ window.Outbox = (function (module) {
                 this.queue.dequeue(this);
             }
         },
-
-        /**
-           # not transmitted over wire, but involved in calculation of HMAC
-           macdata := <twistor_epoch> ' ' <twistor_sender>
-           twistor_epoch := ((unix time ) >> 8) & 0xffffffff   // 256s is 4 min 16 sec
-           mac_sender := twitterid(sender) ' ' twitter_handle(sender)
-        */
         _macData: function () {
             if (!this.fromAccount) {
                 throw new Error("no sending account set");
@@ -234,11 +236,6 @@ window.Outbox = (function (module) {
             return epoch + " " + sender;
         },
 
-        /**
-           twistor_plaintext := (len(<twistor_plaintext_msg>) & 0xff) <twistor_plaintext_msg> <twistor_plaintext_padding>
-           twistor_plaintext_msg :=  utf8encode(twistor_user_message) // no trailing nul byte
-           twistor_plaintext_padding := ' ' * (TWISTOR_PLAINTEXT_MAXLEN_BYTES - len(twistor_plaintext_msg))
-        **/
         _encodePlainText: function () {
             var payload = this.payload || "";
             var u8len = M.utf8Len(payload);
@@ -248,11 +245,7 @@ window.Outbox = (function (module) {
             return sjcl.bitArray.concat(payloadLenBits, payloadBits);
         },
 
-        /*
-          encrypted_body := encrypt_bytes(<twistor_plaintext>, <macdata>)
-        */
         _encodeEncryptedBody: function () {
-
             var retrievePubKey = new Promise(resolve => {
                 var to = this.to;
 
@@ -286,8 +279,52 @@ window.Outbox = (function (module) {
             });
         },
 
-        encodeForTweet1: function () {
+        _getRcptId: function () {
+            
+        },
 
+        _getPlainText: function () {
+            //<rcptid> <userbody>
+            return "";
+        },
+
+        _getCiphertext: function () {
+            ciphertext := eg_encrypt(<plaintext>)
+        },
+
+        _getBody: function () {
+            return [
+                [BA.partial(M.VERSION_BITS, M.MSG_VERSION)],
+                this._getCiphertext(),
+                this._getSignature()
+            ].reduce(this._hexReduce, "");
+        },
+
+        _getEnvelope: function () {
+            console.debug("TODO");
+            return "";
+        },
+
+        _hexReduce: function (car, cdr) {
+            if (!cdr) {
+                return car;
+            }
+
+            if ((typeof cdr) === "string") {
+                return car + cdr;
+            }
+            if ((typeof cdr.toBits) === "function") {
+                cdr = sjcl.codec.hex.fromBits(cdr.toBits());
+            }
+            return car + sjcl.codec.hex.fromBits(cdr);
+        },
+
+        encodeForTweet1: function () {
+            return [this._getEnvelope(),
+                    base16k.fromHex(sjcl.codec.hex.fromBits(
+                        this._getBody()
+                    ))
+                   ].join(" ");
         }
     });
 

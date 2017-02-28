@@ -133,7 +133,11 @@ window.KeyClasses = (function (module) {
     // sjcl.bn(0xCCDD).toBits()
     const DERIVE_NAME_HMAC_KEY = [17591328112640];
 
-    const ECC_TAG_BITS = 192 * 2;  //2 * sjcl.ecc.curves.c192.field.modulus.bitLength()
+    const ECC_COORD_BITS = 192; //sjcl.ecc.curves.c192.field.modulus.bitLength()
+
+    const ECC_TAG_BITS = ECC_COORD_BITS * 2; // G^r is a point.
+
+    const ECC_SIGN_BITS = ECC_COORD_BITS * 2; // two log_2(P) numbers
 
     const ECC_HMAC_BITS = 32 * 8; // bits we keep from the HMAC when encrypting with ECC
 
@@ -141,7 +145,16 @@ window.KeyClasses = (function (module) {
 
     const AES_SIZE_OVERHEAD_BITS = AES_IV_BITS;
 
-    const ECC_SIZE_OVERHEAD_BITS = ECC_TAG_BITS + ECC_HMAC_BITS + AES_SIZE_OVERHEAD_BITS;
+    // ECCPubKey.encryptBytes overhead
+    const ECC_EB_OVERHEAD_BITS = ECC_TAG_BITS + ECC_HMAC_BITS + AES_SIZE_OVERHEAD_BITS;
+
+    // <layout byte> <c1.x> <c2.x>
+    const ECC_DEFLATED_CIPHER_BITS = 2 * ECC_COORD_BITS + 8;
+
+    // <layout byte> <c1.x> <c1.y> <c2.x> <c2.y>
+    const ECC_INFLATED_CIPHER_BITS = 4 * ECC_COORD_BITS + 8;
+
+    const ECC_EG_MSG_BITS_PER_POINT = ECC_COORD_BITS - 8;
 
     /*
       The encoding option applies if `s` is a string, and is one of:
@@ -199,18 +212,91 @@ window.KeyClasses = (function (module) {
         }
     }
 
+    /**
+       packs 1 input elgamal ciphertext into a dense form
+
+       @returns {
+            len:   the number of points encoded
+                   (int)
+            xpack: a large bit array of encrypted point x value
+                   (encoded with opts.outEncoding)
+            ypack: an 8-bit bit array of encoded y values
+                   (encoded with opts.outEncoding)
+       }
+    */
+    function packEGCipher(cipher, opts) {
+        /*jshint bitwise:false */
+        opts = opts || {};
+
+        const C1_Y_MASK = 0x4,
+              C2_Y_MASK = 0x8,
+              w = sjcl.bitArray;
+
+        // pack both booleans for y coord
+        var yBits = 0;
+        var out = [];
+        var c1 = cipher.c1.compress(), c2 = cipher.c2.compress();
+        var layout = new sjcl.bn(yBits | (c1.parity * C1_Y_MASK) | (c2.parity * C2_Y_MASK)).toBits();
+        out = w.concat(c1.x, c2.x);
+        out = w.concat(layout, out);
+        return  KeyClasses.bitsToString(out, opts.outEncoding);
+    }
+
+    /**
+       Unpacks packed cipher. No curve membership tests
+       performed.
+
+       opts can specify {
+           encoding: encoding for packed
+           offset: the offset in the bitstream to start at, in B.
+       }
+
+       return a cipher and the number of bits used
+       @returns {cipher: c, size: l}
+    */
+    function unpackEGCipher(packed, opts) {
+        /*jshint bitwise: false */
+
+        opts = opts || {};
+
+        packed = KeyClasses.stringToBits(packed, opts.encoding || null);
+
+        const offset = opts.offset,
+              CMPRS_C1_MASK = 0x1,
+              CMPRS_C2_MASK = 0x2,
+              C1_Y_MASK = 0x4,
+              C2_Y_MASK = 0x8,
+              w = sjcl.bitArray;
+
+        var layout = w.extract(packed, offset, 8),
+            cipher = {};
+
+        cipher.c1 = {x: w.bitSlice(packed, offset + (0*ECC_COORD_BITS), offset + (1*ECC_COORD_BITS)),
+                     parity: !!(layout & C1_Y_MASK)
+                    };
+        cipher.c2 = {x: w.bitSlice(packed, offset + (1*ECC_COORD_BITS), offset + (2*ECC_COORD_BITS)),
+                     parity: !!(layout & C2_Y_MASK)
+                    };
+        return {cipher: cipher, size: 2 * ECC_COORD_BITS + 1};
+    }
+
     var exports = {
         DERIVE_NAME_ENCRYPT_KEY,
         DERIVE_NAME_HMAC_KEY,
+        ECC_COORD_BITS,
         ECC_TAG_BITS,
         ECC_HMAC_BITS,
+        ECC_SIGN_BITS,
         AES_IV_BITS,
-
         AES_SIZE_OVERHEAD_BITS,
-        ECC_SIZE_OVERHEAD_BITS,
-
+        ECC_EB_OVERHEAD_BITS,
+        ECC_DEFLATED_CIPHER_BITS,
+        ECC_INFLATED_CIPHER_BITS,
+        ECC_EG_MSG_BITS_PER_POINT,
         stringToBits,
-        bitsToString
+        bitsToString,
+        packEGCipher,
+        unpackEGCipher
     };
 
     Object.keys(exports).forEach(k => module[k] = exports[k]);
@@ -863,6 +949,27 @@ Utils._extends(ECCPubKey, Object, {
         return ret;
     },
 
+    /**
+       Encode a message into elgamal ciphers
+
+       opts can specify {
+            encoding: the encoding for plainText
+       }
+
+       // the output can be fed to packEGCipher
+       @returns  an array of elgamal cipher texts
+    */
+    encryptEG: function (plainText, opts) {
+        "use strict";
+
+        opts = opts || {};
+
+        const curve = ECCKeyPair.curve;
+        var plainBits = KeyClasses.stringToBits(plainText, opts.encoding || null);
+        var plainPoints = curve.encodeMsg(plainBits);
+        return plainPoints.map(pt => this.encrypt.pub.encryptEG(pt, ECCKeyPair.getParanoia()));
+    },
+
     /*
       ECCPubKey.encryptBytes()
 
@@ -994,9 +1101,7 @@ function ECCKeyPair(signBits, encryptBits) {
 
 ECCKeyPair.getRandBN = function () {
     "use strict";
-
-    var NIST_curve = sjcl.ecc.curves.c192;
-    return sjcl.bn.random(NIST_curve.r, ECCKeyPair.getParanoia());
+    return sjcl.bn.random(ECCKeyPair.curve.r, ECCKeyPair.getParanoia());
 };
 
 ECCKeyPair.getParanoia = function () {
@@ -1009,36 +1114,7 @@ Object.defineProperty(ECCKeyPair, "curve", {
     enumerable: true,
     get: function () {
         "use strict";
-/*
-        ECCKeyPair._curve = ECCKeyPair._curve || new sjcl.ecc.curve(sjcl.bn.prime.p192k,
-                                                                    sjcl.bn.prime.p224k,
-                                                                    ECCKeyPair.getRandBN(),
-                                                                    ECCKeyPair.getRandBN(),
-                                                                    ECCKeyPair.getRandBN(),
-                                                                    ECCKeyPair.getRandBN());
-
-        var s = sjcl.bn.pseudoMersennePrime;
-	var p192 = sjcl.bn.prime.p192k;
-	var p224 = sjcl.bn.prime.p224k;
-	var rnd = ECCKeyPair.getRandBN();
-
-        var phex = "C302F41D932A36CDA7A3463093D18DB78FCE476DE1A86297";
-        var p = sjcl.bn.fromBits(sjcl.codec.hex.toBits(phex));
-        var rhex = "C302F41D932A36CDA7A3462F9E9E916B5BE8F1029AC4ACC1";
-        var r = sjcl.bn.fromBits(sjcl.codec.hex.toBits(rhex));
-        var ahex = "6A91174076B1E0E19C39C031FE8685C1CAE040E5C69A28EF";
-        var a = sjcl.bn.fromBits(sjcl.codec.hex.toBits(ahex));
-        var bhex = "469A28EF7C28CCA3DC721D044F4496BCCA7EF4146FBF25C9";
-        var b = sjcl.bn.fromBits(sjcl.codec.hex.toBits(bhex));
-        var xhex = "C0A0647EAAB6A48753B033C56CB0F0900A2F5C4853375FD6";
-        var x = sjcl.bn.fromBits(sjcl.codec.hex.toBits(xhex));
-        var yhex = "14B690866ABD5BB88B5F4828C1490002E6773FA2FA299B8F";
-        var y = sjcl.bn.fromBits(sjcl.codec.hex.toBits(yhex));
-
-        ECCKeyPair._curve = ECCKeyPair._curve || new sjcl.ecc.curve(p,r,a,b,x,y);
-*/
-        ECCKeyPair._curve =  sjcl.ecc.curves.c192;
-        return ECCKeyPair._curve;
+        return sjcl.ecc.curves.c192;
     }
 });
 
@@ -1053,6 +1129,7 @@ Utils._extends(ECCKeyPair, ECCPubKey, {
             encrypt: {priv: this.encrypt.sec.get()}
         };
     },
+
 
     decryptSymmetric: function (keyCipher) {
         "use strict";
@@ -1078,6 +1155,51 @@ Utils._extends(ECCKeyPair, ECCPubKey, {
 
         var sKem = this.encrypt.sec.unkem(sjcl.codec.hex.toBits(hex_x).concat(hex_y));
         return atob(sjcl.decrypt(sKem, ct));
+    },
+
+    /**
+       ECCKeyPair.decryptEGCipher
+
+       input is a cipherPoint {c1: , c2:}
+
+       output is the message in the point, encoded according to
+       opts.outEncoding.
+    */
+    decryptEGCipher: function (cipherPt, opts) {
+        "use strict";
+
+        opts = opts || {};
+
+        const curve = ECCKeyPair.curve;
+        if (!cipherPt.c1 || !cipherPt.c2) {
+            throw new Fail(Fail.BADPARAM, "must pass an EG cipher");
+        }
+
+        function _toPt(obj) {
+            if (obj instanceof sjcl.ecc.point) {
+                // assumed to be on curve
+                return obj;
+            } else if (obj.parity !== undefined) {
+                // might throw corrupt
+                return curve.fromCompressed(obj.x, obj.parity);
+            } else {
+                // might throw corrupt
+                return curve.fromBits(obj);
+            }
+        }
+
+        var pt = null;
+        try {
+            pt = this.encrypt.sec.decryptEG(_toPt(cipherPt.c1),
+                                            _toPt(cipherPt.c2));
+        } catch (err) {
+            if (err instanceof sjcl.exception.corrupt) {
+                throw new Fail(Fail.CORRUPT, "invalid ciphertext:" + err.message);
+            }
+            throw err;
+        }
+        var out = curve.decodeMsg([pt]);
+        return  KeyClasses.bitsToString(out, opts.outEncoding);
     },
 
     /*
