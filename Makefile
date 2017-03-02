@@ -7,6 +7,7 @@ sjcl/sjcl.js:
 	  ./configure --compress=none \
 	     --with-ecc \
 	     --with-ctr \
+	     --with-codecDecimal \
 	&& \
 	  make
 
