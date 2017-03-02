@@ -919,15 +919,17 @@ Utils._extends(ECCPubKey, Object, {
     /*
       - message to sha256 hash
       - signature (over message) to verify
-      - encoding for signature. defaults to 'hex'
+      - opts: {
+             encoding: encoding for message.
+          sigEncoding: encoding for signature.
+        }
     */
-    verifySignature: function (message, signature, codec) {
+    verifySignature: function (message, signature, opts) {
         "use strict";
-        codec = (codec === undefined) ? 'hex': codec;
-        var sigBits = sjcl.codec[codec].toBits(signature);
-        var hashMsg = sjcl.hash.sha256.hash(message);
-        var pKey = this.sign.pub;
-        return pKey.verify(hashMsg, sigBits);
+        var sigBits = KeyClasses.stringToBits(signature, opts.sigEncoding || null);
+        var msgBits = KeyClasses.stringToBits(message, opts.encoding || null);
+        var hashMsg = sjcl.hash.sha256.hash(msgBits);
+        return this.sign.pub.verify(hashMsg, sigBits);
     },
 
     encryptSymmetric: function (aesKey) {
@@ -1287,20 +1289,24 @@ Utils._extends(ECCKeyPair, ECCPubKey, {
     },
 
     /*
-     * ECC sign the message
-     *
-     * output a signature encoded with @encoding
+     * ECDSA sign a message
      *
      * the signature should be 2*log2(P) bits.
      * on the P192 curve, this is 2*192bit = 2*24B = 48B
+     *
+     * opts: {
+     *   encoding: input encoding,
+     *   outEncoding: output encoding
+     * }
      */
-    signText: function (message, encoding /* 'hex' */) {
+    signText: function (message, opts) {
         "use strict";
-        encoding = (encoding === undefined) ? 'hex' : encoding;
+        opts = opts || {};
+        message = KeyClasses.stringToBits(message, opts.encoding || null);
 
         var hashMsg = sjcl.hash.sha256.hash(message);
         var sKey = this.sign.sec;
-        return KeyClasses.bitsToString(sKey.sign(hashMsg, ECCKeyPair.getParanoia()), encoding);
+        return KeyClasses.bitsToString(sKey.sign(hashMsg, ECCKeyPair.getParanoia()), opts.outEncoding || null);
     },
 
     toPubKey: function () {

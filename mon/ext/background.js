@@ -1647,7 +1647,9 @@ BGAPI.prototype.postKeys = function (account) {
             groupNames.join(" ") // no #
         ].join("");
 
-        var signature = account.key.signText(signedMessage, 'hex');
+        var signature = account.key.signText(signedMessage, {
+            encoding: 'domstring', outEncoding: 'hex'
+        });
 
         var sigStatus = [
             "#" + Certs.PartialCert.KEYSIG,

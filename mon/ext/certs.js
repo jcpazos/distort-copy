@@ -301,7 +301,8 @@ window.Certs = (function (module) {
                 sortedGroups.join(" ") // no #
             ].join("");
 
-            if (!key.verifySignature(signedMessage, this.keysig, 'hex')) {
+            if (!key.verifySignature(signedMessage, this.keysig,
+                                     {encoding: 'domstring', sigEncoding: 'hex'})) {
                 console.error("Failed to verify signature in cert");
                 throw new Fail(Fail.GENERIC, "verification failed");
             }
