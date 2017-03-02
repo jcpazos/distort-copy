@@ -215,14 +215,8 @@ window.KeyClasses = (function (module) {
     /**
        packs 1 input elgamal ciphertext into a dense form
 
-       @returns {
-            len:   the number of points encoded
-                   (int)
-            xpack: a large bit array of encrypted point x value
-                   (encoded with opts.outEncoding)
-            ypack: an 8-bit bit array of encoded y values
-                   (encoded with opts.outEncoding)
-       }
+       <1B for y values><2*192bit for x values>
+       @returns packed representation, encoded as outEncoding.
     */
     function packEGCipher(cipher, opts) {
         /*jshint bitwise:false */
@@ -299,12 +293,55 @@ window.KeyClasses = (function (module) {
         unpackEGCipher
     };
 
-    /**
-       PackedSignature('name', {
-    module.PackedSignature = pack.define({
-        toBits
+
+    // packs an ECDSA signature.
+    // The fields to sign must be listed
+    //
+    // opts: {
+    //   key: ECCKeyPair
+    // }
+    pack.ECDSASignature = pack.define({
+        toBits: function () {
+            // jshint bitwise: false
+            var allBits =  pack.toBits.apply(this, [].slice.apply(arguments)); // super.toBits()
+            var privKey = this.opts.signKey;
+            return privKey.signText(allBits, {encoding: "bits", outEncoding: "bits"});
+        },
+        validateOpts: function () {
+            Utils.assertType(this.opts, {
+                signKey: Utils.OneOf(null, undefined, ECCKeyPair),
+                verifyKey: Utils.OneOf(null, undefined, ECCPubKey)
+            });
+            if (!this.opts.signKey && !this.opts.verifyKey) {
+                throw new Fail(Fail.BADTYPE, "must specify at least one key");
+            }
+        }
     });
 
+    //
+    // packs input into  [<Ybits 8bit><Xbits 2*192>
+    //
+    pack.EGPayload = pack.define({
+        toBits: function () {
+            var allBits =  pack.toBits.apply(this, [].slice.apply(arguments)); // super.toBits()
+            var privKey = this.opts.encryptKey;
+            var ciphers = privKey.encryptEG(allBits, {encoding: "bits"});
+            return ciphers.map(cipher => {
+                return KeyClasses.packEGCipher(cipher, {outEncoding: "bits"});
+            }).reduce((a, b) => {
+                return sjcl.bitArray.concat(a, b);
+            }, []);
+        },
+        validateOpts: function () {
+            Utils.assertType(this.opts, {
+                encryptKey: Utils.OneOf(null, undefined, ECCPubKey),
+                decryptKey: Utils.OneOf(null, undefined, ECCKeyPair)
+            });
+            if (!this.opts.encryptKey && !this.opts.decryptKey) {
+                throw new Fail(Fail.BADTYPE, "must specify at least one key");
+            }
+        }
+    });
     Object.keys(exports).forEach(k => module[k] = exports[k]);
     return module;
 })(window.KeyClasses || {});

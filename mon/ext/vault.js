@@ -24,7 +24,6 @@
 /*global
   Promise, ECCKeyPair,
   KeyLoader, Fail,
-
   Events
 */
 

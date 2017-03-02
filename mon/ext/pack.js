@@ -28,52 +28,114 @@ window.pack = (function () {
         var args = [].slice.apply(arguments);
         this.init(args);
     }
+    pack.prototype.constructor = pack;
+
+    pack.prototype.validateOpts = function () {
+        // for subclasses
+    };
 
     pack.prototype.init = function (args) {
         this.name = args[0];
-        this.opts = args[1] || {};
-        this.fields = args.slice(2);
+        var hasOpts = (args[1] instanceof "object" && args[1].constructor === Object);
+        if (hasOpts) {
+            this.opts = args[1] || {};
+            this.fields = args.slice(2);
+        } else {
+            this.opts = {};
+            this.fields = args.slice(1);
+        }
         this._class = pack;
+        this.validateOpts();
     };
 
+    pack.pathToString = function (path) {
+        return (path||[]).map(p => p.name).join('.');
+    };
+
+    // finds field @that from @workingPath
+    //
+    // throws error if the field is not found.
+    pack.pathResolve = function (workingPath, that) {
+        if (!workingPath || workingPath.length === 0) {
+            throw new Fail(Fail.BADPARAM, "no start point given");
+        }
+        if (!that || that.length === 0 || that.findIndex(name => (typeof name) !== "string") !== -1) {
+            throw new Fail(Fail.BADPARAM, "path must have one or more strings");
+        }
+
+        var cwd = workingPath.slice();
+
+        that.forEach((dname, i) => {
+            if (dname === ".") {
+                return;
+            } else if (dname === "..") {
+                if (cwd.length <= 1) {
+                    // more likely to be an error in the message spec
+                    throw new Fail(Fail.NOENT, "no such field. cannot resolve: " + pack.pathToString(that.slice(i)));
+                }
+                cwd.pop();
+                return;
+            } else if (dname === "/") {
+                cwd.slice(0, 1);
+                return;
+            }
+            var next = cwd[cwd.length -1].getField(dname);
+            if (next === null) {
+                throw new Fail(Fail.NOENT, "no such field '" + dname + "' at path " + pack.pathToString(workingPath));
+            }
+            cwd.push(next);
+        });
+    };
+
+    // Add a field at the end of the packed struct.
     pack.prototype.add = function (field) {
         this.fields.push(field);
     };
 
-    pack.prototype.constructor = pack;
+    // Get a field by name (or index)
+    pack.prototype.getField = function (fname) {
+        if ((typeof fname) === "number") {
+            return this.fields[fname];
+        }
+        var i = this.fields.findIndex(f => f.name === fname);
+        return (i === -1) ? null : this.fields[i];
+    };
 
-    pack.prototype.fieldToBits = function (root, path, field) {
-        return field.toBits(root, path);
+    pack.prototype.fieldToBits = function (path, field) {
+        return field.toBits(path);
     };
 
     pack.reduceBits = function (fieldsInBits) {
         return fieldsInBits.reduce(BA.concat, []);
     };
 
-    // packs each field of the struct
-    // returns concatenated bits
-    pack.prototype.toBits = function (root, path) {
-        if (!root) {
-            root = this;
-        }
-        if (!path || path.length === 0) {
-            path = [this.name];
+    /*
+     * Abstract base implementation that calls fieldToBits
+     * on all sub fields. When recursing, _path should be
+     * updated to reflect the position in the conversion.
+     *
+     * It should return a bitArray
+     */
+    pack.prototype.toBits = function (_path) {
+        if (!_path) {
+            _path = [this];
         }
         return this.reduceBits(
             this.fields.map(field => {
-                var npath = path.concat([field.name]);
+                var npath = _path.concat([field]);
                 try {
-                    return this.fieldToBits(root, npath, field);
+                    return this.fieldToBits(npath, field);
                 } catch (err) {
                     if (!(err instanceof Fail)) {
                         console.log("pack error", err);
-                        throw new Fail(Fail.BADPARAM, "error packing " + (npath.join(".")) + ":" + err.message);
+                        throw new Fail(Fail.BADPARAM, "error packing " + pack.pathToString(npath) + ":" + err.message);
                     }
                     throw err;
                 }
             })
         );
     };
+
     pack.prototype.fromBits = function () {
         throw new Fail(Fail.NOTIMPL, "pack.fromBits()");
     };
@@ -92,14 +154,14 @@ window.pack = (function () {
         return sub;
     };
     pack.Hex = pack.define({
-        fieldToBits: function (root, path, field) {
+        fieldToBits: function (path, field) {
             return sjcl.codec.hex.toBits(field);
         }
     });
 
     // A domstring. bit-encoded as utf-8
     pack.Utf8 = pack.define({
-        fieldToBits: function (root, path, field) {
+        fieldToBits: function (path, field) {
             return sjcl.codec.utf8String.toBits(field);
         }
     });
@@ -107,7 +169,7 @@ window.pack = (function () {
     // A number
     // e.g. pack.Number('version', {len: 8}, 0x01)
     pack.Number = pack.define({
-        fieldToBits: function (root, path, field) {
+        fieldToBits: function (path, field) {
             if (!(field instanceof sjcl.bn)) {
                 field = new sjcl.bn(field);
             }
@@ -126,13 +188,18 @@ window.pack = (function () {
 
     // decimal string
     pack.Decimal = pack.define({
-        fieldToBits: function (root, path, field) {
+        fieldToBits: function (path, field) {
             return sjcl.codec.decimal.toBits(field, this.opts.len);
         }
     });
 
     // Truncate or Pad contents to a specific bit length
     pack.Trunc = pack.define({
+        validateOpts: function () {
+            if (this.opts.len === undefined) {
+                throw new Fail(Fail.BADPARAM, "len in bits required");
+            }
+        },
         toBits: function () {
             var allBits =  pack.toBits.apply(this, [].slice.apply(arguments)), // super.toBits()
                 bLen = BA.bitLength(allBits),
@@ -151,14 +218,31 @@ window.pack = (function () {
 
     // a field containting bitArrays
     pack.Bits = pack.define({
-        fieldToBits: function (root, path, field) {
+        fieldToBits: function (path, field) {
             return field;
         }
     });
 
+    // a field aliasing another in the message.
+    // useful when the same field is used multiple times.
+    pack.FieldRef = pack.define({
+        validateOpts: function () {
+            if (this.fields.length !== 0) {
+                throw new Fail(Fail.BADPARAM, "FieldRefs only use a path option.");
+            }
+            if (!this.opts.path || !(this.opts.path instanceof Array) || this.opts.path.length < 1) {
+                throw new Fail(Fail.BADPARAM, "Bad path option.");
+            }
+        },
+
+        toBits: function (cwd) {
+            var ref = pack.pathResolve(cwd, this.opts.path);
+            return ref.toBits(cwd);
+        },
+    });
     // concatenated stringified contents
     pack.Strings = pack.define({
-        fieldToBits: function (root, path, field) {
+        fieldToBits: function (path, field) {
             return field.toString();
         },
         reduceBits: function (strings) {
@@ -167,7 +251,7 @@ window.pack = (function () {
     });
 
     pack.Base16k = pack.define({
-        fieldToBits: function (root, path, field) {
+        fieldToBits: function (path, field) {
             return sjcl.codec.hex.toBits(base16k.toHex(field));
         },
         toString: function () {
