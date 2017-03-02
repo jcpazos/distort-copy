@@ -394,6 +394,26 @@ window.Certs = (function (module) {
         return 0;
     };
 
+
+    // HACK -- returns a 'mock' UserCert out of the account's
+    //         information.  this bypasses network methods,
+    //         and produces a cert that is not signed.
+    //
+    // FIXME -- ideally the latest cert information would be available
+    //          on the Account object directly.
+    UserCert.fromAccount = function (acct) {
+        var sortedGroupNames = acct.groups.map(stats => stats.name);
+        sortedGroupNames.sort();
+        return new UserCert({
+            primaryId: acct.primaryId,
+            primaryHdl: acct.primaryHandle,
+            secondaryId: acct.secondaryId,
+            secondaryHdl: acct.secondaryHdl,
+            groups: sortedGroupNames,
+            key: acct.key   // ECCKeyPair
+        });
+    };
+
     UserCert.prototype = {
 
         // UserCerts have unique (timestamp, primaryId) tuples
