@@ -1026,7 +1026,9 @@ window.Utils = (function (module) {
         },
 
         DateUtil,
-        keyidShortHex
+        keyidShortHex,
+        assertType,
+        OneOf,
     };
 
     Object.keys(exports).forEach(k => module[k] = exports[k]);
