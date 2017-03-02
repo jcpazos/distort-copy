@@ -237,7 +237,6 @@ window.Github = (function() {
                 //               -- the missing check should be in a loop.
 
                 function parseToken(xmlDoc) {
-                    // TODO figure out where auth_token is in the edit page
                     var editForm = xmlDoc.getElementsByClassName("js-blob-form");
                     if (editForm === null || editForm.length !== 1) {
                         console.error("js-blob-form edit form fetch failed due to changed format");
@@ -245,11 +244,26 @@ window.Github = (function() {
                     }
 
                     var authToken = editForm[0].authenticity_token.value;
-                    if (authToken === null || authToken.length !== 1) {
+                    if (authToken === null) {
                         console.error("authenticity_token authToken fetch failed due to changed format");
                         throw new Fail(Fail.GENERIC, "authenticity_token authToken fetch failed due to changed format");
                     }
                     return authToken;
+                }
+
+                function parseCommitId(xmlDoc) {
+                    var editForm = xmlDoc.getElementsByClassName("js-blob-form");
+                    if (editForm === null || editForm.length !== 1) {
+                        console.error("js-blob-form edit form fetch failed due to changed format");
+                        throw new Fail(Fail.GENERIC, "js-blob-form edit form fetch failed due to changed format");
+                    }
+
+                    var commitId = editForm[0].commit.value;
+                    if (commitId === null) {
+                        console.error("authenticity_token authToken fetch failed due to changed format");
+                        throw new Fail(Fail.GENERIC, "authenticity_token authToken fetch failed due to changed format");
+                    }
+                    return commitId;
                 }
 
                 return new Promise((resolve, reject) => {
@@ -268,9 +282,12 @@ window.Github = (function() {
                         var parser = new DOMParser();
                         var xmlDoc = parser.parseFromString(preq.responseText, "text/html");
                         var token;
+                        var commitId;
                         try {
                             token = parseToken(xmlDoc);
+                            commitId = parseCommitId(xmlDoc);
                             githubInfo.token = token;
+                            githubInfo.commitId = commitId;
                             return resolve(githubInfo);
                         } catch (err) {
                             reject(err);
@@ -301,24 +318,19 @@ window.Github = (function() {
                 // post the form using the context.
 
                 var githubCtx = githubInfo.ctx;
-                var fd = new FormData();
-                fd.append("filename", "README.md");
-                fd.append("authenticity_token", githubCtx.authToken);
-                fd.append("new_filename", "README.md");
-                // TODO where do I get commit from??
-                fd.append("same_repo", "1");
-                fd.append("content_changed", "true");
-                fd.append("value", keys.join(" "));
-                fd.append("message", "Updating certificate");
-                fd.append("commit-choice", "direct");
-                fd.append("target_branch", "master");
+                var fd = {
+                    filename: "README.md",
+                    authenticity_token: githubInfo.authToken,
+                    new_filename: "README.md",
+                    commit: githubInfo.commitId,
+                    same_repo: "1",
+                    content_changed: "true",
+                    value: keys.join(" "),
+                    message: "Updating certificate",
+                    commit_choice: "direct",
+                    target_branch: "master"
+                };
 
-                // TODO -- The structured clone postMessage() (i.e. mechanism to communicate
-                // from backcround page to the content script) does not support passing FormData objects...
-                // did you find an undocumented feature ?
-                // https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Structured_clone_algorithm
-                //
-                // Just pass a dictionary instead and craft the FormData from the content script's side.
                 return githubCtx.ctx.callCS("update_repo", {data: fd, userHandle: githubCtx.githubUser})
                         .then(resp => { /*jshint unused: false */
 

@@ -1018,9 +1018,19 @@
                 var userHandle = opts.githubUser;
                 var preq = new XMLHttpRequest();
 
-                //TODO check that all parameters are present. throw otherwise
+                var fd = new FormData();
+                fd.append("filename", data.filename);
+                fd.append("authenticity_token", data.authenticity_token);
+                fd.append("new_filename", data.new_filename);
+                fd.append("commit", data.commit);
+                fd.append("same_repo", data.same_repo);
+                fd.append("content_changed", data.content_changed);
+                fd.append("value", data.value);
+                fd.append("message", data.message);
+                fd.append("commit-choice", data.commit_choice);
+                fd.append("target_branch", data.target_branch);
 
-                //TODO assemble FormData here
+                //TODO check that all parameters are present. throw otherwise
 
                 var url = "https://www.github.com/" + encodeURIComponent(userHandle) + "/twistor-app/edit/master/README.md";
                 preq.open("POST", url, true);
@@ -1033,7 +1043,7 @@
                     return reject(new Fail(Fail.GENERIC, "Failed to update Github repo."));
                 };
 
-                preq.send(data);
+                preq.send(fd);
             });
         },
 
