@@ -335,7 +335,7 @@ window.Vault = (function () {
         this.primaryId = opts.primaryId || null;           // string userid (e.g. large 64 integer as string)
         this.primaryHandle = opts.primaryHandle || null;   // string username (e.g. twitter handle)
         this.primaryApp = opts.primaryApp || null;         // dict   application/dev credentials
-        this.secondaryId = opts.secondaryId || null;       // string userid for github
+        //this.secondaryId = opts.secondaryId || null;       // string userid for github
         this.secondaryHandle = opts.secondaryHandle || null;  // string username for github
 
         this.lastDistributeOn = opts.lastDistributeOn || null; // last time the cert was distributed.
@@ -418,7 +418,7 @@ window.Vault = (function () {
                      primaryId: this.primaryId,
                      primaryHandle: this.primaryHandle,
                      primaryApp: this.primaryApp,
-                     secondaryId: this.secondaryId,
+                     //secondaryId: this.secondaryId,
                      secondaryHandle: this.secondaryHandle,
                      key: this.key.toStore(),
                      groups: this.groups.map(function (grp) { return grp.toStore(); }),

@@ -92,7 +92,6 @@ function readAccountForm() {
     opts.primaryId = $doc.find("input[name='primary-id']").val();
     opts.primaryHandle = $doc.find("input[name='primary-handle']").val();
     opts.primaryApp = $doc.find("input[name='twitter-app-keys']").data('keys');
-    opts.secondaryId = $doc.find("input[name='secondary-id']").val();
     opts.secondaryHandle = $doc.find("input[name='secondary-handle']").val();
     // null if a new key is to be generated
     opts.key = $doc.find("textarea[name='key-data']").data("key");
@@ -679,7 +678,7 @@ function loadPage() {
             }
             updateStatus("Github information retrieved.");
             $doc.find("input[name='secondary-handle']").val(githubInfo.githubUser);
-            $doc.find("input[name='secondary-id']").val(githubInfo.githubID);
+            //$doc.find("input[name='secondary-id']").val(githubInfo.githubID);
             $doc.find("#github-info").show();
 
             // TODO fix filter function such that it works properly

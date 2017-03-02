@@ -1430,6 +1430,14 @@ _extends(DistributeTask, Utils.PeriodicTask, {
         }
 
         return Twitter.fetchLatestCertFromFeed(that.username).then(function (twitterCert) {
+            // Call github to verify cert from twitter before proceeding
+            try {
+
+                Github.verifyCertFromPrimary(twitterCert, account.secondaryHdl);
+            } catch (err) {
+                throw err;
+            }
+
             var myKey = account.key.toPubKey();
             var keyAgeMs = (checkTime - twitterCert.validFrom) * 1000;
 
@@ -1623,19 +1631,8 @@ BGAPI.prototype.postCert = function (account) {
         var groupString = groupNames.map(name => "#" + name).join(" ");
 
         /**
-           TODO -- add the secondaryId and secondaryHdl to the cert payload
-                   (on one of the three tweets).
-
-                   Update the corresponding code on the parsing side, in
-                   certs.js  PartialCert / UserCert classes.
-        */
-
-        /**
-           TODO -- please add some mention of how big a github id and github handle
-                   can be. we don't want to over the twitter size limit.
-
-                   You can either leave it in plain if it's small, otherwise, if you need
-                   more space, you can base64-encode it (i.e. atob, btoa).
+         * NOTE: Max length of a username on GitHub is 39 characters, so it should be okay with
+         * the default encoding.
         */
 
         var encryptStatus = [
@@ -1658,7 +1655,6 @@ BGAPI.prototype.postCert = function (account) {
             account.primaryHandle,
             account.primaryId,
             account.secondaryHandle,
-            account.secondaryId,
             pkPacked.encrypt,
             pkPacked.sign,
             ts.toString(16),

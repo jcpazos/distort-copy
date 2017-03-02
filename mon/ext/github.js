@@ -32,60 +32,63 @@ window.Github = (function() {
         //       the returned cert. Only integrity checks are performed.
         //
         getLatestCert: function (ghHdl) {
+
+            function checkGHCert(responseText) {
+                var certFeed = new Certs.PartialCertFeed();
+                var fullCert = {};
+                // Split the GitHub readme on new line
+                var lines = responseText.split("\n");
+
+                for (var line in lines) {
+                    try {
+                        fullCert = certFeed.feedRepo(ghCert, {secondaryHdl: ghHandle});
+                        if (fullCert) {
+                            return fullCert;
+                        }
+                    } catch (err) {
+                        if ((err instanceof Fail) && [Fail.BADPARAM, Fail.STALE].includes(err.code)) {
+                            return;
+                        }
+                        throw err;
+                    }
+                }
+            }
+
             return new Promise((resolve, reject) => {
-                /*
-                  TODO do GET request to README page content.  in the
-                       headers, add a cache-invalidating token
+                var xhr = new XMLHttpRequest();
+                var cacheBust = Utils.randomStr128();
 
-                ex:
-                var xhr = new XMLHttpRequest(); var cacheBust = Utils.randomStr128();
-                xhr.open("GET", "https://raw.githubusercontent.com/web-priv/beeswax/master/README.md?_cb=" +
-                                encodeURIComponent(cacheBust),
-                              true);
+                xhr.open("GET", "https://raw.githubusercontent.com/" + encodeURIComponent(ghHdl) +
+                    "twistor-app/master/README.md?_cb=" + encodeURIComponent(cacheBust), true);
 
-                TODO make sure that we only get the bytes we want. this protects against downloading huge amounts of data.
+                xhr.setRequestHeader("Range", 'bytes=0-1349');
 
-                     The actual size of a cert on disk once it's on github, I'm not sure of. But we care about the max size.
+                xhr.onload = function() {
+                    var latestCert = checkGHCert(xhr.responseText);
 
-                     There are up to 3*140 unicode bytes to store. (rough)  plus 3 newlines = 343 unicode chars
+                    if (!latestCert) {
+                        return reject(new Fail(Fail.NOIDENT, "Could not retrieve valid cert from GitHub"));
+                    }
+                    return resolve(latestCert);
+                };
 
-                     In UCS-2, that's x*2 = 686 bytes.
-
-                     In UTF-8, that's x*3 = 1029 bytes   (unicode codepoints in the range 0x5000 to 0x8fff expand to 3 B)
-
-                     Twitter's default response content-encoding is gzip, which means that the range request is to be done
-                     on the zipped length. So, 1350B is good enough.
-
-                xhr.setRequestHeader('Range', 'bytes=0-1349');
-
-                xhr.send()
-
-                ...
-                */
+                xhr.send();
 
                 // NOTE I couldn't find a way to get either the last
                 //      cert commit's timestamp, or the github actor-id
                 //      from the response of the raw GET
                 //      request. so. we'll have to live without.
-                //
-                //      Have you considered storing the certificate on the
-                //      repo description? Because then, we might be able to
-                //      simply do an API get.... NVM, it's 60 per ip per hour max.
-
-                // TODO create a Certs.PartialCert.  you'll need to
-                //      call the constructor with the primaryId and
-                //      primaryHdl. So the github cert post needs to
-                //      have that info. Also, you'll need to add the
-                //      secondaryId and secondaryHdl in the twitter
-                //      cert format.
-                //
-                //      You give the Partialcert the certificate chunks one by one.
-                //      there's a function feedToks() that does the work. if feedtoks
-                //      returns null, it needs more info. when a certificate is complete,
-                //      feedToks() returns a full-on UserCert.
-
-                throw new Fail(Fail.NOTIMPL, "TODO -- fetch cert");
             });
+        },
+
+        doCertsMatch(primary, secondary) {
+            // TODO are there any properties in the Twitter cert that won't appear in the GitHub cert?
+            for (var prop in primary) {
+                if (primary[prop] !== secondary[prop]) {
+                    return false;
+                }
+            }
+            return true;
         },
 
         /**
@@ -101,14 +104,22 @@ window.Github = (function() {
 
                otherwise, it is updated with status FAIL
         */
-        verifyCertFromPrimary: function (userCert) {
+        verifyCertFromPrimary: function (twitterCert, ghHandle) {
+
             return new Promise((resolve, reject) => {
 
-                // fetch cert from github
+                var ghCert = {};
 
-                // if no valid cert found, update cert status with STATUS_FAIL. resolve.
+                try {
+                    ghCert = this.getLatestCert(ghHandle);
+                } catch (err) {
+                    reject(err);
+                }
 
-                // to validate userCert:
+
+                doCertsMatch(twitterCert, ghCert) ?
+                    resolve(true) :
+                    reject(new Fail(Fail.NOIDENT, "Certs on Twitter and GitHub do not match"));
 
                 /*
                   write a UserCert.prototype.matches(other) => bool
@@ -125,12 +136,12 @@ window.Github = (function() {
                    two different signatures, but the certs would
                    still be equivalent)
                 */
-                throw new Fail(Fail.NOTIMPL, "verifyCertFromPrimary");
+                //throw new Fail(Fail.NOTIMPL, "verifyCertFromPrimary");
             });
         },
 
-        // promises {githubUser: str, githubID: str}
-        // promises {githubUser: null, githubID: null} if user is not logged in
+        // promises {githubUser: str}
+        // promises {githubUser: null} if user is not logged in
         getGithubUserInfo: function () {
             return new Promise(function (resolve, reject) {
                 // fetch the user's github homepage
@@ -139,7 +150,7 @@ window.Github = (function() {
 
                 preq.onerror = function () {
                     console.error("Problem loading Github homepage", [].slice.apply(arguments));
-                    reject(new Error("Error loading Github homepage"));
+                    return reject(new Error("Error loading Github homepage"));
                 };
 
                 preq.onload = function () {
@@ -159,24 +170,24 @@ window.Github = (function() {
                     }
 
                     // Feb 2017 - when user is logged out, this is absent from document
-                    var userID = xmlDoc.getElementsByName("octolytics-actor-id");
-                    if (userID === null || userID.length !== 1) {
-                        //console.error("octolytics-actor-id userid missing. user is logged out or page format changed");
-                        return resolve(
-                            {githubUser: null,
-                             githubID: null
-                            });
-                    }
+                    // var userID = xmlDoc.getElementsByName("octolytics-actor-id");
+                    // if (userID === null || userID.length !== 1) {
+                    //     //console.error("octolytics-actor-id userid missing. user is logged out or page format changed");
+                    //     return resolve(
+                    //         {githubUser: null,
+                    //          githubID: null
+                    //         });
+                    // }
 
-                    var githubID = userID[0].content;
-                    if (githubID === null) {
-                        return reject(new Fail(Fail.GENERIC, "failed to extract github userid"));
-                    }
+                    // var githubID = userID[0].content;
+                    // if (githubID === null) {
+                    //     return reject(new Fail(Fail.GENERIC, "failed to extract github userid"));
+                    // }
 
                     resolve(
                         {
                             githubUser: githubUser,
-                            githubID: githubID
+                            //githubID: githubID
                         });
                 };
 
@@ -189,15 +200,13 @@ window.Github = (function() {
             var repoURL = "https://www.github.com/" + encodeURIComponent(account.secondaryHandle) + "/twistor-app";
 
             return this.getGithubUserInfo().then(githubInfo => {
-                if (githubInfo.githubID === null || githubInfo.githubUser === null) {
+                if (githubInfo.githubUser === null) {
                     throw new Fail(Fail.BADAUTH, "Make sure you are logged in to Github (in any tab).");
                 }
-                if (githubInfo.githubID !== account.secondaryId ||
-                    githubInfo.githubUser !== account.secondaryHandle) {
+                if (githubInfo.githubUser !== account.secondaryHandle) {
                     throw new Fail(Fail.BADAUTH,
-                        "Github authenticated under a different username. Found '" +
-                        githubInfo.githubID + ":" + githubInfo.githubUser + "' but expected  '" +
-                        account.secondaryId + ":" + account.secondaryHandle + "'.");
+                        "Github authenticated under a different username. Found '" + githubInfo.githubUser +
+                        "' but expected  '" + account.secondaryHandle + "'.");
                 }
                 return githubInfo;
             }).then(githubInfo => {
@@ -361,7 +370,7 @@ window.Github = (function() {
 
                     return {
                         token: authToken,
-                        githubId: githubInfo.githubID,
+                        //githubId: githubInfo.githubID,
                         githubUser: githubInfo.githubUser,
                         ctx: githubContents[0]
                     };
@@ -369,7 +378,7 @@ window.Github = (function() {
                     return API.openContext("https://github.com/").then(function (ctx) {
                         return {
                             token: authToken,
-                            githubId: githubInfo.githubID,
+                            //githubId: githubInfo.githubID,
                             githubUser: githubInfo.githubUser,
                             ctx: ctx
                         };
