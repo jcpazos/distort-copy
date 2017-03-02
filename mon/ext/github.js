@@ -37,20 +37,17 @@ window.Github = (function() {
                 var certFeed = new Certs.PartialCertFeed();
                 var fullCert = {};
                 // Split the GitHub readme on new line
-                var lines = responseText.split("\n");
 
-                for (var line in lines) {
-                    try {
-                        fullCert = certFeed.feedRepo(ghCert, {secondaryHdl: ghHandle});
-                        if (fullCert) {
-                            return fullCert;
-                        }
-                    } catch (err) {
-                        if ((err instanceof Fail) && [Fail.BADPARAM, Fail.STALE].includes(err.code)) {
-                            return;
-                        }
-                        throw err;
+                try {
+                    fullCert = certFeed.feedRepo(responseText, {secondaryHdl: ghHandle});
+                    if (fullCert) {
+                        return fullCert;
                     }
+                } catch (err) {
+                    if ((err instanceof Fail) && [Fail.BADPARAM, Fail.STALE].includes(err.code)) {
+                        return;
+                    }
+                    throw err;
                 }
             }
 
