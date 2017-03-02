@@ -876,9 +876,9 @@ function keyidShortHex(keyid) {
 var KH_TYPE = {keyid: ""};
 var MSG_TYPE = {type: "", hdr: { to: "", from: "" }};
 
+
 window.Utils = (function (module) {
     "use strict";
-
     /**
        This abstract class invokes run() every periodMs milliseconds
        once started.  It starts in a stopped state. start() is called

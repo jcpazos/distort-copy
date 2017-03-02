@@ -22,7 +22,7 @@
   sjcl, RSAKey,
   Fail, escape,
   KeyClasses,
-  Utils
+  Utils, pack
 */
 
 /**
@@ -298,6 +298,12 @@ window.KeyClasses = (function (module) {
         packEGCipher,
         unpackEGCipher
     };
+
+    /**
+       PackedSignature('name', {
+    module.PackedSignature = pack.define({
+        toBits
+    });
 
     Object.keys(exports).forEach(k => module[k] = exports[k]);
     return module;

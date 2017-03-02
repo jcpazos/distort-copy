@@ -20,7 +20,7 @@
 /*global Fail, Utils, Emitter, Vault,
   ECCPubKey, KeyClasses, Certs,
   unescape,
-  sjcl, base16k
+  sjcl, base16k, pack
 */
 
 window.Outbox = (function (module) {
@@ -289,7 +289,6 @@ window.Outbox = (function (module) {
         },
 
         _getCiphertext: function () {
-            ciphertext := eg_encrypt(<plaintext>)
         },
 
         _getBody: function () {
@@ -305,21 +304,54 @@ window.Outbox = (function (module) {
             return "";
         },
 
-        _hexReduce: function (car, cdr) {
-            if (!cdr) {
-                return car;
-            }
-
-            if ((typeof cdr) === "string") {
-                return car + cdr;
-            }
-            if ((typeof cdr.toBits) === "function") {
-                cdr = sjcl.codec.hex.fromBits(cdr.toBits());
-            }
-            return car + sjcl.codec.hex.fromBits(cdr);
+        _getPostGroups: function () {
+            // list of groups to post to.
+            var groupNames = this.fromAccount.groups.map(stats => "#" + stats.name);
+            return groupNames.join(" ");
         },
 
         encodeForTweet1: function () {
+
+            /**
+               twistor_body := <version> <ciphertext> <signature> <unusedbody>
+               version := 0x01  # 1B
+            */
+
+            var twistor_body = pack('twistor_body', {},
+                                    pack.Number('version', {len: 8}, 0x01),
+                                    null,
+                                    
+            var tweet = pack.Strings('tweet', {},
+                                     this._getPostGroups(),
+                                     ' ',
+                                     pack.Base16k('b16', {}, twistor_body));
+                    /*
+      TWISTOR MESSAGE
+
+      tweet := <twistor_envelope> base16k(<twistor_body>)
+
+      twistor_envelope: <recipient_group>+ 'space'
+      recipient_group :=  '#' <group_name>
+      group_name := valid twitter hashtag
+
+      twistor_body := <version> <ciphertext> <signature> <unusedbody>
+
+      version := 0x01  # 1B
+
+      ciphertext := eg_encrypt(<plaintext>)
+
+      plaintext := <rcptid> <userbody>
+
+      signature := eg_sign(<twistor_epoch>, <version>, <ciphertext>)
+
+      twistor_epoch := ((unix time in sec) >> 8) & 0xffffffff   // 256s is 4 min 16 sec
+
+      rcptid := 64bit twitter id of recipient
+
+      userbody := (len(<usermsg>) & 0xff) utf8encode(<usermsg>)  <padding>*  //this utf8encode has no trailing \0
+      padding := 0x00
+    */
+
             return [this._getEnvelope(),
                     base16k.fromHex(sjcl.codec.hex.fromBits(
                         this._getBody()
