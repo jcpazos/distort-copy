@@ -320,7 +320,7 @@ window.Github = (function() {
                 var githubCtx = githubInfo.ctx;
                 var fd = {
                     filename: "README.md",
-                    authenticity_token: githubInfo.authToken,
+                    authenticity_token: githubInfo.token,
                     new_filename: "README.md",
                     commit: githubInfo.commitId,
                     same_repo: "1",
