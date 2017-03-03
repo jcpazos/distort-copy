@@ -61,12 +61,27 @@ window.Github = (function() {
                 xhr.setRequestHeader("Range", 'bytes=0-1349');
 
                 xhr.onload = function() {
+                    if (xhr.status < 200 || xhr.status > 399) {
+                        var code = (xhr.status === 404) ? Fail.NOIDENT : Fail.GENERIC;
+                        return reject(new Fail(code, "Server returned (" + xhr.status + ") " + xhr.statusText));
+                    }
+                    if (xhr.status === 304) {
+                        // not modified -- problem with cache buster?
+                        // indicates the browser knows it already.
+                        return reject(new Fail(Fail.GENERIC, "Did not expect the request would hit the cache."));
+                    }
+
+                    // 200, or 206 (partial)
                     var latestCert = checkGHCert(xhr.responseText);
 
                     if (!latestCert) {
                         return reject(new Fail(Fail.NOIDENT, "Could not retrieve valid cert from GitHub"));
                     }
-                    return resolve(latestCert);
+                    resolve(latestCert);
+                };
+
+                xhr.onerror = function (err) {
+                    reject(new Fail(Fail.GENERIC, "Could not launch network request: " + err));
                 };
 
                 xhr.send();
