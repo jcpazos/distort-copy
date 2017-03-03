@@ -201,7 +201,18 @@ function Fail(code, message) {
     // pop first frame off the stack
     this.stack = "Fail" + stack.substr(stack.indexOf("\n", stack.indexOf("\n") + 1));
 }
-_extends(Fail, Error, {});
+_extends(Fail, Error, {
+    prefix: function (message) {
+        "use strict";
+        this.message = message + ": " + this.message;
+        return this;
+    },
+    setCode: function (code) {
+        "use strict";
+        this.code = code;
+        return this;
+    }
+});
 
 Fail.prototype.at = function (otherError) {
     "use strict";
@@ -230,6 +241,8 @@ Fail.PUBSUB      = "PUBSUB"; // fail to authenticate or to post to the pub/sub s
 Fail.NOTIMPL     = "NOTIMPL"; // not implemented
 Fail.BADAUTH     = "BADAUTH"; // bad authentication
 Fail.CORRUPT     = "CORRUPT"; // integrity failed.
+Fail.NETWORK     = "NETWORK"; // either an unexpected HTTP Error, or network condition error (e.g. offline)
+
 Fail.toRPC = function (err) {
     "use strict";
 
@@ -252,6 +265,10 @@ Fail.fromVal = function (thing) {
 
         if (thing instanceof String) {
             return new Fail(thing);
+        }
+
+        if (thing instanceof XMLHttpRequest) {
+            return new Fail(Fail.NETWORK, "Network Error (" + thing.status + ") " + thing.statusText);
         }
 
         if (thing.code) {
