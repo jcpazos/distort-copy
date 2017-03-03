@@ -1009,10 +1009,20 @@
                 preq.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
 
                 // console.debug("Generated post: ", postData, " LENGTH: ", postData.length);
+                preq.onload = function () {
+                    if (preq.status < 200 || preq.status >= 300) {
+                        // if the response is a 301, it doesn't look like the browser follows the
+                        // redirect to post again. so we need the 200 range
+                        var msg = "HTTP Error when creating GitHub repo: (" + preq.status + ") " + preq.statusText;
+                        console.error(msg, preq);
+                        return reject(new Fail(Fail.GENERIC, msg));
+                    }
+                    resolve(true);
+                };
 
-                preq.onerror = function () {
+                preq.onerror = function (err) {
                     console.error("Problem creating Github repo.", [].slice.apply(arguments));
-                    return reject(new Fail(Fail.GENERIC, "Failed to create Github repo."));
+                    return reject(new Fail(Fail.GENERIC, "Failed to create Github repo: " + err));
                 };
 
                 preq.send(fd);
