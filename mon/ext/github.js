@@ -235,11 +235,11 @@ window.Github = (function() {
                     };
                     preq.onreadystatechange = () => {
                         if (preq.readyState === 4)  {
-                            if (preq.status >= 200 && preq.status <= 300) {
+                            if (preq.status >= 200 && preq.status < 400) {
                                 return resolve(githubInfo);
                             } else {
                                 console.debug("About to call 'createGithubRepo'");
-                                return this.createGithubRepo(account).then(() => githubInfo);
+                                resolve(this.createGithubRepo(account).then(() => githubInfo));
                             }
                         }
                     };
