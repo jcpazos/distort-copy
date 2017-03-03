@@ -151,19 +151,19 @@ function stepButtonClick(evt) {
             }
             break;
 
-                   case "twitter-app":
-                       switch(bName) {
-                            case "back":
-                                  showStep(stepClass, "start");
-                                    break;
-                                case "next":
-                                    showStep(stepClass, "import-keys");
-                                    break;
-                                default:
-                                    showPage("main");
-                                    break;
-                                }
-                        break;
+       case "twitter-app":
+           switch(bName) {
+            case "back":
+                showStep(stepClass, "start");
+                break;
+            case "next":
+                showStep(stepClass, "import-keys");
+                break;
+            default:
+                showPage("main");
+                break;
+            }
+            break;
 
         case "import-keys":
             switch(bName) {
@@ -181,7 +181,6 @@ function stepButtonClick(evt) {
                 break;
             }
             break;
-            
         case "review":
             switch (bName) {
             case "back":

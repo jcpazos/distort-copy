@@ -95,6 +95,51 @@ window.Tests = (function (module) {
         return aes.encryptText(msg);
     };
 
+    module.test_point_encoding = function (trials) {
+        trials = trials || 1000;
+        var msgBits = 184,
+            i, msg, metric = new Stats.Dispersion({supportMedian: false}),
+            start = performance.now(),
+            res, failures = 0;
+
+        for (i=0; i < trials; i++) {
+            // take a random point each time. will affect time needed
+            msg  = sjcl.bitArray.bitSlice(sjcl.random.randomWords((msgBits + 31) / 32), 0, msgBits);
+            try {
+                if (i > 0 && i % 2000 === 0) {
+                    console.log("... working ..." + metric.toString(false) + " (#failures=" + failures + ")");
+                }
+                res = ECCKeyPair.curve.encodeMsg(msg);
+                if (sjcl.ecc.curve.debug_tries) {
+                    metric.update(sjcl.ecc.curve.debug_tries);
+                }
+                if (window._break) {
+                    break;
+                }
+            } catch (err) {
+                if (err instanceof sjcl.exception.invalid) {
+                    failures += 1;
+                } else {
+                    throw err;
+                }
+            }
+        }
+        var end = performance.now();
+        console.log("test_point_encoding. completed " + trials + " random message encodings in " + (end-start) + "ms. " +
+                    " (" + (trials / (end-start) * 1000) + " trials/sec avg)");
+        console.log("tries needed to find a point: " + metric.toString());
+        console.log("number of messages that had no encoding: " + failures);
+        for (i=1; i<=metric.max; i++) {
+            var first = metric.values.indexOf(i);
+            if (first === -1) {
+                console.log("   ... none took " + (i) + " tries.");
+            } else {
+                console.log("   ... first attempt that took " + (i) + " tries: attempt #" + (first + 1));
+            }
+        }
+        module.metric = metric; // debug
+    };
+
     module.test_encrypt_ecc = function (msg, mac, opts) {
         msg = msg || "foo";
         mac = mac || "some stuff";

@@ -24,7 +24,6 @@
 /*global
   Promise, ECCKeyPair,
   KeyLoader, Fail,
-
   Events
 */
 
@@ -205,7 +204,11 @@ window.Vault = (function () {
         },
 
         /**
-           Returns the one Account object for that user.
+           Returns the one Account object for that user. or null
+           if there is no such account.
+
+           if userid is omitted, the currently active account is
+           returned (can be null if there is no active account).
         */
         getAccount: function (userid) {
             if (userid === "" || userid === undefined) {

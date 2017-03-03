@@ -1,0 +1,21 @@
+
+/*
+   http://unicode.org/reports/tr15/#Detecting_Normalization_Forms
+   http://www.unicode.org/Public/UCD/latest/ucd/DerivedNormalizationProps.txt
+
+
+   0x309b to 0xf899 has NFC_QC == Y  (51198 values)
+   Private Use: U+E000 to U+F8FF, U+F0000...U+FFFFD, U+100000...U+10FFFD
+   Non Characters (66 total): FFFE FEFF, FDD0...FDEF, U+1FFFE, U+1FFFF, U+2FFFE, U+2FFFF, ... U+10FFFE, U+10FFFF
+   Surrogates: High D800-DBFF, Low DC00-DFFF,
+   Null 0000
+
+   Encoding in low and high surrogate pairs:
+     Consider the encoding of U+10437 (𐐷):
+    -  Subtract 0x10000 from 0x10437. The result is 0x00437, 0000 0000 0100 0011 0111.
+    -  Split this into the high 10-bit value and the low 10-bit value: 0000000001 and 0000110111.
+    -  Add 0xD800 to the high value to form the high surrogate: 0xD800 + 0x0001 = 0xD801.
+    -  Add 0xDC00 to the low value to form the low surrogate: 0xDC00 + 0x0037 = 0xDC37.
+
+*/
+

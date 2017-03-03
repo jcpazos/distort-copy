@@ -20,8 +20,13 @@
 /*global
   chrome, Promise, performance,
   ECCPubKey, AESKey, KeyLoader, Friendship,
+<<<<<<< HEAD
   UI, Utils, Vault, Twitter, Github, Certs, base16k,
   Events, API,
+=======
+  UI, Utils, Vault, Twitter, Certs, base16k,
+  Events, API, Outbox,
+>>>>>>> twistor
   getHost, Fail, assertType, OneOf, KH_TYPE, MSG_TYPE, _extends
 */
 
@@ -1420,12 +1425,20 @@ _extends(DistributeTask, Utils.PeriodicTask, {
             throw new Fail(Fail.NOIDENT, "No identity attached with username", that.username);
         }
 
+        console.debug("Running DistributeTask for account: " + that.username);
+
         function _repostKey() {
+            if (!account.groups || !account.groups.length) {
+                console.error("Account " + account.id + " is not part of any groups. aborting post.");
+                UI.log("Account " + account.id + " is not in any group. Cannot post.");
+                return false;
+            }
             return API.postCert(account).catch(function (err) {
                 UI.log("error reposting(" + err.code + "): " + err);
                 throw err; // throw again
             }).then(function () {
-                UI.log("Certificate for account '" + account.id_both + "' reposted.");
+                UI.log("Key for @" + that.username + " reposted.");
+                return true;
             });
         }
 
@@ -1509,6 +1522,12 @@ function BGAPI() {
     window.setTimeout(function () {
         var initialUser = Vault.getUsername();
         API.accountChanged(initialUser);
+
+        var messageQueue = new Outbox.Queue({FIXME: true});
+        var sender = new Outbox.PeriodicSend({queue: messageQueue});
+        window.setTimeout(function () {
+            sender.start();
+        }, 5000);               // give it some time to breathe when loading the extension.
     }, 0);
 }
 
@@ -1662,7 +1681,9 @@ BGAPI.prototype.postCert = function (account) {
             groupNames.join(" ") // no #
         ].join("");
 
-        var signature = account.key.signText(signedMessage, 'hex');
+        var signature = account.key.signText(signedMessage, {
+            encoding: 'domstring', outEncoding: 'hex'
+        });
 
         var sigStatus = [
             "#" + Certs.PartialCert.KEYSIG,

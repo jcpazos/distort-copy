@@ -214,6 +214,12 @@ _extends(Fail, Error, {
     }
 });
 
+Fail.prototype.at = function (otherError) {
+    "use strict";
+    this.stack = "Fail (rethrow) " + otherError.stack;
+    return this;
+};
+
 Fail.INVALID_RPC = "INVALID_RPC";
 Fail.BADPARAM    = "BADPARAM";
 Fail.KAPERROR    = "KAPERROR";
@@ -319,7 +325,7 @@ function typeToString(t) {
 function OneOf() {
     "use strict";
 
-    if (this === window || this === null || this === undefined) {
+    if (!(this instanceof OneOf)) {
         // allow 'new' to be omitted for brevity
         OneOf._expand = Array.prototype.slice.call(arguments, 0);
         return new OneOf();
@@ -893,9 +899,9 @@ function keyidShortHex(keyid) {
 var KH_TYPE = {keyid: ""};
 var MSG_TYPE = {type: "", hdr: { to: "", from: "" }};
 
+
 window.Utils = (function (module) {
     "use strict";
-
     /**
        This abstract class invokes run() every periodMs milliseconds
        once started.  It starts in a stopped state. start() is called
@@ -980,6 +986,22 @@ window.Utils = (function (module) {
 
         _extends,
 
+        stringRepeat: function (pattern, count) {
+            /* jshint bitwise: false */
+            if (count < 1) {
+                return '';
+            }
+            var result = '';
+            while (count > 1) {
+                if (count & 1) {
+                    result += pattern;
+                }
+                count >>>= 1;
+                pattern += pattern;
+            }
+            return result + pattern;
+        },
+
         // string made from 128 random bits
         randomStr128: function () {
             var arr = sjcl.random.randomWords(4);
@@ -1027,7 +1049,9 @@ window.Utils = (function (module) {
         },
 
         DateUtil,
-        keyidShortHex
+        keyidShortHex,
+        assertType,
+        OneOf,
     };
 
     Object.keys(exports).forEach(k => module[k] = exports[k]);

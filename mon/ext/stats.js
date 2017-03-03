@@ -73,7 +73,7 @@ window.Stats = (function (module) {
             if (!this.values || this.n === 0) {
                 return NaN;
             }
-            this.values.sort();
+            this.sort();
             if (this.n % 2 === 0) {
                 return (
                     this.values[Math.floor(this.n / 2) - 1] +
@@ -82,6 +82,25 @@ window.Stats = (function (module) {
             } else {
                 return this.values[Math.floor(this.n / 2)];
             }
+        },
+
+        compare: function (a, b) {
+            if (a < b) {
+                return -1;
+            } else if (a > b) {
+                return 1;
+            } else {
+                return 0;
+            }
+        },
+
+        sort: function () {
+            // native sort() converts elements to a string first. not what we want.
+
+            if (!this.values || this.values.length === 0) {
+                return;
+            }
+            this.values.sort(this.compare);
         },
 
         update: function (val) {
@@ -117,7 +136,8 @@ window.Stats = (function (module) {
             this.S = this.S + (val - oldMean) * (val - this.mean);
         },
 
-        toString: function () {
+        toString: function (withMedian) {
+            withMedian = (withMedian === undefined) ? true : false;
             var s = ("" +
                      "min=" + this.min + " " +
                      "max=" + this.max + " " +
@@ -125,7 +145,7 @@ window.Stats = (function (module) {
                      "avg=" + this.mean + " " +
                      "sum=" + this.sum + " " +
                      "std=" + this.stddev + " " +
-                     "med=" + this.median
+                     ((withMedian) ? "med=" + this.median : "med=NaN")
                     );
             return s;
         }

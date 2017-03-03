@@ -26,6 +26,7 @@
 		    "sjcl.js",
 		    "utils.js",
                     "base16k.js",
+                    "pack.js",
 		    "emitter.js",
 		    "keyclasses.js",
 		    "vault.js",

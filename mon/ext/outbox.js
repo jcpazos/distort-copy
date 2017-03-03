@@ -17,20 +17,21 @@
     <http://www.gnu.org/licenses/>.
 **/
 
-/*global Fail, Utils, Emitter,
-  ECCPubKey, KeyClasses,
-  unescape
+/*global Fail, Utils, Emitter, Vault,
+  KeyClasses, Certs,
+  unescape,
+  pack, API
 */
 
 window.Outbox = (function (module) {
     "use strict";
 
-    /** used as the recipient for noise messages */
-    var randomPubKey = new ECCPubKey();
-
     /**
        posts a message from a queue at regular intervals. if no
        message is available, it generates a random noise message.
+
+       // noise messages are sent to the current account.
+       // they should be filtered on the way in.
 
        opts: {
           periodMs: average period in milliseconds between sends
@@ -57,12 +58,26 @@ window.Outbox = (function (module) {
                     next = this.generateNoise();
                 }
 
-                resolve(true);
+                //FIXME might have to requeue.
+                if (!next.fromAccount) {
+                    throw new Fail(Fail.GENERIC, "no account associated with message");
+                }
+                var groupNames = next.fromAccount.groups.map(stats => stats.name);
+
+                if (!groupNames || groupNames.length === 0) {
+                    throw new Fail(Fail.GENERIC, "account has no groups to post to. aborting message post");
+                }
+
+                groupNames.sort();
+                resolve(API.postTweets(next.fromAccount, [
+                    {msg: next.encodeForTweet(),
+                     groups: groupNames}
+                ]));
             });
         },
 
         generateNoise: function () {
-            return Message.compose(randomPubKey, "");
+            return Message.compose(null, "");
         }
     });
 
@@ -73,22 +88,38 @@ window.Outbox = (function (module) {
         them in sequence.
     */
     function Message(opts) {
+        opts = opts || {};
         this.id = opts.id || Utils.randomStr128();
         this.queue = opts.queue || null;
-        this.to = opts.to || null;
+        this.fromAccount = opts.fromAccount || null;
+        this.to = opts.to || null; // Cert
         this.payload = opts.payload || null;
         this.state = opts.state || Message.STATE_DRAFT;
-        this.tweetId = opts.tweetId || null;
-
-        if (this.payload.length > Message.MAX_SIZE_B) {
-            throw new Fail(Fail.BADPARAM, "payload exceeds limit");
-        }
+        this.tweetId = opts.tweetId || null; // Save it so that we can clean it up.
     }
 
-    Message.compose = function (recipient, body) {
+    // length checks on the message are to be performed before
+    // this function is called.
+    Message.compose = function (recipientCert, userMessage) {
+        var account = Vault.getAccount();
+        if (!account) {
+            throw new Fail(Fail.GENERIC, "no current account. cannot send message.");
+        }
+        var to = recipientCert || null;
+
+        if (account === null) {
+            return null;
+        }
+
+        if (to === null) {
+            // mock cert
+            to = Certs.UserCert.fromAccount(account);
+        }
+
         var msg = new Message({
-            to: recipient,
-            payload: body,
+            fromAccount: account,
+            to: to,
+            payload: userMessage,
             state: Message.STATE_DRAFT
         });
         return msg;
@@ -96,27 +127,72 @@ window.Outbox = (function (module) {
 
     var M = Message;
 
-    // twitter hard limit
-    M.TWEET_COUNT = 140;
+    /*
+      TWISTOR MESSAGE
 
-    // room for the group of recipient
-    M.TWEET_RCPT_GROUP_COUNT = 19;
+      tweet := <twistor_envelope> base16k(<twistor_body>)
 
-    // room for our message content within the tweet text (in twitter chars)
-    M.TWISTOR_BODY_COUNT = M.TWEET_COUNT - M.TWEET_RCPT_GROUP_COUNT - 1;
+      twistor_envelope: <recipient_group>+ 'space'
+      recipient_group :=  '#' <group_name>
+      group_name := valid twitter hashtag
 
-    // base16k encoding allows encoding a 14bit integer at the cost of
-    // one twitter-char.
-    M.USABLE_BITS_PER_TWITTER_CHAR = 14;
+      twistor_body := <version> <ciphertext> <signature> <unusedbody>
 
-    // usable bits for twistor body
-    M.TWISTOR_BODY_BITS = M.TWISTOR_BODY_COUNT * M.USABLE_BITS_PER_TWITTER_CHAR;
+      version := 0x01  # 1B
 
-    M.TWISTOR_BASE16K_BYTES = Math.floor(M.TWISTOR_BODY_BITS / 8);
+      ciphertext := eg_encrypt(<plaintext>)
 
-    // max bits that we can encrypt from the user's message
-    M.TWISTOR_MAX_PLAINTEXT_BITS = M.TWISTOR_BODY_BITS - KeyClasses.ECC_SIZE_OVERHEAD_BITS;
-    M.TWISTOR_MAX_PLAINTEXT_BYTES = Math.floor(M.TWISTOR_MAX_PLAINTEXT_BITS / 8);
+      plaintext := <rcptid> <userbody>
+
+      signature := ecdsa_sign(<twistor_epoch>, <version>, <ciphertext>)
+
+      twistor_epoch := ((unix time in sec) >> 8) & 0xffffffff   // 256s is 4 min 16 sec
+
+      rcptid := 64bit twitter id of recipient
+
+      userbody := (len(<usermsg>) & 0xff) utf8encode(<usermsg>)  <padding>*  //this utf8encode has no trailing \0
+      padding := 0x00
+    */
+
+    var msgConstants = (function () {
+        const MSG_VERSION = 0x01;
+
+        const TWEET_COUNT = 140;
+        const RECIPIENT_GROUP_COUNT = 19;
+        const ENVELOPE_COUNT = RECIPIENT_GROUP_COUNT + 1;
+        const USABLE_BITS_PER_TWITTER_CHAR = 14; // base16k
+        const TWISTOR_BODY_BITS = (TWEET_COUNT - ENVELOPE_COUNT) * USABLE_BITS_PER_TWITTER_CHAR;
+
+        const SIGNATURE_BITS = KeyClasses.ECC_SIGN_BITS;
+        const VERSION_BITS = 8;
+        const NUM_ECC_CIPHERS = 3;
+        const CIPHERTEXT_BITS = NUM_ECC_CIPHERS * KeyClasses.ECC_DEFLATED_CIPHER_BITS;
+        const UNUSED_BITS = TWISTOR_BODY_BITS - VERSION_BITS - CIPHERTEXT_BITS - SIGNATURE_BITS;
+        if (UNUSED_BITS < 0) {
+            throw new Error("over budgeting");
+        }
+
+        const PLAINTEXT_BITS = NUM_ECC_CIPHERS * KeyClasses.ECC_EG_MSG_BITS_PER_POINT;
+        const RECPT_ID_BITS = 64;
+        const USER_BODY_BITS = PLAINTEXT_BITS - RECPT_ID_BITS;
+
+        const USER_MSG_BITS = USER_BODY_BITS - 8; // 8b for len
+        const USER_MSG_BYTES = Math.floor(USER_MSG_BITS / 8);
+        const USER_MSG_PAD = Utils.stringRepeat('\0', USER_MSG_BYTES);
+        return {
+            MSG_VERSION,
+            TWEET_COUNT,
+            RECIPIENT_GROUP_COUNT,
+            ENVELOPE_COUNT,
+            CIPHERTEXT_BITS,
+            PLAINTEXT_BITS,
+            UNUSED_BITS,
+            USER_BODY_BITS,
+            USER_MSG_BYTES,
+            USER_MSG_PAD,
+        };
+    })();
+    Object.keys(msgConstants).forEach(k => Message[k] = msgConstants[k]);
 
     // utf8Len
     //
@@ -127,6 +203,39 @@ window.Outbox = (function (module) {
             return 0;
         }
         return unescape(encodeURIComponent(userStr));
+    };
+
+    M.generatePadding = function (msgLenBytes) {
+        return M.USER_MSG_PAD.substr(0, M.USER_MSG_BYTES - msgLenBytes);
+    };
+
+
+    /**
+       calculates how much of the message payload
+       quota is consumed by the given userStr, in
+       bytes.
+
+       @userStr a string taken from user input (or DOM)
+
+       @returns
+         { cur: int,   // bytes used
+           quota: int  // total allowed
+         }
+    */
+    M.messageQuota = function (userStr) {
+        userStr = userStr || "";
+        var quota = {
+            cur: M.utf8Len(userStr),
+            quota: M.USER_MSG_BYTES
+        };
+        return quota;
+    };
+
+    M.twistorEpoch = function () {
+        /*jshint bitwise: false */
+        var secs = Math.floor(Date.now() / 1000);
+        secs >>>= 8;
+        return secs & 0xffffffff;
     };
 
     Message.STATE_DRAFT = "DRAFT"; // message is being drafted
@@ -148,8 +257,46 @@ window.Outbox = (function (module) {
             }
         },
 
-        encodeForTweet1: function () {
+        _getPostGroups: function () {
+            // FIXME we should hop to a different post leaf.
+            // the groups shouldn't be inferred from the cert.
+            return this.fromAccount.groups.map(stats => "#" + stats.name).join(" ");
+        },
 
+        encodeForTweet: function () {
+            var userbody = pack('userbody',
+                                pack.Trunc('usermsg_padded', {len: M.USER_BODY_BITS},
+                                           pack.VarLen('usermsg',
+                                                       pack.Utf8('utf8', this.payload || ""))));
+
+            /**
+               ciphertext starts with recipientid so that sender can determine if it is the indended
+               recipient.
+            */
+            var ciphertext = pack.EGPayload('ciphertext', {encryptKey: this.to.key, decryptKey: null},
+                                            pack.Trunc('plaintext', {len: M.PLAINTEXT_BITS},
+                                                       pack.Decimal('rcptid', {len: 64}, this.to.primaryId),
+                                                       userbody));
+
+            /**
+               signature := ecdsa_sign(<twistor_epoch>, <version>, <ciphertext>)
+            */
+            var twistor_epoch = pack.Number('epoch', {len: 32}, M.twistorEpoch());
+
+            var twistor_body = pack('twistor_body',
+                                    pack.Number('version', {len: 8}, 0x01),
+                                    ciphertext,
+                                    pack.ECDSASignature('signature', {signKey: this.fromAccount.key, verifyKey: null},
+                                                        twistor_epoch,
+                                                        pack.FieldRef('vref', {path: ["..", "version"]}),
+                                                        pack.FieldRef('cref', {path: ["..", "ciphertext"]})),
+                                    pack.Trunc('unused', {len: M.UNUSED_BITS}));
+
+            var tweet = pack.Str('tweet', {},
+                                 this._getPostGroups(),
+                                 ' ',
+                                 pack.Base16k('b16', {}, twistor_body));
+            return tweet.toString({debug: true});
         }
     });
 
@@ -195,7 +342,8 @@ window.Outbox = (function (module) {
 
     var exports = {
         Message,
-        Queue
+        Queue,
+        PeriodicSend
     };
     Object.keys(exports).forEach(k => module[k] = exports[k]);
     return module;
