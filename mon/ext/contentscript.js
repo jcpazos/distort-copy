@@ -1053,26 +1053,32 @@
             return new Promise(function (resolve, reject) {
 
                 var data = opts.data;
-                var userHandle = opts.githubUser;
+                var userHandle = opts.ghHandle;
                 var preq = new XMLHttpRequest();
 
-                var fd = new FormData();
-                fd.append("filename", data.filename);
-                fd.append("authenticity_token", data.authenticity_token);
-                fd.append("new_filename", data.new_filename);
-                fd.append("commit", data.commit);
-                fd.append("same_repo", data.same_repo);
-                fd.append("content_changed", data.content_changed);
-                fd.append("value", data.value);
-                fd.append("message", data.message);
-                fd.append("commit-choice", data.commit_choice);
-                fd.append("target_branch", data.target_branch);
+                var formData = [
+                    ['filename', data.filename],
+                    ['authenticity_token', data.authenticity_token],
+                    ['new_filename', data.new_filename],
+                    ['commit', data.commit],
+                    ['same_repo', "1"],
+                    ['content_changed', (data.authenticity_token)?"true":"false"],
+                    ['value', data.value],
+                    ['message', data.message],
+                    ['placeholder_message:', 'Update README.md'],
+                    ['description', ''],
+                    ['commit-choice', data.commit_choice],
+                    ['target_branch', data.target_branch],
+                    ['quick_pull', ''],
+                ];
+                var body = formData.map(item => encodeURIComponent(item[0]) + "=" + encodeURIComponent(item[1])).join("&");
+
 
                 //TODO check that all parameters are present. throw otherwise
 
                 var url = "https://www.github.com/" + encodeURIComponent(userHandle) + "/twistor-app/edit/master/README.md";
                 preq.open("POST", url, true);
-                preq.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+                preq.setRequestHeader("Content-type", "application/x-www-form-urlencoded; charset=utf-8");
 
                 // console.debug("Generated post: ", postData, " LENGTH: ", postData.length);
 
@@ -1080,8 +1086,8 @@
                     console.error("Problem updating Github repo.", [].slice.apply(arguments));
                     return reject(new Fail(Fail.GENERIC, "Failed to update Github repo."));
                 };
-
-                preq.send(fd);
+                
+                preq.send(body);
             });
         },
 

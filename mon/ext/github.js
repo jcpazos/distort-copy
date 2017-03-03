@@ -346,10 +346,11 @@ window.Github = (function() {
                     value: keys.join(" "),
                     message: "Updating certificate",
                     commit_choice: "direct",
-                    target_branch: "master"
+                    target_branch: "master",
+                    ghHandle: account.secondaryHandle,
                 };
 
-                return githubCtx.callCS("update_repo", {data: fd, userHandle: githubCtx.githubUser})
+                return githubCtx.callCS("update_repo", {data: fd, ghHandle: account.secondaryHandle})
                         .then(resp => { /*jshint unused: false */
 
                             // TODO might want to return a commit id or a timestamp, for our records.
