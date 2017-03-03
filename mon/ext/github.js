@@ -294,7 +294,7 @@ window.Github = (function() {
                     preq.onload = function () {
                         if (preq.status === 404) {
                             return reject(new Fail(Fail.NOENT, "repo doesn't exist"));
-                        } else if (preq.status <= 200 || preq.status >= 400) {
+                        } else if (preq.status < 200 || preq.status >= 400) {
                             return reject(new Fail(Fail.GENERIC, "can't fetch repo edit form"));
                         }
                         var parser = new DOMParser();
