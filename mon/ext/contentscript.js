@@ -1083,10 +1083,18 @@
                 // console.debug("Generated post: ", postData, " LENGTH: ", postData.length);
 
                 preq.onerror = function () {
-                    console.error("Problem updating Github repo.", [].slice.apply(arguments));
-                    return reject(new Fail(Fail.GENERIC, "Failed to update Github repo."));
+                    return reject(Fail.fromVal(preq).prefix("Could not update GitHub repo"));
                 };
-                
+
+                preq.onload = function () {
+                    if (preq.status < 200 || preq.status >= 300) {
+                        // if the response is a 301, it doesn't look like the browser follows the
+                        // redirect to post again. so we need the 200 range
+                        return reject(Fail.fromVal(preq).prefix("Could not update GitHub repo"));
+                    }
+                    resolve(true);
+                };
+
                 preq.send(body);
             });
         },
