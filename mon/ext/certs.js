@@ -260,7 +260,7 @@ window.Certs = (function (module) {
             // first time we fill this in -- need at least one group
             if (!this.groups || this.groups.length === 0) {
                 if (clean.length === 0) {
-                    throw new Fail(Fail.BADPARAM, "no groups specified");
+                    throw new Fail(Fail.BADPARAM, "partial cert has no groups");
                 }
                 this.groups = clean;
                 return;
