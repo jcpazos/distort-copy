@@ -1004,7 +1004,7 @@
                 fd.append("repository[auto_init]", data.auto_init);
                 fd.append("repository[auto_init]", "1");
 
-                var url = "https://www.github.com/new";
+                var url = "https://github.com/new";
                 preq.open("POST", url, true);
                 preq.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
 

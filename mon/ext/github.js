@@ -381,7 +381,7 @@ window.Github = (function() {
                     var authToken;
 
                     var preq = new XMLHttpRequest();
-                    preq.open("GET", "https://www.github.com/new", true);
+                    preq.open("GET", "https://github.com/new", true);
                     preq.onerror = function (err) {
                         console.error("Problem loading Github page", [].slice.apply(arguments));
                         reject(new Fail(Fail.GENERIC, "Error loading Github page: " + err));
