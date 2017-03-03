@@ -996,13 +996,28 @@
                 var preq = new XMLHttpRequest();
 
                 var fd = new FormData();
-                fd.append("owner", data.secondaryHandle);
-                fd.append("authenticity_token", data.authToken);
-                fd.append("repository[name]", data.name);
-                fd.append("repository[description]", data.description);
-                fd.append("repository[public]", data.public);
-                fd.append("repository[auto_init]", data.auto_init);
-                fd.append("repository[auto_init]", "1");
+
+                var fields = ["owner", "authToken", "name", "description", "public"];
+                var missing = [];
+                for (var i in fields) {
+                    if (data[fields[i]] === undefined) {
+                        missing.push(fields[i]);
+                    }
+                }
+                if (missing.length > 0) {
+                    throw new Fail(Fail.BADPARAM, "parameters missing: " + missing.join(" "));
+                }
+
+                fd.append("owner", "" + data.owner);
+                fd.append("authenticity_token", "" + data.authToken);
+                fd.append("repository[name]", "" + data.name);
+                fd.append("repository[description]", "" + data.description);
+                fd.append("repository[public]", "" + data.public);
+                if (data.auto_init === undefined) {
+                    fd.append("repository[auto_init]", "1");
+                } else {
+                    fd.append("repository[auto_init]", "" + data.auto_init);
+                }
 
                 var url = "https://github.com/new";
                 preq.open("POST", url, true);
