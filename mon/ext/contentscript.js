@@ -1034,14 +1034,14 @@
                         // redirect to post again. so we need the 200 range
                         var msg = "HTTP Error when creating GitHub repo: (" + preq.status + ") " + preq.statusText;
                         console.error(msg, preq);
-                        return reject(new Fail(Fail.GENERIC, msg));
+                        return reject(Fail.fromVal(preq).prefix("Could not create GitHub repo"));
                     }
                     resolve(true);
                 };
 
                 preq.onerror = function (err) {
                     console.error("Problem creating Github repo.", [].slice.apply(arguments));
-                    return reject(new Fail(Fail.GENERIC, "Failed to create Github repo: " + err));
+                    return reject(Fail.fromVal(preq).prefix("Could not create GitHub repo"));
                 };
 
                 preq.send(body);
