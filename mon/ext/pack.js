@@ -52,10 +52,11 @@ window.pack = (function () {
     };
 
     P.pathToString = function (path) {
-        return (path||[]).map(p => p.name).join('.');
+        return (path||[]).map(p => p.name || "<noname>").join('.');
     };
 
-    // finds field @that from @workingPath
+    // returns field located at path @that, relative from
+    // @workingPath.
     //
     // throws error if the field is not found.
     P.pathResolve = function (workingPath, that) {
@@ -79,7 +80,7 @@ window.pack = (function () {
                 cwd.pop();
                 return;
             } else if (dname === "/") {
-                cwd.slice(0, 1);
+                cwd = cwd.slice(0, 1);
                 return;
             }
             var next = cwd[cwd.length -1].getField(dname);
@@ -88,6 +89,7 @@ window.pack = (function () {
             }
             cwd.push(next);
         });
+        return cwd[cwd.length - 1];
     };
 
     // Add a field at the end of the packed struct.
@@ -104,8 +106,8 @@ window.pack = (function () {
         return (i === -1) ? null : this.fields[i];
     };
 
-    P.prototype.fieldToBits = function (path, field) {
-        return field.toBits(path);
+    P.prototype.fieldToBits = function (path, field, opts) {
+        return field.toBits(path, opts);
     };
 
     P.prototype.reduceBits = function (fieldsInBits) {
@@ -119,15 +121,37 @@ window.pack = (function () {
      *
      * It should return a bitArray
      */
-    P.prototype.toBits = function (_path) {
+    P.prototype.toBits = function (_path, opts) {
         if (!_path) {
+            // 0 arg
+            _path = [this];
+            opts = {};
+        } else if (_path.constructor === Object) {
+            // one object arg. shift down.
+            opts = _path;
             _path = [this];
         }
+        opts = opts || {}; // optional options.
+
         return this.reduceBits(
-            this.fields.map(field => {
-                var npath = _path.concat([field]);
+            this.fields.map((field, fieldIdx) => {
+                var npath;
+                if (!field.name) {
+                    // most likely a string literal.
+                    npath = _path.concat([{name: "" + fieldIdx}]);
+                } else {
+                    npath = _path.concat([field]);
+                }
                 //try {
-                    return this.fieldToBits(npath, field);
+                var fieldBits = this.fieldToBits(npath, field, opts);
+                if (opts && opts.debug) {
+                    if (fieldBits instanceof Array) {
+                        console.debug("field " + P.pathToString(npath) + " bitlen: " + BA.bitLength(fieldBits));
+                    } else if ((typeof fieldBits) === "string") {
+                        console.debug("field " + P.pathToString(npath) + " slen: " + fieldBits.length);
+                    }
+                }
+                return fieldBits;
                 //} catch (err) {
                 //if (!(err instanceof Fail)) {
                 //throw new Fail(Fail.BADPARAM, "field " + P.pathToString(npath) + ": " + err.message).at(err);
@@ -178,12 +202,26 @@ window.pack = (function () {
         }
     });
 
-    // len-prefixed item. len is in bytes
+    // len-prefixed item. len is stored in bytes.
+    // <len 1B><payload variable len>
+    //
+    // payload is clamped to nearest byte boundary
     P.VarLen = P.define({
-        toBits: function () {
+        toBits: function (...args) {
             // jshint bitwise: false
-            var allBits =  P.VarLen.__super__.apply(this, [].slice.apply(arguments)); // super.toBits()
-            return BA.concat(new sjcl.bn(BA.bitLength(allBits) / 8 | 0).toBits(), allBits);
+            var allBits =  P.VarLen.__super__.toBits.apply(this, args);
+            var bLen = BA.bitLength(allBits);
+            var byteLen = Math.ceil(bLen / 8);
+
+            if ((bLen / 8) % 1 !== 0) {
+                allBits = BA.concat(allBits, [0]);
+                allBits = BA.clamp(allBits, byteLen * 8);
+            }
+            var res = BA.concat(new sjcl.bn(BA.bitLength(allBits) / 8 | 0).toBits(), allBits);
+            if (args[1] && args[1].debug) {
+                console.debug(P.pathToString(args[0]) + " VarLen(lenB=" + (byteLen) + ", nbits=" + (byteLen * 8) + ")");
+            }
+            return res;
         }
     });
 
@@ -202,7 +240,7 @@ window.pack = (function () {
             }
         },
         toBits: function (...args) {
-            var allBits =  P.Trunc.__super__.toBits.apply(this, args), // super.toBits()
+            var allBits =  P.Trunc.__super__.toBits.apply(this, args),
                 bLen = BA.bitLength(allBits),
                 deltaWords = Math.ceil((this.opts.len - bLen) / 32),
                 pad;
@@ -226,6 +264,11 @@ window.pack = (function () {
 
     // a field aliasing another in the message.
     // useful when the same field is used multiple times.
+    // e.g.
+    //    FieldRef('vref', {path: ["..", "version"]})
+    //
+    // the path is relative to the parent of FieldRef.
+    // no checks for cycles.
     P.FieldRef = P.define({
         validateOpts: function () {
             if (this.fields.length !== 0) {
@@ -236,21 +279,22 @@ window.pack = (function () {
             }
         },
 
-        toBits: function (cwd) {
+        toBits: function (path, ...rest) {
+            var cwd = path.slice(0, -1);
             var ref = P.pathResolve(cwd, this.opts.path);
-            return ref.toBits(cwd);
+            return ref.toBits(cwd, ...rest);
         },
     });
     // concatenated stringified contents
     P.Str = P.define({
-        fieldToBits: function (path, field) {
-            return field.toString();
+        fieldToBits: function (path, field, ...args) {
+            return field.toString(path, ...args);
         },
         reduceBits: function (strings) {
             return strings.reduce((a, b) => a + b, "");
         },
-        toString: function () {
-            return this.toBits();
+        toString: function (...args) {
+            return this.toBits(...args);
         }
     });
 

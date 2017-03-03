@@ -322,15 +322,25 @@ window.KeyClasses = (function (module) {
     // packs input into  [<Ybits 8bit><Xbits 2*192>
     //
     pack.EGPayload = pack.define({
-        toBits: function () {
+        toBits: function (path, opts) {
             var allBits =  pack.EGPayload.__super__.toBits.apply(this, [].slice.apply(arguments)); // super.toBits()
             var privKey = this.opts.encryptKey;
             var ciphers = privKey.encryptEG(allBits, {encoding: "bits"});
-            return ciphers.map(cipher => {
+            if (opts && opts.debug) {
+                console.debug("EGPayload nciphers: " + ciphers.length, "inputbits: " + sjcl.bitArray.bitLength(allBits));
+            }
+
+            var x = ciphers.map(cipher => {
                 return KeyClasses.packEGCipher(cipher, {outEncoding: "bits"});
             }).reduce((a, b) => {
                 return sjcl.bitArray.concat(a, b);
             }, []);
+
+            if (opts && opts.debug) {
+                console.debug("EGPayload outputbits: " + sjcl.bitArray.bitLength(x));
+            }
+
+            return x;
         },
         validateOpts: function () {
             Utils.assertType(this.opts, {

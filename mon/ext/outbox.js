@@ -18,9 +18,9 @@
 **/
 
 /*global Fail, Utils, Emitter, Vault,
-  ECCPubKey, KeyClasses, Certs,
+  KeyClasses, Certs,
   unescape,
-  sjcl, base16k, pack
+  pack
 */
 
 window.Outbox = (function (module) {
@@ -62,7 +62,6 @@ window.Outbox = (function (module) {
         },
 
         generateNoise: function () {
-            var account = Vault.getAccount();
             return Message.compose(null, "");
         }
     });
@@ -89,6 +88,11 @@ window.Outbox = (function (module) {
     Message.compose = function (recipientCert, userMessage) {
         var account = Vault.getAccount();
         var to = recipientCert || null;
+
+        if (account === null) {
+            return null;
+        }
+
         if (to === null) {
             // mock cert
             to = Certs.UserCert.fromAccount(account);
@@ -237,7 +241,7 @@ window.Outbox = (function (module) {
         _getPostGroups: function () {
             // FIXME we should hop to a different post leaf.
             // the groups shouldn't be inferred from the cert.
-            return this.fromAccount.groups.map(stats => "#" + stats.name);
+            return this.fromAccount.groups.map(stats => "#" + stats.name).join(" ");
         },
 
         encodeForTweet: function () {
@@ -265,15 +269,15 @@ window.Outbox = (function (module) {
                                     ciphertext,
                                     pack.ECDSASignature('signature', {signKey: this.fromAccount.key, verifyKey: null},
                                                         twistor_epoch,
-                                                        pack.FieldRef('vref', {path: ["/", "version"]}),
-                                                        pack.FieldRef('cref', {path: ["/", "ciphertext"]})),
+                                                        pack.FieldRef('vref', {path: ["..", "version"]}),
+                                                        pack.FieldRef('cref', {path: ["..", "ciphertext"]})),
                                     pack.Trunc('unused', {len: M.UNUSED_BITS}));
 
             var tweet = pack.Str('tweet', {},
                                  this._getPostGroups(),
                                  ' ',
                                  pack.Base16k('b16', {}, twistor_body));
-            return tweet.toString();
+            return tweet.toString({debug: true});
         }
     });
 
