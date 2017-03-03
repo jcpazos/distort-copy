@@ -199,7 +199,7 @@ function Fail(code, message) {
     this.code = (code === undefined) ? null:code;
     this.name = "Fail";
     // pop first frame off the stack
-    this.stack = "Fail" + stack.substr(stack.indexOf("\n", stack.indexOf("\n") + 1));
+    this.stack = "Fail " + this.message + stack.substr(stack.indexOf("\n", stack.indexOf("\n") + 1));
 }
 _extends(Fail, Error, {
     prefix: function (message) {
