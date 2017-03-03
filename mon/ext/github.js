@@ -360,44 +360,67 @@ window.Github = (function() {
         },
 
         createGithubRepo: function(account) {
-            return (account => {
-                var authToken;
+            function isGithubCtx(ctx) {
+                return (!ctx.isMaimed && ctx.app === "github.com");
+            }
 
-                var preq = new XMLHttpRequest();
-                preq.open("GET", "https://www.github.com/new", true);
-                preq.onerror = function () {
-                    console.error("Problem loading Github page", [].slice.apply(arguments));
-                    throw new Error("Error loading Github page");
-                };
+            return this.getGithubUserInfo().then(githubInfo => {
+                if (githubInfo.githubUser === null) {
+                    throw new Fail(Fail.BADAUTH, "Make sure you are logged in to Github (in any tab).");
+                }
+                if (githubInfo.githubUser !== account.secondaryHandle) {
+                    throw new Fail(Fail.BADAUTH,
+                        "Github authenticated under a different username. Found '" + githubInfo.githubUser +
+                        "' but expected  '" + account.secondaryHandle + "'.");
+                }
+                return githubInfo;
+            }).then(githubInfo => {
+                // fill in auth token
+                githubInfo.authToken = null;
+                return new Promise((resolve, reject) => {
+                    var authToken;
 
-                // fetch the Create Repository page
+                    var preq = new XMLHttpRequest();
+                    preq.open("GET", "https://www.github.com/new", true);
+                    preq.onerror = function (err) {
+                        console.error("Problem loading Github page", [].slice.apply(arguments));
+                        reject(new Fail(Fail.GENERIC, "Error loading Github page: " + err));
+                    };
 
-                preq.onload = function () {
+                    // fetch the Create Repository page
+
+                    preq.onload = function () {
+                        if (preq.status < 200 || preq.status >= 399) {
+                            return reject(new Fail(Fail.GENERIC, "Server returned (" + preq.status + ") " + preq.statusText));
+                        }
+                        // parse the response
+                        var parser = new DOMParser();
+                        var xmlDoc = parser.parseFromString(preq.responseText, "text/html");
+
+                        var createForm = xmlDoc.getElementsByClassName("js-braintree-encrypt");
+                        if (createForm === null || createForm.length !== 1) {
+                            console.error("js-braintree-encrypt create form fetch failed due to changed format");
+                            reject(new Fail(Fail.GENERIC, "js-braintree-encrypt create form fetch failed due to changed format"));
+                        }
+
+                        authToken = createForm[0].authenticity_token.value;
+                        if (authToken === null || authToken.length !== 1) {
+                            console.error("authenticity_token authToken fetch failed due to changed format");
+                            reject(new Fail(Fail.GENERIC, "authenticity_token authToken fetch failed due to changed format"));
+                        }
+                        githubInfo.authToken = authToken;
+                        resolve(githubInfo);
+                    };
+
+                    preq.send();
                     console.debug("Sent request to create github repo");
-                    // parse the response
-                    var parser = new DOMParser();
-                    var xmlDoc = parser.parseFromString(preq.responseText, "text/html");
-
-                    var createForm = xmlDoc.getElementsByClassName("js-braintree-encrypt");
-                    if (createForm === null || createForm.length !== 1) {
-                        console.error("js-braintree-encrypt create form fetch failed due to changed format");
-                        throw new Fail(Fail.GENERIC, "js-braintree-encrypt create form fetch failed due to changed format");
-                    }
-
-                    authToken = createForm[0].authenticity_token.value;
-                    if (authToken === null || authToken.length !== 1) {
-                        console.error("authenticity_token authToken fetch failed due to changed format");
-                        throw new Fail(Fail.GENERIC, "authenticity_token authToken fetch failed due to changed format");
-                    }
-                };
-
-                preq.send();
-
+                });
+            }).then(githubInfo => {
+                // fill in ctx
                 var githubContents = API.filterContext(isGithubCtx);
                 if (githubContents.length > 0) {
-
                     return {
-                        token: authToken,
+                        token: githubInfo.authToken,
                         //githubId: githubInfo.githubID,
                         githubUser: githubInfo.githubUser,
                         ctx: githubContents[0]
@@ -406,7 +429,7 @@ window.Github = (function() {
                     console.debug("No github ctx open! Need to open a new tab.");
                     return API.openContext("https://github.com/").then(function (ctx) {
                         return {
-                            token: authToken,
+                            token: githubInfo.authToken,
                             //githubId: githubInfo.githubID,
                             githubUser: githubInfo.githubUser,
                             ctx: ctx
@@ -424,14 +447,14 @@ window.Github = (function() {
                 };
                 console.debug("About to call CS to create the repo");
                 return githubCtx.ctx.callCS("create_repo", {data: fd})
-                        // TODO do we need these checks at the end?
-                        .then(resp => {
-                            updateStatus("Github repo successfully created");
-                        })
-                        .catch(err => {
-                            return err;
-                        });
-                // return Promise.all(allPromises);
+                    .then(resp => {
+                        // Re: Do we need these checks?
+                        // Alex: check that resp is what you expect on success.
+                        //       if the content script throws an error in case of failure,
+                        //       then it will propagate on the 'catch' side of the promise chain.
+                        console.debug("Github repo successfully created");
+                        return resp;
+                    });
             });
         }
     };
