@@ -302,7 +302,7 @@ function typeToString(t) {
 function OneOf() {
     "use strict";
 
-    if (this === window || this === null || this === undefined) {
+    if (!(this instanceof OneOf)) {
         // allow 'new' to be omitted for brevity
         OneOf._expand = Array.prototype.slice.call(arguments, 0);
         return new OneOf();
