@@ -303,7 +303,7 @@ window.KeyClasses = (function (module) {
     pack.ECDSASignature = pack.define({
         toBits: function () {
             // jshint bitwise: false
-            var allBits =  pack.toBits.apply(this, [].slice.apply(arguments)); // super.toBits()
+            var allBits =  pack.ECDSASignature.__super__.toBits.apply(this, [].slice.apply(arguments)); // super.toBits()
             var privKey = this.opts.signKey;
             return privKey.signText(allBits, {encoding: "bits", outEncoding: "bits"});
         },
@@ -323,7 +323,7 @@ window.KeyClasses = (function (module) {
     //
     pack.EGPayload = pack.define({
         toBits: function () {
-            var allBits =  pack.toBits.apply(this, [].slice.apply(arguments)); // super.toBits()
+            var allBits =  pack.EGPayload.__super__.toBits.apply(this, [].slice.apply(arguments)); // super.toBits()
             var privKey = this.opts.encryptKey;
             var ciphers = privKey.encryptEG(allBits, {encoding: "bits"});
             return ciphers.map(cipher => {

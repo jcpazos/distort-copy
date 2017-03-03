@@ -95,7 +95,7 @@ window.Outbox = (function (module) {
         }
         var msg = new Message({
             fromAccount: account,
-            to: null,
+            to: to,
             payload: userMessage,
             state: Message.STATE_DRAFT
         });
@@ -234,6 +234,12 @@ window.Outbox = (function (module) {
             }
         },
 
+        _getPostGroups: function () {
+            // FIXME we should hop to a different post leaf.
+            // the groups shouldn't be inferred from the cert.
+            return this.fromAccount.groups.map(stats => "#" + stats.name);
+        },
+
         encodeForTweet: function () {
             var userbody = pack('userbody',
                                 pack.Trunc('usermsg_padded', {len: M.USER_BODY_BITS},
@@ -263,10 +269,10 @@ window.Outbox = (function (module) {
                                                         pack.FieldRef('cref', {path: ["/", "ciphertext"]})),
                                     pack.Trunc('unused', {len: M.UNUSED_BITS}));
 
-            var tweet = pack.Strings('tweet', {},
-                                     this._getPostGroups(),
-                                     ' ',
-                                     pack.Base16k('b16', {}, twistor_body));
+            var tweet = pack.Str('tweet', {},
+                                 this._getPostGroups(),
+                                 ' ',
+                                 pack.Base16k('b16', {}, twistor_body));
             return tweet.toString();
         }
     });
