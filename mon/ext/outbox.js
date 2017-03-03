@@ -20,7 +20,7 @@
 /*global Fail, Utils, Emitter, Vault,
   KeyClasses, Certs,
   unescape,
-  pack
+  pack, API
 */
 
 window.Outbox = (function (module) {
@@ -57,7 +57,22 @@ window.Outbox = (function (module) {
                 if (next === null) {
                     next = this.generateNoise();
                 }
-                resolve(true);
+
+                //FIXME might have to requeue.
+                if (!next.fromAccount) {
+                    throw new Fail(Fail.GENERIC, "no account associated with message");
+                }
+                var groupNames = next.fromAccount.groups.map(stats => stats.name);
+
+                if (!groupNames || groupNames.length === 0) {
+                    throw new Fail(Fail.GENERIC, "account has no groups to post to. aborting message post");
+                }
+
+                groupNames.sort();
+                resolve(API.postTweets(next.fromAccount, [
+                    {msg: next.encodeForTweet(),
+                     groups: groupNames}
+                ]));
             });
         },
 
@@ -87,6 +102,9 @@ window.Outbox = (function (module) {
     // this function is called.
     Message.compose = function (recipientCert, userMessage) {
         var account = Vault.getAccount();
+        if (!account) {
+            throw new Fail(Fail.GENERIC, "no current account. cannot send message.");
+        }
         var to = recipientCert || null;
 
         if (account === null) {
@@ -97,6 +115,7 @@ window.Outbox = (function (module) {
             // mock cert
             to = Certs.UserCert.fromAccount(account);
         }
+
         var msg = new Message({
             fromAccount: account,
             to: to,
@@ -323,7 +342,8 @@ window.Outbox = (function (module) {
 
     var exports = {
         Message,
-        Queue
+        Queue,
+        PeriodicSend
     };
     Object.keys(exports).forEach(k => module[k] = exports[k]);
     return module;

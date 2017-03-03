@@ -21,7 +21,7 @@
   chrome, Promise, performance,
   ECCPubKey, AESKey, KeyLoader, Friendship,
   UI, Utils, Vault, Twitter, Certs, base16k,
-  Events, API,
+  Events, API, Outbox,
   getHost, Fail, assertType, OneOf, KH_TYPE, MSG_TYPE, _extends
 */
 
@@ -1510,6 +1510,12 @@ function BGAPI() {
     window.setTimeout(function () {
         var initialUser = Vault.getUsername();
         API.accountChanged(initialUser);
+
+        var messageQueue = new Outbox.Queue({FIXME: true});
+        var sender = new Outbox.PeriodicSend({queue: messageQueue});
+        window.setTimeout(function () {
+            sender.start();
+        }, 5000);               // give it some time to breathe when loading the extension.
     }, 0);
 }
 
