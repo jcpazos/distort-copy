@@ -24,7 +24,6 @@
 /*global
   Promise, ECCKeyPair,
   KeyLoader, Fail,
-
   Events
 */
 
@@ -97,7 +96,6 @@ window.Vault = (function () {
                 var acct = new Account(acctOpts);
                 var userid = acct.id;
 
-                var inStore = acct.toStore();
                 var sk = Vault.ACCOUNT_PREFIX + btoa(userid);
                 var settings = {};
 
@@ -110,7 +108,7 @@ window.Vault = (function () {
                 var users = that.get("usernames");
                 users.push(userid);
 
-                settings[sk] = inStore;
+                settings[sk] = acct;
 
                 // single user -- set default username
                 if (users.length === 1) {
@@ -176,11 +174,11 @@ window.Vault = (function () {
                     settings.username = undefined;
                 }
 
-                return that.set(settings).then(function () {
+                resolve(that.set(settings).then(function () {
                     Events.emit('account:deleted', userid);
                     Events.emit('account:changed', settings.username);
                     return userid;
-                });
+                }));
             });
         },
 

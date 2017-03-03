@@ -18,22 +18,20 @@
 **/
 
 /*global Fail, Utils, Emitter, Vault,
-  ECCPubKey, KeyClasses, Certs,
+  KeyClasses, Certs,
   unescape,
-  sjcl, base16k
+  pack, API
 */
 
 window.Outbox = (function (module) {
     "use strict";
 
-    /** used as the recipient for noise messages */
-    var randomPubKey = new ECCPubKey();
-
-    var BA = sjcl.bitArray;
-
     /**
        posts a message from a queue at regular intervals. if no
        message is available, it generates a random noise message.
+
+       // noise messages are sent to the current account.
+       // they should be filtered on the way in.
 
        opts: {
           periodMs: average period in milliseconds between sends
@@ -59,12 +57,27 @@ window.Outbox = (function (module) {
                 if (next === null) {
                     next = this.generateNoise();
                 }
-                resolve(true);
+
+                //FIXME might have to requeue.
+                if (!next.fromAccount) {
+                    throw new Fail(Fail.GENERIC, "no account associated with message");
+                }
+                var groupNames = next.fromAccount.groups.map(stats => stats.name);
+
+                if (!groupNames || groupNames.length === 0) {
+                    throw new Fail(Fail.GENERIC, "account has no groups to post to. aborting message post");
+                }
+
+                groupNames.sort();
+                resolve(API.postTweets(next.fromAccount, [
+                    {msg: next.encodeForTweet(),
+                     groups: groupNames}
+                ]));
             });
         },
 
         generateNoise: function () {
-            return Message.compose(randomPubKey, "");
+            return Message.compose(null, "");
         }
     });
 
@@ -82,15 +95,30 @@ window.Outbox = (function (module) {
         this.to = opts.to || null; // Cert
         this.payload = opts.payload || null;
         this.state = opts.state || Message.STATE_DRAFT;
-        this.tweetId = opts.tweetId || null;
+        this.tweetId = opts.tweetId || null; // Save it so that we can clean it up.
     }
 
-    Message.compose = function (recipient, userMessage) {
+    // length checks on the message are to be performed before
+    // this function is called.
+    Message.compose = function (recipientCert, userMessage) {
         var account = Vault.getAccount();
-        // todo len check
+        if (!account) {
+            throw new Fail(Fail.GENERIC, "no current account. cannot send message.");
+        }
+        var to = recipientCert || null;
+
+        if (account === null) {
+            return null;
+        }
+
+        if (to === null) {
+            // mock cert
+            to = Certs.UserCert.fromAccount(account);
+        }
+
         var msg = new Message({
             fromAccount: account,
-            to: recipient,
+            to: to,
             payload: userMessage,
             state: Message.STATE_DRAFT
         });
@@ -116,7 +144,7 @@ window.Outbox = (function (module) {
 
       plaintext := <rcptid> <userbody>
 
-      signature := eg_sign(<twistor_epoch>, <version>, <ciphertext>)
+      signature := ecdsa_sign(<twistor_epoch>, <version>, <ciphertext>)
 
       twistor_epoch := ((unix time in sec) >> 8) & 0xffffffff   // 256s is 4 min 16 sec
 
@@ -157,9 +185,11 @@ window.Outbox = (function (module) {
             RECIPIENT_GROUP_COUNT,
             ENVELOPE_COUNT,
             CIPHERTEXT_BITS,
+            PLAINTEXT_BITS,
+            UNUSED_BITS,
             USER_BODY_BITS,
             USER_MSG_BYTES,
-            USER_MSG_PAD
+            USER_MSG_PAD,
         };
     })();
     Object.keys(msgConstants).forEach(k => Message[k] = msgConstants[k]);
@@ -226,105 +256,47 @@ window.Outbox = (function (module) {
                 this.queue.dequeue(this);
             }
         },
-        _macData: function () {
-            if (!this.fromAccount) {
-                throw new Error("no sending account set");
-            }
 
-            var epoch = M.twistorEpoch();
-            var sender = this.fromAccount.primaryHandle + " " + this.fromAccount.primaryId;
-            return epoch + " " + sender;
+        _getPostGroups: function () {
+            // FIXME we should hop to a different post leaf.
+            // the groups shouldn't be inferred from the cert.
+            return this.fromAccount.groups.map(stats => "#" + stats.name).join(" ");
         },
 
-        _encodePlainText: function () {
-            var payload = this.payload || "";
-            var u8len = M.utf8Len(payload);
-            var pad = M.generatePadding(u8len);
-            var payloadBits = sjcl.codec.utf8String.toBits(payload + pad);
-            var payloadLenBits = new sjcl.bn(u8len);
-            return sjcl.bitArray.concat(payloadLenBits, payloadBits);
-        },
+        encodeForTweet: function () {
+            var userbody = pack('userbody',
+                                pack.Trunc('usermsg_padded', {len: M.USER_BODY_BITS},
+                                           pack.VarLen('usermsg',
+                                                       pack.Utf8('utf8', this.payload || ""))));
 
-        _encodeEncryptedBody: function () {
-            var retrievePubKey = new Promise(resolve => {
-                var to = this.to;
+            /**
+               ciphertext starts with recipientid so that sender can determine if it is the indended
+               recipient.
+            */
+            var ciphertext = pack.EGPayload('ciphertext', {encryptKey: this.to.key, decryptKey: null},
+                                            pack.Trunc('plaintext', {len: M.PLAINTEXT_BITS},
+                                                       pack.Decimal('rcptid', {len: 64}, this.to.primaryId),
+                                                       userbody));
 
-                // XXX move that stuff to Certs.findLatestCert
-                // XXX make 'to' be a pubkey only. avoids Promises everywhere.
+            /**
+               signature := ecdsa_sign(<twistor_epoch>, <version>, <ciphertext>)
+            */
+            var twistor_epoch = pack.Number('epoch', {len: 32}, M.twistorEpoch());
 
-                if (to instanceof ECCPubKey) {
-                    return resolve(to);
-                } else if ((typeof to) === "string") {
-                    // assume primaryHandle
-                    Certs.Store.loadCertsByHdl(to).then(certs => {
-                        if (certs.length === 0) {
-                            throw new Fail(Fail.NOKEY, "no cert for " + to);
-                        }
-                        certs = certs.filter(cert => cert.isUsable()).sort(Certs.UserCert.byValidFrom);
-                        console.debug("picking " + certs[0].id + " for message.");
-                        resolve(certs[0].key);
-                    });
-                } else {
-                    throw new Fail(Fail.BADPARAM, "invalid 'to' object given");
-                }
-            });
-            return retrievePubKey.then(pubKey => {
-                var plainText = this._encodePlainText();
-                var macData = this._macData();
-                var hexString = pubKey.encryptBytes(plainText, macData, {
-                    encoding: null,
-                    macEncoding: 'domstring',
-                    outEncoding: 'hex'});
-                return hexString;
-            });
-        },
+            var twistor_body = pack('twistor_body',
+                                    pack.Number('version', {len: 8}, 0x01),
+                                    ciphertext,
+                                    pack.ECDSASignature('signature', {signKey: this.fromAccount.key, verifyKey: null},
+                                                        twistor_epoch,
+                                                        pack.FieldRef('vref', {path: ["..", "version"]}),
+                                                        pack.FieldRef('cref', {path: ["..", "ciphertext"]})),
+                                    pack.Trunc('unused', {len: M.UNUSED_BITS}));
 
-        _getRcptId: function () {
-            
-        },
-
-        _getPlainText: function () {
-            //<rcptid> <userbody>
-            return "";
-        },
-
-        _getCiphertext: function () {
-            ciphertext := eg_encrypt(<plaintext>)
-        },
-
-        _getBody: function () {
-            return [
-                [BA.partial(M.VERSION_BITS, M.MSG_VERSION)],
-                this._getCiphertext(),
-                this._getSignature()
-            ].reduce(this._hexReduce, "");
-        },
-
-        _getEnvelope: function () {
-            console.debug("TODO");
-            return "";
-        },
-
-        _hexReduce: function (car, cdr) {
-            if (!cdr) {
-                return car;
-            }
-
-            if ((typeof cdr) === "string") {
-                return car + cdr;
-            }
-            if ((typeof cdr.toBits) === "function") {
-                cdr = sjcl.codec.hex.fromBits(cdr.toBits());
-            }
-            return car + sjcl.codec.hex.fromBits(cdr);
-        },
-
-        encodeForTweet1: function () {
-            return [this._getEnvelope(),
-                    base16k.fromHex(sjcl.codec.hex.fromBits(
-                        this._getBody()
-                    ))
-                   ].join(" ");
+            var tweet = pack.Str('tweet', {},
+                                 this._getPostGroups(),
+                                 ' ',
+                                 pack.Base16k('b16', {}, twistor_body));
+            return tweet.toString({debug: true});
         }
     });
 
@@ -370,7 +342,8 @@ window.Outbox = (function (module) {
 
     var exports = {
         Message,
-        Queue
+        Queue,
+        PeriodicSend
     };
     Object.keys(exports).forEach(k => module[k] = exports[k]);
     return module;

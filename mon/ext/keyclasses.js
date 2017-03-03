@@ -22,7 +22,7 @@
   sjcl, RSAKey,
   Fail, escape,
   KeyClasses,
-  Utils
+  Utils, pack
 */
 
 /**
@@ -215,14 +215,8 @@ window.KeyClasses = (function (module) {
     /**
        packs 1 input elgamal ciphertext into a dense form
 
-       @returns {
-            len:   the number of points encoded
-                   (int)
-            xpack: a large bit array of encrypted point x value
-                   (encoded with opts.outEncoding)
-            ypack: an 8-bit bit array of encoded y values
-                   (encoded with opts.outEncoding)
-       }
+       <1B for y values><2*192bit for x values>
+       @returns packed representation, encoded as outEncoding.
     */
     function packEGCipher(cipher, opts) {
         /*jshint bitwise:false */
@@ -299,6 +293,65 @@ window.KeyClasses = (function (module) {
         unpackEGCipher
     };
 
+
+    // packs an ECDSA signature.
+    // The fields to sign must be listed
+    //
+    // opts: {
+    //   key: ECCKeyPair
+    // }
+    pack.ECDSASignature = pack.define({
+        toBits: function () {
+            // jshint bitwise: false
+            var allBits =  pack.ECDSASignature.__super__.toBits.apply(this, [].slice.apply(arguments)); // super.toBits()
+            var privKey = this.opts.signKey;
+            return privKey.signText(allBits, {encoding: "bits", outEncoding: "bits"});
+        },
+        validateOpts: function () {
+            Utils.assertType(this.opts, {
+                signKey: Utils.OneOf(null, undefined, ECCKeyPair),
+                verifyKey: Utils.OneOf(null, undefined, ECCPubKey)
+            });
+            if (!this.opts.signKey && !this.opts.verifyKey) {
+                throw new Fail(Fail.BADTYPE, "must specify at least one key");
+            }
+        }
+    });
+
+    //
+    // packs input into  [<Ybits 8bit><Xbits 2*192>
+    //
+    pack.EGPayload = pack.define({
+        toBits: function (path, opts) {
+            var allBits =  pack.EGPayload.__super__.toBits.apply(this, [].slice.apply(arguments)); // super.toBits()
+            var privKey = this.opts.encryptKey;
+            var ciphers = privKey.encryptEG(allBits, {encoding: "bits"});
+            if (opts && opts.debug) {
+                console.debug("EGPayload nciphers: " + ciphers.length, "inputbits: " + sjcl.bitArray.bitLength(allBits));
+            }
+
+            var x = ciphers.map(cipher => {
+                return KeyClasses.packEGCipher(cipher, {outEncoding: "bits"});
+            }).reduce((a, b) => {
+                return sjcl.bitArray.concat(a, b);
+            }, []);
+
+            if (opts && opts.debug) {
+                console.debug("EGPayload outputbits: " + sjcl.bitArray.bitLength(x));
+            }
+
+            return x;
+        },
+        validateOpts: function () {
+            Utils.assertType(this.opts, {
+                encryptKey: Utils.OneOf(null, undefined, ECCPubKey),
+                decryptKey: Utils.OneOf(null, undefined, ECCKeyPair)
+            });
+            if (!this.opts.encryptKey && !this.opts.decryptKey) {
+                throw new Fail(Fail.BADTYPE, "must specify at least one key");
+            }
+        }
+    });
     Object.keys(exports).forEach(k => module[k] = exports[k]);
     return module;
 })(window.KeyClasses || {});
@@ -913,15 +966,17 @@ Utils._extends(ECCPubKey, Object, {
     /*
       - message to sha256 hash
       - signature (over message) to verify
-      - encoding for signature. defaults to 'hex'
+      - opts: {
+             encoding: encoding for message.
+          sigEncoding: encoding for signature.
+        }
     */
-    verifySignature: function (message, signature, codec) {
+    verifySignature: function (message, signature, opts) {
         "use strict";
-        codec = (codec === undefined) ? 'hex': codec;
-        var sigBits = sjcl.codec[codec].toBits(signature);
-        var hashMsg = sjcl.hash.sha256.hash(message);
-        var pKey = this.sign.pub;
-        return pKey.verify(hashMsg, sigBits);
+        var sigBits = KeyClasses.stringToBits(signature, opts.sigEncoding || null);
+        var msgBits = KeyClasses.stringToBits(message, opts.encoding || null);
+        var hashMsg = sjcl.hash.sha256.hash(msgBits);
+        return this.sign.pub.verify(hashMsg, sigBits);
     },
 
     encryptSymmetric: function (aesKey) {
@@ -1281,20 +1336,24 @@ Utils._extends(ECCKeyPair, ECCPubKey, {
     },
 
     /*
-     * ECC sign the message
-     *
-     * output a signature encoded with @encoding
+     * ECDSA sign a message
      *
      * the signature should be 2*log2(P) bits.
      * on the P192 curve, this is 2*192bit = 2*24B = 48B
+     *
+     * opts: {
+     *   encoding: input encoding,
+     *   outEncoding: output encoding
+     * }
      */
-    signText: function (message, encoding /* 'hex' */) {
+    signText: function (message, opts) {
         "use strict";
-        encoding = (encoding === undefined) ? 'hex' : encoding;
+        opts = opts || {};
+        message = KeyClasses.stringToBits(message, opts.encoding || null);
 
         var hashMsg = sjcl.hash.sha256.hash(message);
         var sKey = this.sign.sec;
-        return KeyClasses.bitsToString(sKey.sign(hashMsg, ECCKeyPair.getParanoia()), encoding);
+        return KeyClasses.bitsToString(sKey.sign(hashMsg, ECCKeyPair.getParanoia()), opts.outEncoding || null);
     },
 
     toPubKey: function () {
