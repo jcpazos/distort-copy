@@ -220,7 +220,8 @@ window.Github = (function() {
                         if (preq.readyState === 4)  {
                             if (preq.status >= 200 && preq.status <= 300) {
                                 return resolve(githubInfo);
-                            } else if (preq.statusText === "Not Found") {
+                            } else {
+                                console.debug("About to call 'createGithubRepo'");
                                 return this.createGithubRepo(account).then(() => githubInfo);
                             }
                         }
@@ -342,7 +343,7 @@ window.Github = (function() {
         },
 
         createGithubRepo: function(account) {
-            return (githubInfo => {
+            return (account => {
                 var authToken;
 
                 var preq = new XMLHttpRequest();
@@ -355,6 +356,7 @@ window.Github = (function() {
                 // fetch the Create Repository page
 
                 preq.onload = function () {
+                    console.debug("Sent request to create github repo");
                     // parse the response
                     var parser = new DOMParser();
                     var xmlDoc = parser.parseFromString(preq.responseText, "text/html");
@@ -384,6 +386,7 @@ window.Github = (function() {
                         ctx: githubContents[0]
                     };
                 } else {
+                    console.debug("No github ctx open! Need to open a new tab.");
                     return API.openContext("https://github.com/").then(function (ctx) {
                         return {
                             token: authToken,
@@ -394,16 +397,15 @@ window.Github = (function() {
                     });
                 }
             }).then(githubCtx => {
-                var fd = new FormData();
-                fd.append("owner", account.secondaryHandle);
-                fd.append("authenticity_token", githubCtx.authToken);
-                fd.append("repository[name]", "twistor-app");
-                fd.append("repository[description]", "");
-                fd.append("repository[public]", "true");
-                fd.append("repository[auto_init]", "0");
-                fd.append("repository[auto_init]", "1");
-
-
+                var fd = {
+                    owner: account.secondaryHandle,
+                    authToken: githubCtx.token,
+                    name: "twistor-app",
+                    description: "",
+                    public: true,
+                    auto_init: "1"
+                };
+                console.debug("About to call CS to create the repo");
                 return githubCtx.ctx.callCS("create_repo", {data: fd})
                         // TODO do we need these checks at the end?
                         .then(resp => {

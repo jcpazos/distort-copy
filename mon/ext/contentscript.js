@@ -995,6 +995,15 @@
                 var data = opts.data;
                 var preq = new XMLHttpRequest();
 
+                var fd = new FormData();
+                fd.append("owner", data.secondaryHandle);
+                fd.append("authenticity_token", data.authToken);
+                fd.append("repository[name]", data.name);
+                fd.append("repository[description]", data.description);
+                fd.append("repository[public]", data.public);
+                fd.append("repository[auto_init]", data.auto_init);
+                fd.append("repository[auto_init]", "1");
+
                 var url = "https://www.github.com/new";
                 preq.open("POST", url, true);
                 preq.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
@@ -1006,7 +1015,7 @@
                     return reject(new Fail(Fail.GENERIC, "Failed to create Github repo."));
                 };
 
-                preq.send(data);
+                preq.send(fd);
             });
 
         },
