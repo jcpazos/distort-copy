@@ -93,7 +93,7 @@ window.Github = (function() {
             });
         },
 
-        doCertsMatch(primary, secondary) {
+        doCertsMatch: function (primary, secondary) {
             // TODO are there any properties in the Twitter cert that won't appear in the GitHub cert?
             for (var prop in primary) {
                 if (primary[prop] !== secondary[prop]) {
