@@ -1420,12 +1420,21 @@ _extends(DistributeTask, Utils.PeriodicTask, {
             throw new Fail(Fail.NOIDENT, "No identity attached with username", that.username);
         }
 
+        console.debug("Running DistributeTask for account: " + that.username);
+
         function _repostKey() {
+            if (!account.groups || !account.groups.length) {
+                console.error("Account " + account.id + " is not part of any groups. aborting post.");
+                UI.log("Account " + account.id + " is not in any group. Cannot post.");
+                return false;
+            }
+
             return API.postKeys(account).catch(function (err) {
                 UI.log("error reposting(" + err.code + "): " + err);
                 throw err; // throw again
             }).then(function () {
                 UI.log("Key for @" + that.username + " reposted.");
+                return true;
             });
         }
 
