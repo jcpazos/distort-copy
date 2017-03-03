@@ -129,9 +129,11 @@ window.Github = (function() {
                 }
 
 
-                doCertsMatch(twitterCert, ghCert) ?
-                    resolve(true) :
-                    reject(new Fail(Fail.NOIDENT, "Certs on Twitter and GitHub do not match"));
+                if (this.doCertsMatch(twitterCert, ghCert)) {
+                    return resolve(true);
+                } else {
+                    return reject(new Fail(Fail.NOIDENT, "Certs on Twitter and GitHub do not match"));
+                }
 
                 /*
                   write a UserCert.prototype.matches(other) => bool
