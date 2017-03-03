@@ -2,7 +2,7 @@
 
 /*global
  Promise, Fail,
- API
+ API, Certs, Utils
 */
 
 window.Github = (function() {
