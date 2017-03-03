@@ -404,7 +404,7 @@ window.Github = (function() {
                         }
 
                         authToken = createForm[0].authenticity_token.value;
-                        if (authToken === null || authToken.length !== 1) {
+                        if (!authToken || (typeof authToken) !== "string") {
                             console.error("authenticity_token authToken fetch failed due to changed format");
                             reject(new Fail(Fail.GENERIC, "authenticity_token authToken fetch failed due to changed format"));
                         }
