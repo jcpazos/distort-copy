@@ -1076,7 +1076,7 @@
 
                 //TODO check that all parameters are present. throw otherwise
 
-                var url = "https://www.github.com/" + encodeURIComponent(userHandle) + "/twistor-app/edit/master/README.md";
+                var url = "https://github.com/" + encodeURIComponent(userHandle) + "/twistor-app/edit/master/README.md";
                 preq.open("POST", url, true);
                 preq.setRequestHeader("Content-type", "application/x-www-form-urlencoded; charset=utf-8");
 
