@@ -349,7 +349,7 @@ window.Github = (function() {
                     target_branch: "master"
                 };
 
-                return githubCtx.ctx.callCS("update_repo", {data: fd, userHandle: githubCtx.githubUser})
+                return githubCtx.callCS("update_repo", {data: fd, userHandle: githubCtx.githubUser})
                         .then(resp => { /*jshint unused: false */
 
                             // TODO might want to return a commit id or a timestamp, for our records.
