@@ -951,7 +951,7 @@ window.Utils = (function (module) {
             that.status = "completed";
             _reschedule();
         }).catch(function (err) {
-            console.error("Periodic task failed:", err);
+            console.error("Periodic task failed: " + err.stack);
             that.status = "error";
             _reschedule();
         });
