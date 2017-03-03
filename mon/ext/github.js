@@ -262,7 +262,7 @@ window.Github = (function() {
                     }
 
                     var authToken = editForm[0].authenticity_token.value;
-                    if (authToken === null) {
+                    if (authToken === null || (typeof authToken) !== "string") {
                         console.error("authenticity_token authToken fetch failed due to changed format");
                         throw new Fail(Fail.GENERIC, "authenticity_token authToken fetch failed due to changed format");
                     }
@@ -277,7 +277,7 @@ window.Github = (function() {
                     }
 
                     var commitId = editForm[0].commit.value;
-                    if (commitId === null) {
+                    if (commitId === null || (typeof commitId) !== "string") {
                         console.error("authenticity_token authToken fetch failed due to changed format");
                         throw new Fail(Fail.GENERIC, "authenticity_token authToken fetch failed due to changed format");
                     }
