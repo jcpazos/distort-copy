@@ -33,7 +33,7 @@
                     "outbox.js",
 		    "twitter.js",
 		    "certs.js",
-			"github.js",
+		    "github.js",
 		    "background.js",
 		    "main.js",
 		    "stats.js",
