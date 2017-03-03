@@ -39,7 +39,7 @@ window.Github = (function() {
                 // Split the GitHub readme on new line
 
                 try {
-                    fullCert = certFeed.feedRepo(responseText, {secondaryHdl: ghHandle});
+                    fullCert = certFeed.feedRepo(responseText, {secondaryHdl: ghHdl});
                     if (fullCert) {
                         return fullCert;
                     }
