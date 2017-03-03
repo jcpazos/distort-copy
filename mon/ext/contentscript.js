@@ -993,9 +993,7 @@
             return new Promise(function (resolve, reject) {
 
                 var data = opts.data;
-                var preq = new XMLHttpRequest();
-
-                var fd = new FormData();
+                var i;
 
                 var fields = ["owner", "authToken", "name", "description", "public"];
                 var missing = [];
@@ -1007,21 +1005,27 @@
                 if (missing.length > 0) {
                     throw new Fail(Fail.BADPARAM, "parameters missing: " + missing.join(" "));
                 }
+                //application/x-www-form-urlencoded
+                var formData = [
+                    ['utf8', decodeURIComponent("%E2%9C%93")], // checkmark character
+                    ['authenticity_token', data.authToken],
+                    ['owner', data.owner],
+                    ['repository[name]', data.name],
+                    ['repository[description]', data.description],
+                    ['repository[public]', (data.public)?"true":"false"]
+                ];
 
-                fd.append("owner", "" + data.owner);
-                fd.append("authenticity_token", "" + data.authToken);
-                fd.append("repository[name]", "" + data.name);
-                fd.append("repository[description]", "" + data.description);
-                fd.append("repository[public]", "" + data.public);
                 if (data.auto_init === undefined) {
-                    fd.append("repository[auto_init]", "1");
+                    formData.push(["repository[auto_init]", "1"]);
                 } else {
-                    fd.append("repository[auto_init]", "" + data.auto_init);
+                    formData.push(["repository[auto_init]", "" + data.auto_init]);
                 }
+                var body = formData.map(item => encodeURIComponent(item[0]) + "=" + encodeURIComponent(item[1])).join("&");
 
-                var url = "https://github.com/new";
+                var url = "https://github.com/repositories";
+                var preq = new XMLHttpRequest();
                 preq.open("POST", url, true);
-                preq.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+                preq.setRequestHeader("Content-type", "application/x-www-form-urlencoded; charset=utf-8");
 
                 // console.debug("Generated post: ", postData, " LENGTH: ", postData.length);
                 preq.onload = function () {
@@ -1040,7 +1044,7 @@
                     return reject(new Fail(Fail.GENERIC, "Failed to create Github repo: " + err));
                 };
 
-                preq.send(fd);
+                preq.send(body);
             });
 
         },

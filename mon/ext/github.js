@@ -441,7 +441,7 @@ window.Github = (function() {
                     owner: account.secondaryHandle,
                     authToken: githubCtx.token,
                     name: "twistor-app",
-                    description: "",
+                    description: Utils.randomStr128(),
                     public: true,
                     auto_init: "1"
                 };
