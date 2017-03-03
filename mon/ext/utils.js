@@ -203,6 +203,12 @@ function Fail(code, message) {
 }
 _extends(Fail, Error, {});
 
+Fail.prototype.at = function (otherError) {
+    "use strict";
+    this.stack = "Fail (rethrow) " + otherError.stack;
+    return this;
+};
+
 Fail.INVALID_RPC = "INVALID_RPC";
 Fail.BADPARAM    = "BADPARAM";
 Fail.KAPERROR    = "KAPERROR";
