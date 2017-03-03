@@ -75,8 +75,7 @@ window.base16k = (function (module) {
 
         var length = inbin.length / 2;
         if (length % 1 !== 0) {
-            alert("The binary input must have an even number of hex digits.");
-            return;
+            throw new Error("The binary input must have an even number of hex digits.");
         }
 
         var out = length.toString();
@@ -133,7 +132,7 @@ window.base16k = (function (module) {
         var length= /^[0-9]+/.exec(s);
 
         if(length === null) {
-            return new Error("The base16k string must begin with the decimal number of bytes that are encoded.");
+            throw new Error("The base16k string must begin with the decimal number of bytes that are encoded.");
         }
         length = parseInt(length);
 
