@@ -20,13 +20,24 @@
 /*global
   Promise, Fail, $, Utils,
   API,
-  Emitter, Certs
+  Emitter, Certs, Stats
 */
 
 /*exported Twitter */
 
 var Twitter = (function (module) {
     "use strict";
+
+    module.stats = {
+        // length of incoming json strings for tweets
+        tweetLen: new Stats.Dispersion({supportMedian: false}),
+        // keep a copy of the last tweet received (for debugging purposes).
+        lastTweet: null,
+        update: function (text, tweet) {
+            module.stats.lastTweet = tweet;
+            module.stats.tweetLen.update(text.length);
+        }
+    };
 
     // lib/twitter-text.js
     var TT = window.twttr;
@@ -124,34 +135,51 @@ var Twitter = (function (module) {
 
         this.hashtags = (typeof hashtags === "string") ? hashtags.split(",") : hashtags.slice();
 
-        this.stream_buffer = '';
-        this.tweetCount = 0;
-        this.connectedOn = 0; // UNIX timestamp in seconds;
-
-        this._initXHR();
+        this.conn = this._initXHR();
+        this.backupConn = null;
     }
 
     //addListener
     Utils._extends(Streamer, Emitter, {
         _initXHR: function () {
-            if (this.tpost) {
-                this.tpost.abort();
-            }
-            var streamer = this;
+            var conn = {
+                xhr: null,
+                index: -1,
+                connected: Utils.deferP()
+            };
+
             var track = this.hashtags.join(",");
             this.postData = "track=" + encodeURIComponent(track);
             var url = 'https://stream.twitter.com/1.1/statuses/filter.json';
 
-            this.index = 0;
-            this.tpost = _appOnlyXHR("POST", url, [['track', track]], this.creds);
-            this.tpost.onreadystatechange = function () {
-                return streamer.onReadyStateChange(this /*the xhr*/);
+            var xhr = conn.xhr = _appOnlyXHR("POST", url, [['track', track]], this.creds);
+            xhr.onreadystatechange = () => {
+                // 0 unsent
+                // 1 opened
+                // 2 headers received
+                // 3 loading
+                // 4 done
+                if (xhr.readyState === 2) {
+                    if (xhr.status >= 200 && xhr.status <= 400) {
+                        conn.connected.resolve(conn);
+                        return;
+                    } else {
+                        conn.connected.reject(Fail.fromVal(xhr));
+                        return;
+                    }
+                } else if (xhr.readyState > 2)  {
+                    this.onChunk(conn);
+                }
             };
+            xhr.onerror = (err) => {
+                conn.connected.reject(Fail.fromVal(err))
+            };
+            return conn;
         },
 
-        onReadyStateChange: function (xhr) {
+        onChunk: function (conn) {
             /*jshint unused: false */
-            throw new Error("not implemented");
+            throw new Error("not implemented. abstract method.");
         },
 
         send: function () {
@@ -160,7 +188,14 @@ var Twitter = (function (module) {
         },
 
         abort: function () {
-            this.tpost.abort();
+            if (this.conn && this.conn.xhr) {
+                this.conn.xhr.abort();
+                this.conn = null;
+            }
+            if (this.backupConn && this.backupConn.xhr) {
+                this.backupConn.xhr.abort();
+                this.backupConn = null;
+            }
         }
     });
 
@@ -171,59 +206,66 @@ var Twitter = (function (module) {
     }
 
     Utils._extends(BasicStreamer, Streamer, {
-        onReadyStateChange: function (xhr) {
-            if (xhr !== this.tpost) {
-                console.error("receiving event for previous XHR");
-                return;
-            }
+        onChunk: function (conn) {
+            var xhr = conn.xhr;
+
+            var nextEOL = -1,
+                chunk = null;
 
             // 0 unsent
             // 1 opened
             // 2 headers received
             // 3 loading
             // 4 done
-            if (xhr.readyState > 2)  {
-                if (xhr.status >= 200 && xhr.status <= 400) {
-                    //parse pkey info and save into database
-                    //start at the index we left off
-                    //console.log('responseText ', this.tpost.responseText);
-                    this.stream_buffer = xhr.responseText.substr(this.index);
+            if (conn === this.backupConn) {
+                // only the main connection can send tweets.
+                console.log.debug("backup connection started receiving... not ready yet.");
+                return;
+            }
 
-                    //remove possible leading whitespace from tpost.responseText
+            //start at the index we left off
+            nextEOL = xhr.responseText.lastIndexOf("\n");
+            if (nextEOL <= conn.index) {
+                // did not get enough to form a tweet.
+                return;
+            }
+            chunk = xhr.responseText.substr(conn.index + 1, nextEOL - conn.index);
 
-                    //Twitter periodically sends lines of whitespace if there is no
-                    //message to keep the TCP stream warm (and forcing clients to
-                    //ingest to stay connected).
-                    this.stream_buffer = this.stream_buffer.replace(/^\s+/g, "");
+            // twitter will periodically send whitespace, just to keep
+            // a flow going. , one tweet per line (\n).
+            chunk.split(/\n\s*/).map(line => {
+                if (!line) {
+                    return;
+                }
+                // there might be trailing space. but that's okay.
+                try {
+                    var tweet = JSON.parse(line);
+                    module.stats.update(line, tweet);
+                    this.emit('tweet', tweet);
+                } catch (error) {
+                    console.error("failed to parse JSON:", error, line);
+                }
+            });
+            conn.index = nextEOL;
 
-                    // FIXME this line parsing is wrong. doesn't take into account
-                    // partial lines, and stops parsing if there are blanks in the
-                    // middle of the chunk.
+            //     .forEach(tweet => {
+            //     if (tweet.quoted_status) {
+            //         var keyb16kString = tweet.quoted_status.text;
+            //         var tagb16kString = tweet.text;
+            //
+            //         //Take out the hashtag and the link to the original tweet
+            //         tagb16kString = tagb16kString.substr(0, tagb16kString.indexOf(" "));
+            //         var b64String = tagb16kString + ":" + keyb16kString;
+            //
+            //         console.log('tweet: ' + b64String);
+            //         this.emit("sendTweet", b64String);
+            //     }
+            // }
 
-                    while (this.stream_buffer.length !== 0 &&
-                           this.stream_buffer[0] !== '\n' &&
-                           this.stream_buffer[0] !== '\r') {
-                        var curr_index = this.stream_buffer.indexOf('\n');
-                        this.index += this.stream_buffer.indexOf('\n')+1;
-
-                        var json = this.stream_buffer.substr(0, curr_index);
-
-                        if (json.length > 0) {
-                            try {
-                                var tweet = JSON.parse(json);
-                                this.emit("tweet", tweet);
-                            } catch (error) {
-                                console.error("ERR: ", error, json);
-                            }
-                        }
-                        this.stream_buffer = this.stream_buffer.substr(curr_index+1);
-                    }
-
-                    if (xhr.length >= 10000) {
-                        //FIXME -- not tested -- do the partial tweets stick around?
-                        this._initXHR();
-                        this.tweetCount = 0;
-                    }
+            if (xhr.responseText.length >= 10000) {
+                //FIXME -- not tested -- do the partial tweets stick around?
+                this._initXHR();
+            }
 
                 } else {
                     // fixme. do restart
@@ -235,91 +277,6 @@ var Twitter = (function (module) {
     });
 
     module.BasicStreamer = BasicStreamer;
-
-    function TweetStreamer(hashtag, streamerID, accountCredentials) {
-        TweetStreamer.__super__.constructor.call(this, hashtag, streamerID, accountCredentials);
-
-        this.tpost.onerror = function () {
-            console.error("Problem streaming tweets.", [].slice.apply(arguments));
-            //return reject(new Fail(Fail.GENERIC, "Failed to stream tweets."));
-        };
-    }
-
-    Utils._extends(TweetStreamer, Streamer, {
-        onReadyStateChange: function (xhr) {
-            if (xhr !== this.tpost) {
-                console.error("receiving event for previous XHR");
-                return;
-            }
-
-            // 0 unsent
-            // 1 opened
-            // 2 headers received
-            // 3 loading
-            // 4 done
-            if (xhr.readyState > 2)  {
-                if (xhr.status >= 200 && xhr.status <= 400) {
-                    //start at the index we left off
-
-                    // twitter will periodically send whitespace, just to keep
-                    // a flow going. Also, one tweet per line (\n).
-
-                    this.stream_buffer = this.tpost.responseText.substr(this.index);
-
-                    //remove possible leading whitespace from tpost.responseText
-                    this.stream_buffer = this.stream_buffer.replace(/^\s+/g, "");
-
-                    //check if we received multiple tweets in one process chunk
-                    while (this.stream_buffer.length !== 0 &&
-                           this.stream_buffer[0] !== '\n' &&
-                           this.stream_buffer[0] !== '\r') {
-                        var curr_index = this.stream_buffer.indexOf('\n');
-                        this.index += curr_index + 1;
-                        var json = this.stream_buffer.substr(0, curr_index);
-                        if (json.length > 0) {
-                            var tweet = null;
-                            try {
-                                tweet = JSON.parse(json);
-                            } catch (error) {
-                                console.error("failed to parse JSON:", error, json);
-                            }
-
-                            if (tweet) {
-                                console.log(tweet);
-                                if (tweet.quoted_status) {
-                                    var keyb16kString = tweet.quoted_status.text;
-                                    var tagb16kString = tweet.text;
-
-                                    //Take out the hashtag and the link to the original tweet
-                                    tagb16kString = tagb16kString.substr(0, tagb16kString.indexOf(" "));
-                                    var b64String = tagb16kString + ":" + keyb16kString;
-
-                                    this.tweetCount += 1;
-                                    console.log('tweet: ' + b64String);
-                                    this.emit("sendTweet", b64String);
-                                }
-                            }
-                        }
-                        this.stream_buffer = this.stream_buffer.substr(curr_index+1);
-                    }
-                    //If the current this.tpost buffer is too big, make a new one;
-                    if (this.tweetCount >= 3000) {
-                        //FIXME -- not tested -- do the partial tweets stick around?
-                        this._initXHR();
-                        this.tweetCount = 0;
-                    }
-                } else {
-                    console.error("Failed to stream tweets, closing connection: ",
-                                  this.tpost.status,
-                                  this.tpost.responseText);
-                    this.abort();
-                }
-            }
-        }
-    });
-
-    module.TweetStreamer = TweetStreamer;
-
 
     /**
        The manager is the class that manages a series of Twitter streams

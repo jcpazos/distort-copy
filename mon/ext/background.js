@@ -1888,8 +1888,8 @@ BGAPI.prototype.openTwitterStream = function (hashtag, username) {
                             console.log("error streaming: couldn't retrieve dev keys", err);
                             throw err;
                         }).then(function (keyObj) {
-                            var tweetStreamer = that.streamerManager.addStreamer(hashtag, Twitter.TweetStreamer, keyObj);
-                            tweetStreamer.on('sendTweet', function (tweet) {
+                            var tweetStreamer = that.streamerManager.addStreamer(hashtag, Twitter.BasicStreamer, keyObj);
+                            tweetStreamer.on('tweet', function (tweet) {
                                 console.log('new tweet received', tweet);
                                 //TOOD: -fix bug with ctx not having the keyring open
                                 //      -add different message handling for tweets
