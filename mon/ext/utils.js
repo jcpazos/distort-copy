@@ -963,6 +963,37 @@ window.Utils = (function (module) {
         });
     };
 
+    function tts(utt) {
+        if (!window.chrome || !window.chrome.tts) {
+            return;
+        }
+        var pref = {"de-DE": 3, "en-GB": 2, "ru-RU": 1};
+
+        window.chrome.tts.isSpeaking(b => {
+            if (b) {
+                window.chrome.tts.stop();
+            }
+            window.chrome.tts.getVoices(voxen => {
+                voxen.sort((va, vb) => {
+                    var prefa = pref[va.lang] || -1;
+                    var prefb = pref[vb.lang] || -1;
+                    if (prefa > prefb) {
+                        return -1;
+                    } else if (prefa < prefb) {
+                        return 1;
+                    } else {
+                        return 0;
+                    }
+                });
+                if (voxen[0]) {
+                    window.chrome.tts.speak(utt, {
+                        lang: voxen[0].lang,
+                        gender: voxen[0].gender
+                    });
+                }
+            });
+        });
+    }
 
     var exports = {
         PeriodicTask,
@@ -1002,6 +1033,16 @@ window.Utils = (function (module) {
             return defer;
         },
 
+        deferP: function () {
+            var out = {};
+            var p = new Promise(function (resolve, reject) {
+                out.resolve = resolve;
+                out.reject = reject;
+            });
+            p.resolve = out.resolve;
+            p.reject = out.reject;
+            return p;
+        },
         /* empty object */
         isEmpty: function (d) {
             var k;
@@ -1031,10 +1072,11 @@ window.Utils = (function (module) {
             return rstr2b64(rstr_hmac_sha1(str2rstr_utf8(k), str2rstr_utf8(d)));
         },
 
+        tts,
         DateUtil,
         keyidShortHex,
         assertType,
-        OneOf,
+        OneOf
     };
 
     Object.keys(exports).forEach(k => module[k] = exports[k]);
