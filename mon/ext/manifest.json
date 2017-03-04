@@ -25,6 +25,7 @@
                     "lib/twitter-text.js",
 		    "sjcl.js",
 		    "utils.js",
+                    "stats.js",
                     "base16k.js",
                     "pack.js",
 		    "emitter.js",
@@ -36,7 +37,6 @@
 		    "certs.js",
 		    "background.js",
 		    "main.js",
-		    "stats.js",
 		    "tests.js"
 		   ]
     },
@@ -44,15 +44,22 @@
 	"page": "options.html",
 	"chrome_style": true
     },
-    "content_scripts": [{"matches":["<all_urls>"], "js": ["utils.js", "contentscript.js"],
-			 "run_at": "document_start",
-			 "all_frames": true
-			}],
+    "content_scripts": [
+        {"matches": ["https://twitter.com/*", "https://github.com/*"],
+         "js": ["utils.js", "contentscript.js"],
+	 "run_at": "document_start",
+	 "all_frames": true
+	}],
     "web_accessible_resources": [
 	"pageapi/runtime.min.js",
 	"pageapi/runtime.js"
     ],
-    "permissions": ["webRequest", "webRequestBlocking",
-                    "tabs", "storage", "https://twitter.com/",
-                    "<all_urls>", "clipboardRead", "clipboardWrite"]
+    "permissions": ["clipboardRead", "clipboardWrite",
+                    "storage",
+                    "tabs",
+                    "tts",
+                    "unlimitedStorage",
+                    "https://twitter.com/*",
+                    "https://stream.twitter.com/*",
+                    "https://github.com/*"]
 }
