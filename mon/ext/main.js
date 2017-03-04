@@ -17,9 +17,6 @@
     <http://www.gnu.org/licenses/>.
 **/
 
-/*global Emitter, BGAPI, Certs */
-
-
 /**
    Global event emitter/listener object
 */
