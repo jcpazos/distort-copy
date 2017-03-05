@@ -1533,7 +1533,7 @@ _extends(DistributeTask, Utils.PeriodicTask, {
 
             if (services.findIndex(s => (s.repost === true) ) !== -1) {
                 console.log("Reposting temporarily disabled.");
-                return _repostKey();
+                return true; //_repostKey();
             } else {
                 // all good. key up to date.
                 return true;
