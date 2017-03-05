@@ -1456,43 +1456,88 @@ _extends(DistributeTask, Utils.PeriodicTask, {
             });
         }
 
-        return Twitter.fetchLatestCertFromFeed(that.username).then(function (twitterCert) {
-            // Call github to verify cert from twitter before proceeding
-            try {
+        var certPromises = [
+            Twitter.fetchLatestCertFromFeed(account.primaryHandle).catch(function (err) {
+                if (err.code === Fail.NOIDENT) {
+                    UI.log("No keys found on Twitter for user profile @" + account.primaryHandle);
+                    return null;
+                } else {
+                    throw err;
+                }
+            }),
+            Github.getLatestCert(account.secondaryHandle).catch(function (err) {
+                if (err.code === Fail.NOIDENT) {
+                    UI.log("No cert found on GitHub for user gh:" + account.secondaryHandle);
+                    return null;
+                } else {
+                    throw err;
+                }
+            })
+        ];
 
-                Github.verifyCertFromPrimary(twitterCert, account.secondaryHdl);
-            } catch (err) {
-                throw err;
-            }
+        return Promise.all(certPromises).then(function (certs) {
+            var [twitterCert, ghCert] = certs;
+
+            var services = [
+                {
+                    'serviceName': 'Twitter',
+                    'handle': account.primaryHandle,
+                    'cert': twitterCert,
+                    'repost': false
+                },
+                {
+                    'serviceName': 'GitHub',
+                    'handle': account.secondaryHandle,
+                    'cert': ghCert,
+                    'repost': false
+                }
+            ];
 
             var myKey = account.key.toPubKey();
-            var keyAgeMs = (checkTime - twitterCert.validFrom) * 1000;
-
-            if (!twitterCert.key.equalTo(myKey)) {
-                console.error("Key of @" + that.username + " was found to be different on twitter.");
-                UI.raiseWarning(null, "Your own key (@" + that.username + ") is different on twitter.");
-                throw new Fail(Fail.INVALIDKEY, "Key of @" + that.username, " was found to be different on twitter.");
-            }
-
-            if (checkTime > twitterCert.validUntil) {
-                UI.log("Key for @" + that.username + " has expired. Reposting.");
-                return _repostKey();
-            }
-
-            if (keyAgeMs > BGAPI.MAX_KEY_POST_AGE_MS) {
-                UI.log("Key for @" + that.username + " has aged. Reposting.");
-                return _repostKey();
-            }
-
             var accountGroupNames = account.groups.map(gstat => gstat.name);
-            var intersection = accountGroupNames.filter(name => twitterCert.groups.includes(name));
-            if (intersection.length !== account.groups.length || intersection.length !== twitterCert.groups.length) {
-                UI.log("Group memberships for @" + that.username + " have changed. Reposting.");
+
+            services.forEach(srv => {
+                if (srv.cert === null) {
+                    srv.repost = true;
+                    return srv;
+                }
+                var errMsg = null;
+                var keyAgeMs = (checkTime - srv.cert.validFrom) * 1000;
+
+                if (!srv.cert.key.equalTo(myKey)) {
+                    errMsg = "The cert found on " + srv.serviceName + " for user '" + srv.handle + "' is not recognized by this extension.";
+                    console.error(errMsg);
+                    UI.raiseWarning(null, errMsg);
+                    throw new Fail(Fail.INVALIDKEY, errMsg);
+                }
+
+                if (checkTime > srv.cert.validUntil) {
+                    UI.log(srv.serviceName + " cert for '" + srv.handle + "' has expired. Reposting.");
+                    srv.repost = true;
+                    return srv;
+                }
+
+                if (keyAgeMs > BGAPI.MAX_KEY_POST_AGE_MS) {
+                    UI.log(srv.serviceName + " cert for '" + srv.handle + "' has aged. Reposting.");
+                    srv.repost = true;
+                    return srv;
+                }
+
+                var intersection = accountGroupNames.filter(name => srv.cert.groups.includes(name));
+                if (intersection.length !== accountGroupNames.length || intersection.length !== srv.cert.groups.length) {
+                    UI.log("Group memberships for '" + srv.handle + "' have changed on " + srv.serviceName + ". Reposting.");
+                    srv.repost = true;
+                    return srv;
+                }
+            });
+
+            if (services.findIndex(s => (s.repost === true) ) !== -1) {
+                console.log("Reposting temporarily disabled.");
                 return _repostKey();
+            } else {
+                // all good. key up to date.
+                return true;
             }
-
-            // all good. key up to date.
-
         }).catch(function (err) {
             if (err.code === Fail.NOIDENT) {
                 UI.log("No keys found on own user profile @" + that.username + ". Posting.");
