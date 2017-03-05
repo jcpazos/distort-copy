@@ -235,7 +235,7 @@ window.Certs = (function (module) {
             } else if (toks[0] === "#" + PartialCert.KEYSIG) {
                 this._parseKeySig(toks);
             } else {
-                throw new Error("unexpected tag type");
+                throw new Fail(Fail.BADPARAM, "Expected one of " + PartialCert.POUND_TAGS + " but got: '" + toks[0] + "'");
             }
 
             return this._completeCert();
