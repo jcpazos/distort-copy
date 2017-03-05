@@ -226,7 +226,6 @@ window.Github = (function() {
             }).then(githubInfo => {
                 // ensure repo existence
                 var preq = new XMLHttpRequest();
-                console.debug("Issuing GET to " + repoURL);
                 return new Promise((resolve, reject) => {
                     preq.open("GET", repoURL, true);
                     preq.onerror = function () {
@@ -238,7 +237,6 @@ window.Github = (function() {
                             if (preq.status >= 200 && preq.status < 400) {
                                 return resolve(githubInfo);
                             } else {
-                                console.debug("About to call 'createGithubRepo'");
                                 resolve(this.createGithubRepo(account).then(() => githubInfo));
                             }
                         }
