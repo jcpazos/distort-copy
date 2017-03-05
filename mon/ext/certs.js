@@ -51,6 +51,7 @@ window.Certs = (function (module) {
     // this object is fed tweets one by one and pumps out UserCert objects
     // when all the proper bits have been ingested.
     PartialCertFeed.prototype = {
+
         /**
            return a full UserCert if the given tweet completes
            a partial cert. returns null if more bits are needed.
@@ -64,12 +65,6 @@ window.Certs = (function (module) {
                        createdAtMs: unix time posted in ms
                      }
         */
-        // TODO write equivalent "feedRepo" function that takes cert data from GitHub,
-        // runs through it, then returns a user cert. this can then be used to compare
-        // with the existing cert from Twitter.
-        // NOTE: must call feedToks w/ the chunks
-
-        // certText is an array
         feedRepo: function (certText, envelope) {
             var secondaryHdl = envelope.secondaryHdl;
             // This function takes in the cert from a repo that is line separated.
