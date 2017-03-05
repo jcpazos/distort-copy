@@ -83,9 +83,9 @@ window.Certs = (function (module) {
                 this._addPartialCert(partialCert);
             }
 
-            for (var line in certText) {
+            certText.split('\n').forEach(line => {
                 try {
-                    var userCert = partialCert.feedToks(certText[line]);
+                    var userCert = partialCert.feedToks(line);
                     if (userCert) {
                         this._removePartialCert(userCert);
                     }
@@ -98,7 +98,7 @@ window.Certs = (function (module) {
                     }
                     throw err;
                 }
-            }
+            });
 
         },
 
