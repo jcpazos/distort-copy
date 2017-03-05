@@ -60,7 +60,10 @@
                     "tabs",
                     "tts",
                     "unlimitedStorage",
+                    "https://apps.twitter.com/*",
                     "https://twitter.com/*",
                     "https://stream.twitter.com/*",
-                    "https://github.com/*"]
+                    "https://github.com/*",
+                    "https://raw.githubusercontent.com/*"
+                   ]
 }
