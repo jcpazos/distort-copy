@@ -964,6 +964,8 @@ Utils._extends(ECCPubKey, Object, {
     },
 
     /*
+      returns bool
+
       - message to sha256 hash
       - signature (over message) to verify
       - opts: {
@@ -976,7 +978,14 @@ Utils._extends(ECCPubKey, Object, {
         var sigBits = KeyClasses.stringToBits(signature, opts.sigEncoding || null);
         var msgBits = KeyClasses.stringToBits(message, opts.encoding || null);
         var hashMsg = sjcl.hash.sha256.hash(msgBits);
-        return this.sign.pub.verify(hashMsg, sigBits);
+        try {
+            return this.sign.pub.verify(hashMsg, sigBits);
+        } catch (err) {
+            if (err instanceof sjcl.exception.corrupt) {
+                return false;
+            }
+            throw err;
+        }
     },
 
     encryptSymmetric: function (aesKey) {
