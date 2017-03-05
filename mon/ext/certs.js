@@ -146,7 +146,6 @@ window.Certs = (function (module) {
             } catch (err) {
                 if (err instanceof Fail) {
                     // remove certs with invalid parts
-                    console.log("partial cert processing failed", err);
                     this._removePartialCert(partialCert);
                 }
                 throw err;
@@ -164,7 +163,7 @@ window.Certs = (function (module) {
             // it should be complete by then.
             if (this._timeoutMs >= -1) {
                 window.setTimeout(() => {
-                    console.log("Removing partial cert from: ", partialCert.primaryHdl + " due to timeout.");
+                    //console.log("Removing partial cert from: ", partialCert.primaryHdl + " due to timeout.");
                     this._removePartialCert(partialCert);
                 }, this._timeoutMs);
             }
@@ -343,8 +342,7 @@ window.Certs = (function (module) {
 
             if (!key.verifySignature(signedMessage, this.keysig,
                                      {encoding: 'domstring', sigEncoding: 'hex'})) {
-                console.error("Failed to verify signature in cert");
-                throw new Fail(Fail.GENERIC, "verification failed");
+                throw new Fail(Fail.CORRUPT, "verification failed");
             }
 
             var pubKeyContainer = {
