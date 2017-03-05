@@ -55,8 +55,8 @@ window.Github = (function() {
                 var xhr = new XMLHttpRequest();
                 var cacheBust = Utils.randomStr128();
 
-                xhr.open("GET", "https://raw.githubusercontent.com/" + encodeURIComponent(ghHdl) +
-                    "twistor-app/master/README.md?_cb=" + encodeURIComponent(cacheBust), true);
+                xhr.open("GET", "https://raw.githubusercontent.com/" + encodeURIComponent(ghHdl) + "/" +
+                         "twistor-app/master/README.md?_cb=" + encodeURIComponent(cacheBust), true);
 
                 xhr.setRequestHeader("Range", 'bytes=0-1349');
 
