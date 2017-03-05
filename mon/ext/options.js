@@ -642,7 +642,7 @@ function loadPage() {
         joinNewGroup(username, groupName).then(function () {
             updateStatus(`Added user ${username} to group ${groupName}`);
             cancelConfirmation($groupNameInput);
-            //showPage("main");
+            showPage("main");
         }).catch(err => {
             updateStatus(err.message, true);
         }).then(() => {
