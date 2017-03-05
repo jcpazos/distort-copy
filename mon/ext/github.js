@@ -32,6 +32,9 @@ window.Github = (function() {
         //       the returned cert. Only integrity checks are performed.
         //
         getLatestCert: function (ghHdl) {
+            if (!ghHdl) {
+                throw new Fail(Fail.BADPARAM, "invalid github handle given: "  + ghHdl);
+            }
 
             function checkGHCert(responseText) {
                 var certFeed = new Certs.PartialCertFeed();
