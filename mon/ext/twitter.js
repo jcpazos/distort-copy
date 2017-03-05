@@ -28,6 +28,9 @@
 var Twitter = (function (module) {
     "use strict";
 
+    // bytes received on socket before reconnecting
+    module.RECONNECT_THRES_BYTES = 256*1024;
+
     module.stats = {
         // length of incoming json strings for tweets
         tweetLen: new Stats.Dispersion({supportMedian: false}),
@@ -135,77 +138,123 @@ var Twitter = (function (module) {
 
         this.hashtags = (typeof hashtags === "string") ? hashtags.split(",") : hashtags.slice();
 
-        this.conn = this._initXHR();
+        this.conn = null;
         this.backupConn = null;
+        this._pushCache = {};
     }
 
     //addListener
     Utils._extends(Streamer, Emitter, {
-        _initXHR: function () {
+
+        // returns a restartable connection object.
+        _createConn: function () {
+
+            var streamer = this;
+            var url = 'https://stream.twitter.com/1.1/statuses/filter.json';
+            var track = this.hashtags.join(",");
             var conn = {
                 xhr: null,
                 index: -1,
-                connected: Utils.deferP()
-            };
-
-            var track = this.hashtags.join(",");
-            this.postData = "track=" + encodeURIComponent(track);
-            var url = 'https://stream.twitter.com/1.1/statuses/filter.json';
-
-            var xhr = conn.xhr = _appOnlyXHR("POST", url, [['track', track]], this.creds);
-            xhr.onreadystatechange = () => {
-                // 0 unsent
-                // 1 opened
-                // 2 headers received
-                // 3 loading
-                // 4 done
-                if (xhr.readyState === 2) {
-                    if (xhr.status >= 200 && xhr.status <= 400) {
-                        conn.connected.resolve(conn);
-                        return;
-                    } else {
-                        conn.connected.reject(Fail.fromVal(xhr));
-                        return;
+                connected: Utils.deferP(), // resolved when HTTP status is known
+                postData: "track=" + encodeURIComponent(track),
+                connectedOn: 0,
+                retryCount: 0,
+                retryTimer: -1,
+                send: function () {
+                    if (this.xhr) {
+                        this.abort();
                     }
-                } else if (xhr.readyState > 2)  {
-                    this.onChunk(conn);
+                    var xhr = this.xhr = _appOnlyXHR("POST", url, [['track', track]], streamer.creds);
+                    xhr.onreadystatechange = () => {
+                        // 0 unsent
+                        // 1 opened
+                        // 2 headers received
+                        // 3 loading
+                        // 4 done
+                        if (xhr.readyState === 2) {
+                            if (xhr.status >= 200 && xhr.status <= 400) {
+                                conn.connectedOn = performance.now();
+                                conn.retryCount = 0;
+                                conn.connected.resolve(conn);
+                            } else if (xhr.status === 420) {
+                                // enhance your calm.
+                                conn.retryCount += 1;
+                                console.debug("opening stream failed with 420. retryCount=" +
+                                              conn.retryCount + ", trying again in " + (conn.retryCount * 300) + "s");
+                                conn.retryTimer = window.setTimeout(() => {
+                                    conn.retryTimer = -1;
+                                    conn.send();
+                                }, conn.retryCount * 300);
+                            } else {
+                                return conn.connected.reject(Fail.fromVal(xhr).prefix("server refused to open stream"));
+                            }
+                        } else if (xhr.readyState > 2)  {
+                            streamer.onChunk(conn);
+                        }
+                    };
+                    xhr.onerror = (err) => {
+                        conn.connected.reject(Fail.fromVal(err).prefix("failed to open stream"));
+                    };
+                    this.xhr.send(this.postData);
+                },
+                abort: function () {
+                    if (this.xhr) {
+                        this.xhr.abort();
+                    }
+                    if (this.retryTimer >= 0) {
+                        window.clearTimeout(this.retryTimer);
+                        this.retryTimer = -1;
+                    }
+                    this.connectedOn = 0;
                 }
             };
-            xhr.onerror = (err) => {
-                conn.connected.reject(Fail.fromVal(err))
-            };
+
             return conn;
         },
 
-        onChunk: function (conn) {
-            /*jshint unused: false */
-            throw new Error("not implemented. abstract method.");
-        },
-
         send: function () {
-            this.connectedOn = Date.now() / 1000;
-            this.tpost.send(this.postData);
+            if (this.conn) {
+                throw new Fail(Fail.GENERIC, "already started.");
+            } else {
+                this.conn = this._createConn();
+                this.conn.send();
+            }
         },
 
         abort: function () {
-            if (this.conn && this.conn.xhr) {
-                this.conn.xhr.abort();
+            if (this.conn) {
+                this.conn.abort();
                 this.conn = null;
             }
-            if (this.backupConn && this.backupConn.xhr) {
-                this.backupConn.xhr.abort();
+            if (this.backupConn) {
+                this.backupConn.abort();
                 this.backupConn = null;
             }
-        }
-    });
+        },
 
-    module.Streamer = Streamer;
+        _pushTweet: function (conn, tweet, text) {
+            if (this.backupConn && this._pushCache) {
+                // syncing both connections
+                if (this._pushCache[tweet.id_str]) {
+                    console.debug("duplicate tweet detected: " + tweet.id_str + ". swapping connections.");
+                    // swap.
+                    this.conn.abort();
+                    this.conn = this.backupConn;
+                    this.backupConn = null;
+                    this._pushCache = null;
+                } else {
+                    // the tweet might come on one, or both interfaces
+                    this._pushCache[tweet.id_str] = conn;
+                    module.stats.update(text, tweet);
+                    this.emit('tweet', tweet);
+                }
+            } else {
+                // just one active
+                module.stats.update(text, tweet);
+                this.emit('tweet', tweet);
+            }
+        },
 
-    function BasicStreamer(hashtag, streamerID, accountCredentials) {
-        BasicStreamer.__super__.constructor.call(this, hashtag, streamerID, accountCredentials);
-    }
-
-    Utils._extends(BasicStreamer, Streamer, {
         onChunk: function (conn) {
             var xhr = conn.xhr;
 
@@ -217,9 +266,8 @@ var Twitter = (function (module) {
             // 2 headers received
             // 3 loading
             // 4 done
-            if (conn === this.backupConn) {
-                // only the main connection can send tweets.
-                console.log.debug("backup connection started receiving... not ready yet.");
+            if (conn !== this.backupConn && conn !== this.conn) {
+                console.log.error("stale connection still invoking callbacks");
                 return;
             }
 
@@ -229,22 +277,26 @@ var Twitter = (function (module) {
                 // did not get enough to form a tweet.
                 return;
             }
+
             chunk = xhr.responseText.substr(conn.index + 1, nextEOL - conn.index);
 
             // twitter will periodically send whitespace, just to keep
             // a flow going. , one tweet per line (\n).
-            chunk.split(/\n\s*/).map(line => {
+            chunk.split(/\r?\n\s*/).map(line => {
+                var tweet;
+
                 if (!line) {
                     return;
                 }
-                // there might be trailing space. but that's okay.
+
                 try {
-                    var tweet = JSON.parse(line);
-                    module.stats.update(line, tweet);
-                    this.emit('tweet', tweet);
+                    // it tolerates trailing whitespace
+                    tweet = JSON.parse(line);
                 } catch (error) {
                     console.error("failed to parse JSON:", error, line);
                 }
+
+                this._pushTweet(conn, tweet, line);
             });
             conn.index = nextEOL;
 
@@ -262,21 +314,27 @@ var Twitter = (function (module) {
             //     }
             // }
 
-            if (xhr.responseText.length >= 10000) {
-                //FIXME -- not tested -- do the partial tweets stick around?
-                this._initXHR();
-            }
-
-                } else {
-                    // fixme. do restart
-                    console.error("Stream connection failed.", this.tpost.status, this.tpost.responseText);
-                    this.abort();
+            if (xhr.responseText.length >= module.RECONNECT_THRES_BYTES) {
+                if (this.backupConn === null) {
+                    this.backupConn = this._createConn();
+                    this.backupConn.connected.then(() => {
+                        // next time we receive the same tweet from both
+                        // streams, the backup connection becomes the primary
+                        console.debug("backup connection established.");
+                        this._pushCache = {};
+                    }).catch(err => {
+                        if (err.code === Fail.NETWORK) {
+                            console.error("backup scheme failed. implement timer restart");
+                            return;
+                        }
+                    });
+                    this.backupConn.send();
                 }
             }
-        }
+        }                       // end onchunk
     });
 
-    module.BasicStreamer = BasicStreamer;
+    module.Streamer = Streamer;
 
     /**
        The manager is the class that manages a series of Twitter streams
@@ -534,9 +592,9 @@ var Twitter = (function (module) {
 
                 // grow the oldest active streamer on the same account
                 streamersWithSameCreds.sort((a, b) => {
-                    if (a.connectedOn < b.connectedOn) {
+                    if (a.conn.connectedOn < b.conn.connectedOn) {
                         return -1;
-                    } else if (a.connectedOn > b.connectedOn) {
+                    } else if (a.conn.connectedOn > b.conn.connectedOn) {
                         return 1;
                     } else {
                         return 0;
@@ -556,7 +614,7 @@ var Twitter = (function (module) {
                 }
 
 
-                var newStreamer = this.addStreamer(afterHashes, BasicStreamer, this.ref2creds[growRef]);
+                var newStreamer = this.addStreamer(afterHashes, Streamer, this.ref2creds[growRef]);
                 newStreamer.on('tweet', tweet => {
                     this.onTweet(tweet, newStreamer);
                 });
@@ -564,9 +622,6 @@ var Twitter = (function (module) {
                 newStreamer.send();
                 return this._scheduleStreamUpdate();
             }
-
-            // we're done
-            console.log("Streams all sync'd up.");
         },
 
         /*
@@ -574,7 +629,7 @@ var Twitter = (function (module) {
           @klass: streamer constructor
          */
         addStreamer: function (hashtag, klass, accountCredentials) {
-            if (!(klass.prototype instanceof Streamer)) {
+            if (!(klass.prototype instanceof Streamer) && klass !== Streamer) {
                 throw new Error("invalid streamer subclass");
             }
             var streamer = new klass(hashtag, Utils.randomStr128(), accountCredentials);
