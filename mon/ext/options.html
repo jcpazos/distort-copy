@@ -265,13 +265,13 @@
       <form id="new-account-form">
 
 	<div data-step="start" data-buttons="next.disabled cancel" class="new-account-step">
-	  <h3>Step 1. Twitter Information</h3>
+	  <h3>Step 1a. Twitter Information</h3>
 	  <p>A Twistor account is linked to a Twitter account in your
 	    browser session. Twistor
 	    will post on Twitter using that account. You
 	    may sign out from Twitter and re-login as a different
 	    account.
-	  <p><a id="connect-twitter">Connect</a>
+	  <p><a id="connect-twitter">Connect Twitter</a>
 
 	    <div id="twitter-info" class="hidden">
 	      <hr>
@@ -283,6 +283,24 @@
 
 	      <input type="hidden" name="primary-token"></input>
 	    </div>
+	</div>
+
+	<div data-step="start-github" data-buttons="next.disabled cancel" class="new-account-step">
+	  <h3>Step 1b. Github Information</h3>
+	  <p>A Twistor account is verified through a Github account. Twistor
+		  will update a project on Github using that account. You
+		  may sign out from Github and re-login with a different
+		  account.
+	  <p><a id="connect-github">Connect Github</a>
+
+	  <div id="github-info" class="hidden">
+	    <hr>
+
+	  <label for="secondary-handle">Github Handle</label>
+	  <input placeholder="n/a" type="text" name="secondary-handle" readonly></input>
+
+	  <input type="hidden" name="primary-token"></input>
+	  </div>
 	</div>
 
 	<div data-step="twitter-app" data-buttons="back next.disabled cancel" class="new-account-step">

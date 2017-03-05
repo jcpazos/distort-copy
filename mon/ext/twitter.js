@@ -494,6 +494,10 @@ var Twitter = (function (module) {
 
         /* de-aliases credentials objects known to the active streams */
         _unaliasCreds: function (creds) {
+            if (!creds) {
+                return null;
+            }
+
             for (var name in this.ref2creds) {
                 if (this.ref2creds.hasOwnProperty(name)) {
                     var other = this.ref2creds[name];

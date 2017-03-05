@@ -6,6 +6,7 @@ var BG = chrome.extension.getBackgroundPage();
 var $ = BG.$;
 var Vault = BG.Vault;
 var Twitter = BG.Twitter;
+var Github = BG.Github;
 var $doc = $(document);
 var Fail = BG.Fail;
 var DateUtil = BG.DateUtil;
@@ -91,6 +92,7 @@ function readAccountForm() {
     opts.primaryId = $doc.find("input[name='primary-id']").val();
     opts.primaryHandle = $doc.find("input[name='primary-handle']").val();
     opts.primaryApp = $doc.find("input[name='twitter-app-keys']").data('keys');
+    opts.secondaryHandle = $doc.find("input[name='secondary-handle']").val();
     // null if a new key is to be generated
     opts.key = $doc.find("textarea[name='key-data']").data("key");
     opts.groups = [];
@@ -130,7 +132,32 @@ function stepButtonClick(evt) {
         case "start":
             switch(bName) {
             case "next":
-                showStep(stepClass, "twitter-app");
+                showStep(stepClass, "start-github");
+                break;
+            default:
+                showPage("main");
+                break;
+            }
+            break;
+
+        case "start-github":
+            switch(bName) {
+                case "next":
+                    showStep(stepClass, "twitter-app");
+                    break;
+                default:
+                    showPage("main");
+                    break;
+            }
+            break;
+
+       case "twitter-app":
+           switch(bName) {
+            case "back":
+                showStep(stepClass, "start");
+                break;
+            case "next":
+                showStep(stepClass, "import-keys");
                 break;
             default:
                 showPage("main");
@@ -286,6 +313,9 @@ function initStep(className, stepNo) {
     case "new-account-step.start":
         $stepDiv.find("#twitter-info").hide();
         break;
+    case "new-account-step.start-github":
+        $stepDiv.find("#github-info").hide();
+        break;
     case "new-account-step.twitter-app":
         $stepDiv.find("#twitter-app-existing").html("<option value='new'>Create a new Application</option>");
         $stepDiv.find("#twitter-app-existing").prop("disabled", true);
@@ -348,6 +378,8 @@ function refreshAccounts() {
     "use strict";
 
     var users = Vault.getAccountNames();
+    var accounts = users.map(user => Vault.getAccount(user));
+
     if (users.length < 1) {
         $doc.find(".has-accounts").hide();
         $doc.find(".no-accounts").show();
@@ -365,7 +397,7 @@ function refreshAccounts() {
     for (i = 0; i < users.length; i++) {
         $row = $(getTemplate("user-row"));
         $row.attr("data-username", users[i]).find('[data-username]').attr("data-username", users[i]);
-        $row.find(".user").text("@" + users[i]);
+        $row.find(".user").text("@" + accounts[i].primaryHandle + " (gh: " + accounts[i].secondaryHandle + ")");
         $row.find(".account-status").text(users[i] === defaultUser ? "active" : "inactive");
         $row.appendTo($body);
     }
@@ -648,6 +680,35 @@ function loadPage() {
         });
     });
 
+    $doc.find("#connect-github").click(function () {
+        enableByName({next: false});
+        updateStatus("Connecting to Github...");
+
+        Github.getGithubUserInfo().then(function (githubInfo) {
+            if (githubInfo.githubUser === null) {
+                updateStatus("Please log in to Github in a new tab.", true);
+                return;
+            }
+            updateStatus("Github information retrieved.");
+            $doc.find("input[name='secondary-handle']").val(githubInfo.githubUser);
+            //$doc.find("input[name='secondary-id']").val(githubInfo.githubID);
+            $doc.find("#github-info").show();
+
+            // TODO fix filter function such that it works properly
+            // if (Vault.getAccounts(accnt => accnt.secondaryHandle === githubInfo.githubUser).length > 0) {
+            //     updateStatus("There is an account linked with this GitHub ID. Please" +
+            //         "log in to another GitHub account or delete the existing Twistor " +
+            //         "account.", true);
+            //     return;
+            // }
+
+            enableByName({"next": true});
+        }).catch(function (err) {
+            updateStatus(err, true);
+            throw err;
+        });
+    });
+
     $doc.find("#twitter-app-existing").change(function (evt) {
         var val = $(evt.target).val();
 
@@ -704,6 +765,8 @@ function loadPage() {
             });
         }).then(function (keys) {
             updateStatus("Keys received.");
+
+            // TODO do we need similar verification for secondary ID?
 
             var primaryHandle = $doc.find("input[name='primary-handle']").val();
             var primaryId = $doc.find("input[name='primary-id']").val();

@@ -18,11 +18,30 @@
 **/
 
 /*global
-  chrome, Promise, performance,
-  ECCPubKey, AESKey, KeyLoader, Friendship,
-  UI, Utils, Vault, Twitter, Certs, base16k,
-  Events, API, Outbox,
-  getHost, Fail, assertType, OneOf, KH_TYPE, MSG_TYPE, _extends
+  AESKey,
+  API,
+  assertType,
+  base16k,
+  Certs,
+  chrome,
+  ECCPubKey,
+  Events,
+  _extends
+  Fail,
+  Friendship,
+  getHost,
+  Github,
+  KeyLoader,
+  KH_TYPE,
+  MSG_TYPE,
+  OneOf,
+  Outbox,
+  performance,
+  Promise,
+  Twitter,
+  UI,
+  Utils,
+  Vault
 */
 
 //console.log("Beeswax External Monitor - background script init");
@@ -1428,8 +1447,7 @@ _extends(DistributeTask, Utils.PeriodicTask, {
                 UI.log("Account " + account.id + " is not in any group. Cannot post.");
                 return false;
             }
-
-            return API.postKeys(account).catch(function (err) {
+            return API.postCert(account).catch(function (err) {
                 UI.log("error reposting(" + err.code + "): " + err);
                 throw err; // throw again
             }).then(function () {
@@ -1439,6 +1457,14 @@ _extends(DistributeTask, Utils.PeriodicTask, {
         }
 
         return Twitter.fetchLatestCertFromFeed(that.username).then(function (twitterCert) {
+            // Call github to verify cert from twitter before proceeding
+            try {
+
+                Github.verifyCertFromPrimary(twitterCert, account.secondaryHdl);
+            } catch (err) {
+                throw err;
+            }
+
             var myKey = account.key.toPubKey();
             var keyAgeMs = (checkTime - twitterCert.validFrom) * 1000;
 
@@ -1623,7 +1649,7 @@ BGAPI.prototype.accountChanged = function (username) {
 };
 
 // Promises true if the certificate for the given account is posted successfully.
-BGAPI.prototype.postKeys = function (account) {
+BGAPI.prototype.postCert = function (account) {
     "use strict";
 
     var ts = Date.now();
@@ -1636,6 +1662,12 @@ BGAPI.prototype.postKeys = function (account) {
         groupNames.sort();
 
         var groupString = groupNames.map(name => "#" + name).join(" ");
+
+        /**
+         * NOTE: Max length of a username on GitHub is 39 characters, so it should be okay with
+         * the default encoding.
+        */
+
         var encryptStatus = [
             "#" + Certs.PartialCert.ENCRYPTKEY,
             ts.toString(16),
@@ -1655,6 +1687,7 @@ BGAPI.prototype.postKeys = function (account) {
         var signedMessage = [
             account.primaryHandle,
             account.primaryId,
+            account.secondaryHandle,
             pkPacked.encrypt,
             pkPacked.sign,
             ts.toString(16),
@@ -1684,12 +1717,19 @@ BGAPI.prototype.postKeys = function (account) {
             throw new Fail(Fail.PUBSUB, "cert signature tweet too long (" + sigStatus.length + "B > 140B)");
         }
 
-        resolve(API.postTweets(account,
-                               [ {msg: encryptStatus, groups: groupNames},
-                                 {msg: signStatus, groups: groupNames},
-                                 {msg: sigStatus, groups: groupNames}
-                               ])
-                .then(() => true));
+        // Cert is broken into 3 chunks/messages
+        resolve({
+            msgs: [encryptStatus, signStatus, sigStatus],
+            groups: groupNames
+        });
+    }).then(certData => {
+        // post to github first as it will invalidate the currently active cert
+        // on twitter.
+        return Github.postGithubKey(account, certData.msgs).then(() => certData);
+    }).then(certData => {
+        return API.postTweets(account, certData.msgs.map(m => ({msg: m, groups: certData.groups})));
+    }).then(() => {
+        return true;
     });
 };
 
@@ -1698,7 +1738,8 @@ BGAPI.prototype.postKeys = function (account) {
    Fails with PUBSUB if any of the messages could not be
    posted.
 
-   This will update the groupStats on the account.
+   This will update the groupStats on the account. We bump
+   the send() statistics for the groups involved.
 
    each msgSpec is:
     { msg: text string of message,

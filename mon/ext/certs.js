@@ -64,6 +64,49 @@ window.Certs = (function (module) {
                        createdAtMs: unix time posted in ms
                      }
         */
+        // TODO write equivalent "feedRepo" function that takes cert data from GitHub,
+        // runs through it, then returns a user cert. this can then be used to compare
+        // with the existing cert from Twitter.
+        // NOTE: must call feedToks w/ the chunks
+
+        // certText is an array
+        feedRepo: function (certText, envelope) {
+            var secondaryHdl = envelope.secondaryHdl;
+            // This function takes in the cert from a repo that is line separated.
+            // Each portion needs to be fed into feedToks(), and eventually feedToks()
+            // should return a full cert if valid, or an error if invalid.
+
+            var partialCerts = this._getPartialCert(cert => {
+                return cert.secondaryHdl === secondaryHdl;
+            });
+
+            var partialCert = partialCerts[0];
+            if (!partialCert) {
+                partialCert = new PartialCert({
+                    secondaryHdl: secondaryHdl
+                });
+                this._addPartialCert(partialCert);
+            }
+
+            for (var line in certText) {
+                try {
+                    var userCert = partialCert.feedToks(certText[line]);
+                    if (userCert) {
+                        this._removePartialCert(userCert);
+                    }
+                    return userCert;
+                } catch (err) {
+                    if (err instanceof Fail) {
+                        // remove certs with invalid parts
+                        console.log("partial cert processing for github failed", err);
+                        this._removePartialCert(partialCert);
+                    }
+                    throw err;
+                }
+            }
+
+        },
+
         feedTweet: function (tweetText, envelope) {
             var primaryId = envelope.primaryId;
             var primaryHdl = envelope.primaryHdl;
@@ -150,6 +193,7 @@ window.Certs = (function (module) {
         // taken from tweet envelope
         this.primaryId = opts.primaryId || null;
         this.primaryHdl = opts.primaryHdl || null;
+        this.secondaryHdl = opts.secondaryHdl || null;
 
         // taken from first tweet in sequence
         this.groups = opts.groups || [];
@@ -216,7 +260,7 @@ window.Certs = (function (module) {
             // first time we fill this in -- need at least one group
             if (!this.groups || this.groups.length === 0) {
                 if (clean.length === 0) {
-                    throw new Fail(Fail.BADPARAM, "no groups specified");
+                    throw new Fail(Fail.BADPARAM, "partial cert has no groups");
                 }
                 this.groups = clean;
                 return;
@@ -294,6 +338,7 @@ window.Certs = (function (module) {
             var signedMessage = [
                 this.primaryHdl,
                 this.primaryId,
+                this.secondaryHdl,
                 this.encryptkey,
                 this.signkey,
                 this.primaryTs.toString(16),
@@ -320,6 +365,7 @@ window.Certs = (function (module) {
             var opts = {
                 primaryHdl: this.primaryHdl,
                 primaryId: this.primaryId,
+                secondaryHdl: this.secondaryHdl,
                 // validFrom is set to the date at which we receive the first part
                 validFrom: pubKeyContainer.ts / 1000,
                 validUntil: pubKeyContainer.expiration / 1000,
@@ -338,7 +384,6 @@ window.Certs = (function (module) {
 
         this.primaryId = opts.primaryId || null;
         this.primaryHdl = opts.primaryHdl || null;
-        this.secondaryId = opts.secondaryId || null;
         this.secondaryHdl = opts.secondaryHdl || null;
 
         this.validFrom = opts.validFrom || 0; // Unix. seconds. taken from cert body.
@@ -451,7 +496,6 @@ window.Certs = (function (module) {
                 id: this.id,
                 primaryId: this.primaryId,
                 primaryHdl: this.primaryHdl,
-                secondaryId: this.secondaryId,
                 secondaryHdl: this.secondaryHdl,
                 validFrom: this.validFrom,
                 validUntil: this.validUntil,
@@ -555,6 +599,21 @@ window.Certs = (function (module) {
                     };
                 });
             }).then(cert => {
+                /** TODO verify new certs with github.
+                 * //TODO query Github for key from cert.
+
+                    when a cert is saved, we emit an event.
+
+                    hook this up with a function that validates this
+                    new cert matches the cert on github. the
+                    verification only needs to happen if the cert
+                    status is STATUS_UNKNOWN.
+
+                    if verification passes, update the cert in the DB
+                    with state STATUS_OK. and update `verifiedOn`.
+
+                    if it fails. use STATUS_FAIL.
+                */
                 this.emit("cert:updated", cert);
                 return cert;
             });

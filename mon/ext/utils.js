@@ -23,7 +23,7 @@
 */
 /*global sjcl,
   escape, unescape,
-  Promise
+  Promise, github
 */
 /**
  *  Makes @child inherit from @parent
@@ -199,7 +199,7 @@ function Fail(code, message, extra) {
     this.code = (code === undefined) ? null:code;
     this.name = "Fail";
     // pop first frame off the stack
-    this.stack = "Fail" + stack.substr(stack.indexOf("\n", stack.indexOf("\n") + 1));
+    this.stack = "Fail " + this.message + stack.substr(stack.indexOf("\n", stack.indexOf("\n") + 1));
     this.extra = extra;
 }
 _extends(Fail, Error, {
@@ -975,7 +975,7 @@ window.Utils = (function (module) {
             that.status = "completed";
             _reschedule();
         }).catch(function (err) {
-            console.error("Periodic task failed:", err);
+            console.error("Periodic task failed: " + err.stack);
             that.status = "error";
             _reschedule();
         });
@@ -1094,7 +1094,8 @@ window.Utils = (function (module) {
         DateUtil,
         keyidShortHex,
         assertType,
-        OneOf
+        OneOf,
+        github
     };
 
     Object.keys(exports).forEach(k => module[k] = exports[k]);

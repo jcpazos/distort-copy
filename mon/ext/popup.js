@@ -17,14 +17,8 @@
     <http://www.gnu.org/licenses/>.
 **/
 
-
-/*jshint
-  es5: true
-*/
-
 /*global
-  chrome, Promise,
-  ECCPubKey
+  chrome, Promise
 */
 
 function getHost(url) {
@@ -172,7 +166,7 @@ function onCtxChange(evt) {
         window.ctx = ctx;
     }
 }
-    
+
 function getPrompts() {
     "use strict";
 
@@ -372,24 +366,27 @@ function render() {
 function onKPPost(evt) {
     "use strict";
 
-    var username = Vault.getUsername();
-    var ident = Vault.getAccount(Vault.getUsername());
+    var account = Vault.getAccount();
 
-    if (!ident) {
+    if (!account) {
         console.error("nothing to view");
         return;
     }
 
-    if (!confirm("Beeswax will post public keys to twitter account '@" + Vault.getUsername() + "'\nDo you wish to continue?")) {
-        return;
-    }
-
-    API.postKeys(username).then(function () {
-        log("Keys successfully posted for account: @" + username);
-    }).catch(function (err) {
-        console.log(err);
-        log("ERROR: Could not post keys to Twitter. code: " + err.code + " msg: " + err);
+    var p = UI.prompt(null, "repost", "Repost cert to account '" + account.id_both + "'?", [UI.Prompt.ACCEPT, UI.Prompt.CANCEL]);
+    p.getPromise().then(res => {
+        if (res === UI.Prompt.ACCEPT) {
+            $doc.find(".kp-post").prop("disabled", true);
+            API.postCert(account).then(function () {
+                log("Certificate for account '" + account.id_both + "' reposted.");
+            }).catch(function (err) {
+                log("ERROR(" + err.code + "): " + err);
+            }).then(() => {
+                $doc.find(".kp-post").removeProp("disabled", true);
+            });
+        }
     });
+    render();
 }
 
 function onKPView(evt) {

@@ -101,6 +101,11 @@ window.UI = (function () {
         // Param tab: a chrome Tab object
 
         return function (p) {
+            if (p.ctx === null) {
+                // this prompt is global (any context), so it should
+                // be considered, regardless of which tab is active.
+                return true;
+            }
             return p && p.ctx.tabId === tab.id;
         };
     };

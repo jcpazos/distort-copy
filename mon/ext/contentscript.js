@@ -988,6 +988,118 @@
             });
         },
 
+        // TODO create "create_repo" and "update_repo" functions here to handle Github integration
+        create_repo: function(opts){
+            return new Promise(function (resolve, reject) {
+
+                var data = opts.data;
+                var i;
+
+                var fields = ["owner", "authToken", "name", "description", "public"];
+                var missing = [];
+                for (var i in fields) {
+                    if (data[fields[i]] === undefined) {
+                        missing.push(fields[i]);
+                    }
+                }
+                if (missing.length > 0) {
+                    throw new Fail(Fail.BADPARAM, "parameters missing: " + missing.join(" "));
+                }
+                //application/x-www-form-urlencoded
+                var formData = [
+                    ['utf8', decodeURIComponent("%E2%9C%93")], // checkmark character
+                    ['authenticity_token', data.authToken],
+                    ['owner', data.owner],
+                    ['repository[name]', data.name],
+                    ['repository[description]', data.description],
+                    ['repository[public]', (data.public)?"true":"false"]
+                ];
+
+                if (data.auto_init === undefined) {
+                    formData.push(["repository[auto_init]", "1"]);
+                } else {
+                    formData.push(["repository[auto_init]", "" + data.auto_init]);
+                }
+                var body = formData.map(item => encodeURIComponent(item[0]) + "=" + encodeURIComponent(item[1])).join("&");
+
+                var url = "https://github.com/repositories";
+                var preq = new XMLHttpRequest();
+                preq.open("POST", url, true);
+                preq.setRequestHeader("Content-type", "application/x-www-form-urlencoded; charset=utf-8");
+
+                // console.debug("Generated post: ", postData, " LENGTH: ", postData.length);
+                preq.onload = function () {
+                    if (preq.status < 200 || preq.status >= 300) {
+                        // if the response is a 301, it doesn't look like the browser follows the
+                        // redirect to post again. so we need the 200 range
+                        var msg = "HTTP Error when creating GitHub repo: (" + preq.status + ") " + preq.statusText;
+                        console.error(msg, preq);
+                        return reject(Fail.fromVal(preq).prefix("Could not create GitHub repo"));
+                    }
+                    resolve(true);
+                };
+
+                preq.onerror = function (err) {
+                    console.error("Problem creating Github repo.", [].slice.apply(arguments));
+                    return reject(Fail.fromVal(preq).prefix("Could not create GitHub repo"));
+                };
+
+                preq.send(body);
+            });
+
+        },
+
+        update_repo: function(opts) {
+            return new Promise(function (resolve, reject) {
+
+                var data = opts.data;
+                var userHandle = opts.ghHandle;
+                var preq = new XMLHttpRequest();
+
+                var formData = [
+                    ['filename', data.filename],
+                    ['authenticity_token', data.authenticity_token],
+                    ['new_filename', data.new_filename],
+                    ['commit', data.commit],
+                    ['same_repo', "1"],
+                    ['content_changed', (data.authenticity_token)?"true":"false"],
+                    ['value', data.value],
+                    ['message', data.message],
+                    ['placeholder_message:', 'Update README.md'],
+                    ['description', ''],
+                    ['commit-choice', data.commit_choice],
+                    ['target_branch', data.target_branch],
+                    ['quick_pull', ''],
+                ];
+                var body = formData.map(item => encodeURIComponent(item[0]) + "=" + encodeURIComponent(item[1])).join("&");
+
+
+                //TODO check that all parameters are present. throw otherwise
+
+                var url = "https://github.com/" + encodeURIComponent(userHandle) + "/twistor-app/tree-save/master/README.md";
+                preq.open("POST", url, true);
+                preq.setRequestHeader("Content-type", "application/x-www-form-urlencoded; charset=utf-8");
+
+                // console.debug("Generated post: ", postData, " LENGTH: ", postData.length);
+
+                preq.onerror = function () {
+                    return reject(Fail.fromVal(preq).prefix("Could not update GitHub repo"));
+                };
+
+                preq.onload = function () {
+                    if (preq.status < 200 || preq.status >= 300) {
+                        // if the response is a 301, it doesn't look like the browser follows the
+                        // redirect to post again. so we need the 200 range
+                        return reject(Fail.fromVal(preq).prefix("Could not update GitHub repo"));
+                    }
+                    resolve(true);
+                };
+
+                preq.send(body);
+            });
+        },
+
+
         /**
            Perform "Create my access token" button in the UI.
 
@@ -1079,7 +1191,7 @@
 
         darken: function (opts) {
             var params = opts.params;
-             
+
             // if the parea doesn't exist, complain
             if (!pareas[params.parent]) {
                 //TODO do something intelligent
