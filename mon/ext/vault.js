@@ -215,7 +215,6 @@ window.Vault = (function () {
                 userid = this.get("username");
             }
             if (!userid) {
-                console.error("No user selected!");
                 return null;
             }
 
