@@ -42,7 +42,7 @@ window.Stats = (function (module) {
 
     function Dispersion(opts) {
         opts = opts ||  {};
-        opts.supportMedian = (opts.supportMedian === undefined) ? false : true;
+        opts.supportMedian = !!opts.supportMedian;
 
         if (opts.supportMedian) {
             this.values = [];
