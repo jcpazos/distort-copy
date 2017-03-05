@@ -1094,8 +1094,7 @@ window.Utils = (function (module) {
         DateUtil,
         keyidShortHex,
         assertType,
-        OneOf,
-        github
+        OneOf
     };
 
     Object.keys(exports).forEach(k => module[k] = exports[k]);
