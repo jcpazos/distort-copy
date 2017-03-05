@@ -26,6 +26,8 @@
 window.Outbox = (function (module) {
     "use strict";
 
+    module.DEBUG = false;
+
     /**
        posts a message from a queue at regular intervals. if no
        message is available, it generates a random noise message.
@@ -296,7 +298,7 @@ window.Outbox = (function (module) {
                                  this._getPostGroups(),
                                  ' ',
                                  pack.Base16k('b16', {}, twistor_body));
-            return tweet.toString({debug: true});
+            return tweet.toString({debug: module.DEBUG});
         }
     });
 
