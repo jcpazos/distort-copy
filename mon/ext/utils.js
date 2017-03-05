@@ -191,7 +191,7 @@ var DateUtil = {
 };
 
 
-function Fail(code, message) {
+function Fail(code, message, extra) {
     "use strict";
     var stack = (new Error().stack);
 
@@ -200,6 +200,7 @@ function Fail(code, message) {
     this.name = "Fail";
     // pop first frame off the stack
     this.stack = "Fail" + stack.substr(stack.indexOf("\n", stack.indexOf("\n") + 1));
+    this.extra = extra;
 }
 _extends(Fail, Error, {
     prefix: function (message) {
@@ -268,7 +269,7 @@ Fail.fromVal = function (thing) {
         }
 
         if (thing instanceof XMLHttpRequest) {
-            return new Fail(Fail.NETWORK, "Network Error (" + thing.status + ") " + thing.statusText);
+            return new Fail(Fail.NETWORK, "Network Error (" + thing.status + ") " + thing.statusText, thing.status);
         }
 
         if (thing.code) {
