@@ -1025,10 +1025,10 @@ var Twitter = (function (module) {
 
     // Fetches user's latest public key on Twitter
     //
-    // Promises UserCert
+    // Promises UserCert.
     //
-    // Fails with NOIDENT if keys can't be found (expired or not)
-    // Fails with GENERIC if any other problem arises
+    // Fails with NOIDENT if no valid certificate was found.
+    // Fails with GENERIC if any other problem arises.
     //
     module.fetchLatestCertFromFeed = function (handle) {
 
@@ -1099,7 +1099,7 @@ var Twitter = (function (module) {
                         fullCerts[fullCert.primaryId].push(fullCert);
                     }
                 } catch (err) {
-                    if ((err instanceof Fail) && [Fail.BADPARAM, Fail.STALE].includes(err.code)) {
+                    if ((err instanceof Fail) && [Fail.BADPARAM, Fail.STALE, Fail.CORRUPT].includes(err.code)) {
                         return;
                     }
                     throw err;
