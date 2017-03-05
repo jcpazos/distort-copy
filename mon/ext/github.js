@@ -343,7 +343,7 @@ window.Github = (function() {
                     commit: githubInfo.commitId,
                     same_repo: "1",
                     content_changed: "true",
-                    value: keys.join(" "),
+                    value: keys.join("\n"),
                     message: "Updating certificate",
                     commit_choice: "direct",
                     target_branch: "master",
