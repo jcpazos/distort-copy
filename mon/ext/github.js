@@ -160,7 +160,7 @@ window.Github = (function() {
             return new Promise(function (resolve, reject) {
                 // fetch the user's github homepage
                 var preq = new XMLHttpRequest();
-                preq.open("GET", "https://www.github.com", true);
+                preq.open("GET", "https://github.com", true);
 
                 preq.onerror = function () {
                     console.error("Problem loading Github homepage", [].slice.apply(arguments));
@@ -211,7 +211,7 @@ window.Github = (function() {
         },
 
         postGithubKey: function (account, keys) {
-            var repoURL = "https://www.github.com/" + encodeURIComponent(account.secondaryHandle) + "/twistor-app";
+            var repoURL = "https://github.com/" + encodeURIComponent(account.secondaryHandle) + "/twistor-app";
 
             return this.getGithubUserInfo().then(githubInfo => {
                 if (githubInfo.githubUser === null) {
