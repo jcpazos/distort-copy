@@ -39,19 +39,12 @@ window.Github = (function() {
             function checkGHCert(responseText) {
                 var certFeed = new Certs.PartialCertFeed();
                 var fullCert = {};
-                // Split the GitHub readme on new line
 
-                try {
-                    fullCert = certFeed.feedRepo(responseText, {secondaryHdl: ghHdl});
-                    if (fullCert) {
-                        return fullCert;
-                    }
-                } catch (err) {
-                    if ((err instanceof Fail) && [Fail.BADPARAM, Fail.STALE].includes(err.code)) {
-                        return;
-                    }
-                    throw err;
+                fullCert = certFeed.feedRepo(responseText, {secondaryHdl: ghHdl});
+                if (fullCert) {
+                    return fullCert;
                 }
+                throw new Fail(Fail.NOIDENT, "Could not retrieve valid cert from GitHub for user " + ghHdl);
             }
 
             return new Promise((resolve, reject) => {
@@ -75,12 +68,14 @@ window.Github = (function() {
                     }
 
                     // 200, or 206 (partial)
-                    var latestCert = checkGHCert(xhr.responseText);
-
-                    if (!latestCert) {
-                        return reject(new Fail(Fail.NOIDENT, "Could not retrieve valid cert from GitHub"));
+                    try {
+                        resolve(checkGHCert(xhr.responseText));
+                    } catch (err) {
+                        if ((err instanceof Fail) && [Fail.BADPARAM, Fail.CORRUPT, Fail.STALE].includes(err.code)) {
+                            reject(new Fail(Fail.NOIDENT, "No cert found on github for user " + ghHdl));
+                        }
+                        reject(err);
                     }
-                    resolve(latestCert);
                 };
 
                 xhr.onerror = function (err) {
