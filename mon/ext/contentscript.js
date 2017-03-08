@@ -45,7 +45,7 @@
             if (!args) {
                 args = [];
             }
-        
+
             var err = getErr();
             var caller_line = err.stack.split("\n")[4];
             var index = caller_line.indexOf("at ");

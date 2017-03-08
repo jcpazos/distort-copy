@@ -18,9 +18,15 @@
 **/
 
 /*global
-  Promise, Fail, Utils, Emitter,
-  KeyLoader, ECCPubKey, base16k,
-  IDBKeyRange
+  base16k,
+  ECCPubKey,
+  Emitter,
+  Fail,
+  IDBKeyRange,
+  KeyClasses,
+  KeyLoader,
+  Promise,
+  Utils
 */
 
 /*exported Twitter */
@@ -85,7 +91,8 @@ window.Certs = (function (module) {
 
             certText.split('\n').forEach(line => {
                 try {
-                    var userCert = partialCert.feedToks(line);
+                    var toks = line.split(/\s+/).filter(tok => !!tok);
+                    var userCert = partialCert.feedToks(toks);
                     if (userCert) {
                         this._removePartialCert(userCert);
                     }
@@ -329,22 +336,6 @@ window.Certs = (function (module) {
                 sign: this.signkey
             });
 
-            var signedMessage = [
-                this.primaryHdl,
-                this.primaryId,
-                this.secondaryHdl,
-                this.encryptkey,
-                this.signkey,
-                this.primaryTs.toString(16),
-                this.expirationTs.toString(16),
-                sortedGroups.join(" ") // no #
-            ].join("");
-
-            if (!key.verifySignature(signedMessage, this.keysig,
-                                     {encoding: 'domstring', sigEncoding: 'hex'})) {
-                throw new Fail(Fail.CORRUPT, "verification failed");
-            }
-
             var pubKeyContainer = {
                 expiration: this.primaryTs + this.expirationTs,
                 ts: this.primaryTs,
@@ -360,15 +351,20 @@ window.Certs = (function (module) {
                 primaryId: this.primaryId,
                 secondaryHdl: this.secondaryHdl,
                 // validFrom is set to the date at which we receive the first part
-                validFrom: pubKeyContainer.ts / 1000,
-                validUntil: pubKeyContainer.expiration / 1000,
-                completedOn: Date.now() / 1000,
+                validFrom: pubKeyContainer.ts,  // unix. ms.
+                validUntil: pubKeyContainer.expiration, // unix. ms.
+                completedOn: Date.now(), // unix. ms
                 verifiedOn: 0,
                 key: pubKeyContainer.key,
                 // groups is set on the first key tweet
                 groups: sortedGroups,
             };
-            return new UserCert(opts);
+            var userCert = new UserCert(opts);
+
+            if (!userCert.verifySelf(this.keysig, 'hex')) {
+                throw new Fail(Fail.CORRUPT, "verification failed");
+            }
+            return userCert;
         }
     };
 
@@ -377,10 +373,11 @@ window.Certs = (function (module) {
 
         this.primaryId = opts.primaryId || null;
         this.primaryHdl = opts.primaryHdl || null;
+        //max 39 chars. alphanum + '-' . may not begin or end with '-'
         this.secondaryHdl = opts.secondaryHdl || null;
 
-        this.validFrom = opts.validFrom || 0; // Unix. seconds. taken from cert body.
-        this.validUntil = opts.validUntil || 0; // Unix. seconds. taken from cert body.
+        this.validFrom = opts.validFrom || 0; // Unix. ms. taken from cert body.
+        this.validUntil = opts.validUntil || 0; // Unix. ms. taken from cert body.
 
         this.completedOn = opts.completedOn || 0; // Date cert was assembled. Unix. seconds.
         this.verifiedOn = opts.verifiedOn || 0; // Date cert was verified. Unix. seconds.
@@ -488,8 +485,8 @@ window.Certs = (function (module) {
                 typ: "ucert",
                 id: this.id,
                 primaryId: this.primaryId,
-                primaryHdl: this.primaryHdl,
-                secondaryHdl: this.secondaryHdl,
+                primaryHdl: this.primaryHdl,   //max 15 chars
+                secondaryHdl: this.secondaryHdl, // max 39 chars
                 validFrom: this.validFrom,
                 validUntil: this.validUntil,
                 completedOn: this.completedOn,
@@ -498,8 +495,78 @@ window.Certs = (function (module) {
                 groups: this.groups,
                 key: (this.key) ? this.key.toStore() : null,
             };
+        },
+
+        _getSignedBits: function () {
+            var hexKey = () => {
+                return this.key.hexify();
+            }, _primaryHandle = () => {
+                return this.primaryHdl;
+            }, _primaryId = () => {
+                return this.primaryId;
+            }, _secondaryHandle = () => {
+                return this.secondaryHandle;
+            }, _encryptKey = () => {
+                return hexKey.encrypt;
+            }, _signKey = () => {
+                return hexKey.sign;
+            }, _validFrom = () => {
+                return this.validFrom.toString(16);
+            }, _validUntil = () => {
+                return this.validUntil.toString(16);
+            }, _groups = () => {
+                var grp = this.groups.slice();
+                grp.sort();
+                return grp.join(" ");
+            };
+
+            var signedMessage = [
+                _primaryHandle(),
+                _primaryId(),
+                _secondaryHandle(),
+                _encryptKey(),
+                _signKey(),
+                _validFrom(),
+                _validUntil(),
+                _groups()
+            ].join("\n");
+
+            return KeyClasses.stringToBits(signedMessage, 'domstring');
+        },
+
+        // produces a valid signature for the cert's info,
+        // using the given ECCKeypair.
+        getSignature: function (keypair, outEncoding) {
+            var sig = keypair.signText(this._getSignedBits(), outEncoding);
+            return sig;
+        },
+
+        // verifies this certificate's given self signature.
+        // returns true if it verifies, false otherwise
+        verifySelf: function (sig, sigEncoding) {
+            if (this.key.verifySignature(this._getSignedBits(), sig, {
+                encoding: null,
+                sigEncoding: sigEncoding})) {
+                return true;
+            } else {
+                return false;
+            }
         }
     };
+
+    /** creates a user certificate from the given account information.
+     */
+    UserCert.fromAccount = function (account, validFromMs, validUntilMs) {
+        var groups = account.groups.map(stats => stats.name);
+        groups.sort();
+        var opts = {
+            primaryId: account.primaryId,
+            primaryHdl: account.primaryHandle,
+            secondaryHdl: account.secondaryHandle,
+            groups: groups,
+            key: account.key,
+            
+    },
 
     /**
        Singleton class managing a certificate store.

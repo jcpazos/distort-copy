@@ -1167,9 +1167,10 @@ var Twitter = (function (module) {
             console.debug("getting directly from " + handle + "'s feed failed. trying search page...");
             return new Promise((resolve, reject) => {
                 var sreq = new XMLHttpRequest();
-                var tagsearch = Certs.PartialCert.POUND_TAGS.map(tag => encodeURIComponent(tag)).join("%20OR%20");
-                sreq.open("GET", "https://twitter.com/search?q=" + tagsearch +
-                          "%20from%3A" + encodeURIComponent(handle), true);
+                const tagsearch = Certs.PartialCert.POUND_TAGS.map(tag => encodeURIComponent(tag)).join("%20OR%20");
+                const searchURL = "https://twitter.com/search?q=" + tagsearch + "%20from%3A" + encodeURIComponent(handle);
+                console.debug("GET " + searchURL);
+                sreq.open("GET", searchURL, true);
                 sreq.onerror = function () {
                     console.error("Prolem loading tweets (search)", [].slice.apply(arguments));
                     reject(new Fail(Fail.GENERIC, "Ajax failed."));
