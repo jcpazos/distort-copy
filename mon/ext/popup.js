@@ -260,11 +260,6 @@ function render() {
         $doc.find(".status[data-type=distribute]").text(task.status);
         $doc.find(".datetime[data-type=distribute][data-when=next]").text((task.nextRun === null) ? "N/A" : Utils.DateUtil.fromNow(task.nextRun));
         $doc.find(".datetime[data-type=distribute][data-when=last]").text((task.lastRun === null) ? "N/A" : Utils.DateUtil.fromNow(task.lastRun));
-        task = API.validateTasks[currentUser];
-        $doc.find(".status[data-type=validate]").text(task.status);
-        $doc.find(".datetime[data-type=validate][data-when=next]").text((task.nextRun === null) ? "N/A" : Utils.DateUtil.fromNow(task.nextRun));
-        $doc.find(".datetime[data-type=validate][data-when=last]").text((task.lastRun === null) ? "N/A" : Utils.DateUtil.fromNow(task.lastRun));
-        
     } else {
         $doc.find("#activeusername").text("N/A");
         $doc.find("#exportuser").addClass("disabled");

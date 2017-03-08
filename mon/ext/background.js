@@ -55,496 +55,6 @@ var storageArea = chrome.storage.local;
 var cryptoCtxSerial = 0;
 var bgCallSerial = 0;
 
-function KAP(kapEngine, myName, myIdent, otherName, otherIdent) {
-    "use strict";
-
-    this.self  = myName;
-    this.selfIdent = myIdent; //keypair
-    this.other = otherName;
-    this.otherIdent = otherIdent || null; // public key
-    this.state = 0;
-    this.engine = kapEngine;
-    this.initiated = false;
-
-    this.challengeNonce = Utils.randomStr128();
-    this.masterKey = null;
-    this.masterKeyContrib = null;
-    this.aId = null;
-    this.aCommitment = null;
-    this.bId = null;
-    this.fEnc = null;
-    this.fMac = null;
-    this.extCallId = -1;
-    this.friendship = Utils.defer();
-}
-
-KAP.KAP_MSG1 = "KAP_MSG1";
-KAP.KAP_MSG2 = "KAP_MSG2";
-KAP.KAP_MSG3 = "KAP_MSG3";
-KAP.KAP_MSG4 = "KAP_MSG4";
-
-// custom serialization of the KAP messages.
-// json stringification has unreliable attribute ordering,
-// so we transform into an array first and stringify.
-KAP._serializeMsg = function (msg) {
-    "use strict";
-
-    var obj = [];
-    obj.push(msg.type);
-    obj.push(msg.hdr.to);
-    obj.push(msg.hdr.from);
-    obj.push((msg.hdr.AFID === undefined) ? "" : msg.hdr.AFID);
-    obj.push((msg.hdr.BFID === undefined) ? "" : msg.hdr.BFID);
-    obj.push((msg.payload === undefined) ? "" : msg.payload);
-    return JSON.stringify(obj);
-};
-
-KAP._verifySignature = function (msgObj, pubkey) {
-    "use strict";
-    var s = KAP._serializeMsg(msgObj);
-    return pubkey.verifySignature(s, msgObj.signature);
-};
-
-KAP._verifyHMAC = function (msgObj, aeskey) {
-    "use strict";
-    var s = KAP._serializeMsg(msgObj);
-    var digest = aeskey.hmac256(s);
-    return digest === msgObj.hmac;
-};
-
-// augments the message with a signature
-KAP._signMsg = function (msgObj, privkey) {
-    "use strict";
-
-    var s = KAP._serializeMsg(msgObj);
-    var signature = privkey.signText(s);
-    msgObj.signature = signature;
-    return msgObj;
-};
-
-KAP._hmacMsg = function (msgObj, aeskey) {
-    "use strict";
-
-    var s = KAP._serializeMsg(msgObj);
-    var digest = aeskey.hmac256(s);
-    msgObj.hmac = digest;
-    return msgObj;
-};
-
-KAP.prototype = {
-    initiate: function () {
-        "use strict";
-
-        var that = this;
-
-        try {
-            var start = that._genKAP1();
-            that.state += 1;
-            that.engine.send(start);
-        } catch (err) {
-            console.error("cannot start protocol", err);
-            that.friendship.reject(err);
-        }
-    },
-
-    // takes masterkey and creates channel keys
-    _deriveFriendshipKeys: function () {
-        "use strict";
-
-        if (!this.masterKey) {
-            throw new Error("no master key yet");
-        }
-        this.fMac = this.masterKey.deriveKey("mac");
-        this.fEnc = this.masterKey.deriveKey("enc");
-        console.log("Derived friendship keys fMac:", this.fMac.toStore(), "fEnc:", this.fEnc.toStore());
-    },
-
-    _genKAP1: function () {
-        "use strict";
-
-        this.initiated = true;
-
-        if (this.aId === null) {
-            this.aId = this.challengeNonce;
-        }
-
-        if (this.masterKeyContrib === null) {
-            this.masterKeyContrib = new AESKey();
-        }
-
-        var msg = {
-            type: KAP.KAP_MSG1,
-            hdr: {
-                to: this.other,
-                from: this.self,
-                AFID: this.aId
-            }
-        };
-        // aCommitment
-        var payload = this.masterKeyContrib.sha256();
-        msg.payload = payload;
-        return msg;
-    },
-
-    _genKAP2: function () {
-        "use strict";
-
-        if (this.bId === null) {
-            this.bId = this.challengeNonce;
-        }
-
-        if (this.masterKeyContrib === null) {
-            this.masterKeyContrib = new AESKey();
-        }
-
-        var msg = {
-            type: KAP.KAP_MSG2,
-            hdr: {
-                to: this.other,
-                from: this.self,
-                AFID: this.aId,
-                BFID: this.bId
-            }
-        };
-        //payload: enc(k=Aenc+, m=Bmk)
-        var payload = this.otherIdent.encryptSymmetric(this.masterKeyContrib);
-        msg.payload = payload;
-        var signed = KAP._signMsg(msg, this.selfIdent);
-        this.selfIdent.verifySignature(KAP._serializeMsg(signed), signed.signature);
-        return signed;
-    },
-
-    _genKAP3: function () {
-        "use strict";
-
-        var msg = {
-            type: KAP.KAP_MSG3,
-            hdr: {
-                to: this.other,
-                from: this.self,
-                AFID: this.aId,
-                BFID: this.bId
-            }
-        };
-        //payload: enc(k=Benc+, m=Amk)
-        var payload = this.otherIdent.encryptSymmetric(this.masterKeyContrib);
-        msg.payload = payload;
-        return KAP._signMsg(msg, this.selfIdent);
-    },
-
-    _genKAP4: function () {
-        "use strict";
-
-        var msg = {
-            type: KAP.KAP_MSG4,
-            hdr: {
-                to: this.other,
-                from: this.self,
-                AFID: this.aId,
-                BFID: this.bId
-            },
-            payload: null
-        };
-
-        return KAP._hmacMsg(msg, this.fMac);
-    }
-};
-
-/**
-   KAPEngine
-
-   @constructor
-   @param {string} username
-   @param {ECCKeyPair} account the account on this end of the friendships
-*/
-function KAPEngine(username, account) {
-    "use strict";
-
-    // Keyed by friend username
-    this.kaps = {};
-    this.onmessage = null;
-    this.username = username;
-    this.ident = account;
-}
-
-KAPEngine.prototype = {
-
-    _friendKey: function (username) {
-        "use strict";
-
-        return "friend." + btoa(username);
-    },
-
-    _identKey: function (username) {
-        "use strict";
-        return "ident." + btoa(username);
-    },
-
-    // promises the object after storing it
-    _storeFriendship: function (friendship) {
-        "use strict";
-
-        var storageKey = CryptoCtx.userKeyName(this.username, friendship.getKeyid(), "fr");
-        return API.storeKey(storageKey, friendship).then(function () {
-            return friendship;
-        });
-    },
-
-    // Promises a Friendship object
-    requestFriendship: function (username, pubkey) {
-        "use strict";
-
-        var fk = this._friendKey(username);
-        var that = this;
-
-        if (!that.kaps[fk]) {
-            var kap = new KAP(that, that.username, that.ident, username, pubkey);
-            that.kaps[fk] = kap;
-            kap.friendship.promise.catch(function (err) {
-                console.error("KAP failed to complete. Removing from active list. Error:", err);
-                delete that.kaps[fk];
-            });
-            window.setTimeout(function () { kap.initiate(); }, 0);
-        }
-        return that.kaps[fk].friendship.promise;
-    },
-
-    send: function (msg) {
-        "use strict";
-
-        if (this.onmessage) {
-            this.onmessage(msg, this);
-        } else {
-            console.log("[KAP] outgoing message dropped:", msg, JSON.stringify(msg));
-        }
-    },
-
-    _recvKAP1: function (msg) {
-        "use strict";
-        var friendName = msg.hdr.from;
-        var that = this;
-        var fk = that._friendKey(friendName);
-
-        if (!that.kaps[fk]) {
-            API.fetchPublic(friendName).then(function (pubKey) {
-                var kap = new KAP(that, that.username, that.ident, friendName, pubKey);
-                kap.state = 1;
-                kap.initiated = false;
-                kap.aId = msg.hdr.AFID;
-                kap.aCommitment = msg.payload;
-                var msg2 = kap._genKAP2();
-
-                var fk = that._friendKey(friendName);
-                that.kaps[fk] = kap;
-
-                that.onmessage(msg2);
-            }).catch(function (err) {
-                console.error("Could not retrieve ", friendName, "public key", err);
-            });
-        }
-    },
-
-    _recvKAP2: function (msg) {
-        "use strict";
-
-        var that = this;
-        var from = msg.hdr.from;
-
-        var fk = this._friendKey(from);
-        var kap = this.kaps[fk];
-        if (!kap) {
-            throw new Fail(Fail.KAPERROR, "no friendship request for", from);
-        }
-
-        function failKAP(kap, err) {
-            kap.friendship.reject(err);
-            throw err;
-        }
-
-        console.log("received kap2 in state:", kap.state, kap);
-
-        if (msg.hdr.AFID !== kap.aId) {
-            console.error("msg AFID:", msg.hdr.AFID, "kap.aId:", kap.aId);
-            failKAP(kap, new Fail(Fail.KAPERROR, "different AFID expected"));
-        }
-
-        kap.bId = msg.hdr.BFID;
-
-        if (!KAP._verifySignature(msg, kap.otherIdent)) {
-            failKAP(kap, new Fail(Fail.KAPERROR, "bad signature"));
-        }
-
-        var payload = msg.payload;
-        var Bmk = kap.selfIdent.decryptSymmetric(payload);
-        var masterKey = kap.masterKeyContrib.xorKey(Bmk);
-        kap.masterKey = masterKey;
-        kap._deriveFriendshipKeys();
-
-        var msg3 = kap._genKAP3();
-        that.onmessage(msg3);
-    },
-
-    _recvKAP3: function (msg) {
-        "use strict";
-        var that = this;
-        var from = msg.hdr.from;
-
-        var fk = this._friendKey(from);
-        var kap = this.kaps[fk];
-        if (!kap) {
-            throw new Fail(Fail.KAPERROR, "no friendship request for", from);
-        }
-        console.log("received kap3 in state:", kap.state, kap);
-
-        function failKAP(kap, err) {
-            kap.friendship.reject(err);
-            throw err;
-        }
-
-        if (!KAP._verifySignature(msg, kap.otherIdent)) {
-            failKAP(new Fail(Fail.KAPERROR, "bad signature"));
-        }
-
-        if (msg.hdr.AFID !== kap.aId) {
-            console.error("msg AFID:", msg.hdr.AFID, "kap.aId:", kap.aId);
-            failKAP(kap, new Fail(Fail.KAPERROR, "different AFID expected"));
-        }
-
-        if (msg.hdr.BFID !== kap.bId) {
-            console.error("msg BFID:", msg.hdr.BFID, "kap.bId:", kap.bId);
-            failKAP(kap, new Fail(Fail.KAPERROR, "different BFID expected"));
-        }
-
-        var payload = msg.payload;
-        var Amk = kap.selfIdent.decryptSymmetric(payload);
-
-        // recompute commitment
-        var commitment = Amk.sha256();
-        if (commitment !== kap.aCommitment) {
-            failKAP(kap, new Fail(Fail.KAPERROR, "invalid commitment value"));
-        }
-
-        // compute master key
-        var masterKey = kap.masterKeyContrib.xorKey(Amk);
-        kap.masterKey = masterKey;
-        kap._deriveFriendshipKeys();
-        
-        var msg4 = kap._genKAP4();
-
-        // Friendship object created here.
-        // Friendship created here.
-        var friend = new Friendship({
-            self: kap.self,
-            other: kap.other,
-            initiated: kap.initiated,
-            masterKey: kap.masterKey,
-            aId: kap.aId,
-            bId: kap.bId,
-            fEnc: kap.fEnc,
-            fMac: kap.fMac
-        });
-
-        that._storeFriendship(friend).then(function (friendship) {
-            console.log("KAP (msg3) completed with " + kap.other + ":", friendship);
-            kap.friendship.resolve(friendship);
-            that.onmessage(msg4);
-        });
-
-        delete that.kaps[that._friendKey(from)];
-    },
-
-    _recvKAP4: function (msg) {
-        "use strict";
-
-        var that = this;
-        var from = msg.hdr.from;
-
-        var fk = this._friendKey(from);
-        var kap = this.kaps[fk];
-        if (!kap) {
-            throw new Fail(Fail.KAPERROR, "no friendship request for", from);
-        }
-
-        function failKAP(kap, err) {
-            kap.friendship.reject(err);
-            throw err;
-        }
-
-        console.log("received kap4 in state:", kap.state, kap);
-
-        if (msg.hdr.AFID !== kap.aId) {
-            console.error("msg AFID:", msg.hdr.AFID, "kap.aId:", kap.aId);
-            failKAP(kap, new Fail(Fail.KAPERROR, "different AFID expected"));
-        }
-
-        if (msg.hdr.BFID !== kap.bId) {
-            console.error("msg BFID:", msg.hdr.BFID, "kap.bId:", kap.bId);
-            failKAP(kap, new Fail(Fail.KAPERROR, "different BFID expected"));
-        }
-
-        if (!KAP._verifyHMAC(msg, kap.fMac)) {
-            failKAP(kap, new Fail(Fail.KAPERROR, "bad hmac"));
-        }
-
-        // Friendship created here.
-        var friend = new Friendship({
-            self: kap.self,
-            other: kap.other,
-            initiated: kap.initiated,
-            masterKey: kap.masterKey,
-            aId: kap.aId,
-            bId: kap.bId,
-            fEnc: kap.fEnc,
-            fMac: kap.fMac
-        });
-
-        that._storeFriendship(friend).then(function (friendship) {
-            console.log("KAP completed with " + kap.other + ":", friendship);
-            kap.friendship.resolve(friendship);
-        });
-
-        delete that.kaps[that._friendKey(from)];
-    },
-
-    // Moves the protocol one step forward.
-    //
-    // check the completion status to determine if the friendship
-    // channel is open after this resolves.
-    receive: function (msg) {
-        "use strict";
-
-        if (!msg || !msg.type || !msg.hdr) {
-            throw new Fail(Fail.BADPARAM, "missing hdr");
-        }
-
-        var hdr = msg.hdr;
-        if (!hdr.from || !hdr.to) {
-            throw new Fail(Fail.BADPARAM, "missing from/to");
-        }
-
-        if (msg.hdr.to !== this.username) {
-            throw new Fail(Fail.BADPARAM, "bad To:");
-        }
-
-        switch (msg.type) {
-        case KAP.KAP_MSG1:
-            this._recvKAP1(msg);
-            break;
-        case KAP.KAP_MSG2:
-            this._recvKAP2(msg);
-            break;
-        case KAP.KAP_MSG3:
-            this._recvKAP3(msg);
-            break;
-        case KAP.KAP_MSG4:
-            this._recvKAP4(msg);
-            break;
-        default:
-            throw new Fail(Fail.BADTYPE, "invalid message type");
-        }
-    }
-};
-
 function CryptoCtx(port) {
     "use strict";
 
@@ -645,7 +155,7 @@ CryptoCtx.prototype = {
         }
 
         delete CryptoCtx.all[this.serial];
-        
+
         KeyCache.cleanup();
 
         return Promise.resolve();
@@ -659,7 +169,7 @@ CryptoCtx.prototype = {
 
     /**
        Invoke a function in the content script.
-       
+
        rpcName: string
        params: rpc-specific parameters
 
@@ -689,7 +199,7 @@ CryptoCtx.prototype = {
 
     _setKeyring: function (keyringObj) {
         "use strict";
-        
+
         var that = this;
         var account = Vault.getAccountKP(keyringObj.username);
         console.log("Keyring", keyringObj.name, "open.", keyringObj);
@@ -780,7 +290,7 @@ CryptoCtx.prototype = {
       promises an unused keyid
 
       keyid is signed with this user's private signing key
-      
+
            keyid := <prefix> : <b64user> : <randompart> : <signature>
 
         signature over message:
@@ -841,118 +351,6 @@ CryptoCtx.prototype = {
         });
     },
 
-    // Promises a handle if you are friends with this user, otherwise
-    // null
-    isFriend: function (username) {
-        "use strict";
-
-        if (this.kr === null) {
-            return Promise.reject(new Fail(Fail.NOKEYRING, "Keyring not open."));
-        }
-
-        var selfUser = this.kr.username;
-
-        function _friendFinder(obj) {
-            return (obj.self === selfUser && obj.other === username);
-        }
-
-        return API.filterFriendships(_friendFinder).then(function (matching) {
-            var keys = Utils.sortedKeys(matching);
-            var keyid = null;
-
-            if (keys.length === 0) {
-                return null;
-            } else {
-                keyid = matching[keys[0]].getKeyid();
-                // not cached yet.
-                return {keyid: keyid};
-            }
-        });
-    },
-    
-    // Debugging function to clear out any existing friendship with
-    // the given user.
-    //
-    // @username: Any friendship object involving username will be deleted.
-    //
-    clearFriendships: function (username) {
-        "use strict";
-        
-        return API.clearFriendships(username);
-    },
-
-    // Promise a pubkey keyhandle for a (possibly new) friend `username`
-    // This might trigger the KAP.
-    getFriend: function (username) {
-        "use strict";
-        var that = this;
-
-        if (that.kr === null) {
-            return Promise.reject(new Fail(Fail.NOKEYRING, "Keyring not open."));
-        }
-
-        console.debug("[friend] user=" + this.kr.username + " getFriend(" + username + ")");
-
-        var selfUser = that.kr.username;
-
-        function _friendFinder(obj) {
-            return (obj.self === selfUser && obj.other === username);
-        }
-
-        return API.filterFriendships(_friendFinder).then(function (matching) {
-            var keys = Utils.sortedKeys(matching);
-            var keyid = null;
-
-            if (keys.length === 0) {
-                return getPublicKey().catch(function (err) {
-                    console.error("Failed to initiate KAP", err);
-                    throw err;
-                });
-            } else {
-                keyid = matching[keys[0]].getKeyid();
-                // not cached yet.
-                return {keyid: keyid};
-            }
-        });
-
-        function getPublicKey() {
-            console.log("[friend] user=" + that.kr.username + " identity " + username + " unknown. fetching online.");
-            return API.fetchPublic(username).then(function (pubKey) {
-                return gotIdent(pubKey);
-            }).catch(function (err) {
-                console.error("ctx.getFriend error:", err);
-                throw err;
-            });
-        }
-
-        // Promises a Friendship keyhandle
-        function gotIdent(pubKey) {
-            return that.kapEngine.requestFriendship(username, pubKey).then(function (friendship) {
-                return that.storeKey(username, friendship, "fr"); // resolves to a keyhandle
-            }).catch(function (err) {
-                console.error("requestFriendship error", err);
-                throw err;
-            });
-        }
-    },
-
-
-    // promises a streamid
-    newStream: function () {
-        "use strict";
-
-        var keyobj = new AESKey();
-        var that = this;
-
-        return that.genKeyid(keyobj.toHex()).then(function (keyid) {
-            var owner = that.kr.username;
-            keyobj.principals[owner] = true;
-            return that.storeKey(keyid, keyobj).then(function (keyhandle) {
-                return keyhandle.keyid;
-            });
-        });
-    },
-
     //promises an anon streamid
     newAnonStream: function () {
         "use strict";
@@ -961,162 +359,6 @@ CryptoCtx.prototype = {
 
         return that.genKeyid("", "anon").then(function (keyid) {
             return keyid;
-        });
-    },
-
-    // CryptoCtx.prototype.invite
-    // promises an hmac'd invitation
-    invite: function (friendHandle, convid) {
-        "use strict";
-
-        var that = this;
-
-        console.debug("[invite] user=" + this.kr.username + " friendhandle=" + friendHandle.keyid);
-        
-        return Promise.all([
-            that.loadKey(friendHandle.keyid, Friendship, "fr"),
-            that.loadKey(convid, AESKey)
-        ]).then(function (loaded) {
-            var friendship = loaded[0];
-            var convKey = loaded[1];
-            var keyHex = Utils.keyidShortHex(convid);
-            var inviteMsg = friendship.genInvite(convid, convKey);
-            var othersStr = UI.audienceLabel(convKey);
-            var prompt = UI.prompt(that, that.promptId++,
-                                   "Invite user: @" + friendship.other + " to stream: " +
-                                   keyHex + " audience: (" + othersStr + ") ?",
-                                   [UI.Prompt.ACCEPT, UI.Prompt.REFUSE]);
-            return prompt.getPromise().then(function (triggered) {
-                if (triggered !== UI.Prompt.ACCEPT) {
-                    throw new Fail(Fail.REFUSED, "Invite prompt not accepted: " + triggered);
-                } else {
-                    /* Accepted. user has access to the stream */
-                    convKey.principals[friendship.other] = true;
-                    console.log("Key " + convid + " can be read by: ", convKey.principals);
-
-                    // update store
-                    return that.storeKey(convid, convKey).then(function () {
-                        return inviteMsg;
-                    });
-                }
-            });
-        });
-    },
-
-    // promises a convid
-    acceptInvite: function (inviteMsg) {
-        "use strict";
-
-        var that = this;
-
-        function _getFriendshipId() {
-            var idObj = {
-                aId: inviteMsg.hdr.AFID,
-                bId: inviteMsg.hdr.BFID,
-                self: that.kr.username,
-                other: inviteMsg.hdr.from
-            };
-            return Friendship.makeKeyid(idObj);
-        }
-
-        /*
-          loads friendship object from storage
-        */
-        function _loadFriendship(friendshipId) {
-            return that.loadKey(friendshipId, Friendship, "fr");
-        }
-
-        /*
-          verifies the invite against the friendship object.
-          obtains the convid and key: {convid: string, convkey: AESKey}
-        */
-        function _verifyInvite(friendship) {
-            var convInfo = friendship.verifyInvite(inviteMsg);
-            return convInfo;
-        }
-
-        /*
-          checks keyid params, signatures, against public key of creator.
-          
-          also enforces that the sender of the invite is the creator of the
-          key (policy decision).
-        */
-        function _verifyKey(convInfo) {
-            var newKey = convInfo.convkey;
-            var hexKey = newKey.toHex();
-            return that.verifyKeyid(convInfo.convid, hexKey).then(function (verif) {
-                if (verif.creator !== inviteMsg.hdr.from) {
-                    throw new Fail(Fail.INVALIDKEY, "Invite sent by another user than owner.");
-                }
-                return convInfo;
-            });
-        }
-
-        /*
-          check that if there is already a key in store, it is the same.
-          (this would happen if the same invite message was accepted again)
-        */
-        function _loadIfExisting(convInfo) {
-            var newKey = convInfo.convkey;
-
-            return that.loadKey(convInfo.convid, AESKey).then(function () {
-                var loadedKey = that.keys[convInfo.convid];
-                if (loadedKey.toHex() !== newKey.toHex()) {
-                    throw new Fail(Fail.EXISTS, "a different key exists under that name");
-                }
-                
-                // replace
-                convInfo.convkey = loadedKey;
-                return convInfo;
-            }).catch(function (err) {
-                // it's a new key
-                if (err.code === Fail.NOKEY) {
-                    return convInfo;
-                } else {
-                    throw err;
-                }
-            });
-        }
-
-        /*
-           update the principals dict for the new key
-         */
-        function _updatePrincipals(convInfo) {
-            var key = convInfo.convkey;
-
-            // assumes creator of the stream is the person
-            // inviting.
-
-            key.principals[inviteMsg.hdr.from] = true;
-            console.log("Key " + convInfo.convid + " can be read by: ", key.principals);
-            return convInfo;
-        }
-
-        function _storeKey(convInfo) {
-            // keyid checks out. store it.
-            return that.storeKey(convInfo.convid, convInfo.convkey).then(function () {
-                return convInfo;
-            });
-        }
-
-        return new Promise(function (resolve, reject) {
-            if (that.kr === null) {
-                return reject(new Fail(Fail.NOKEYRING, "Keyring not open."));
-            }
-            if (inviteMsg.hdr.to !== that.kr.username) {
-                return reject(new Fail(Fail.OPENKEYRING, "this is for a different user"));
-            }
-
-            _loadFriendship(_getFriendshipId())
-                .then(_verifyInvite)
-                .then(_verifyKey)
-                .then(_loadIfExisting)
-                .then(_updatePrincipals)
-                .then(_storeKey)
-                .then(function (convInfo) { resolve(convInfo.convid); })
-                .catch(function (err) {
-                    return reject(err);
-                });
         });
     },
 
@@ -1188,7 +430,7 @@ CryptoCtx.prototype = {
 
     /*
       Stores a JSON'able key object, and promises a keyhandle.
-     
+
        @keyid is a unique within the keyring
        @key is an instance of the supported Key storage classes
        @typ is a type indicator used to determine the scope of the key (e.g. "k", "kr", "fr", "@")
@@ -1206,13 +448,13 @@ CryptoCtx.prototype = {
         if (key.hasOwnProperty("keyid")) {
             key.keyid = keyid;
         }
-        
+
         return API.storeKey(keystring, key).then(function () {
             var keyhandle = {keyid: keyid};
             return keyhandle;
         });
     },
-    
+
     /** we are routing a message from the extension to the application */
     _onExtMessage: function (message) {
         "use strict";
@@ -1231,118 +473,6 @@ CryptoCtx.prototype = {
         console.debug("[message] from=" + this.kr.username + " app=" + this.app + " outgoing", message);
 
         this.port.postMessage({callid: null, extcallid: this.extCallId, cmd: "ext_message", msg: message});
-    },
-
-    /** the application is routing a message to us */
-    onAppMessage: function (message) {
-        "use strict";
-
-        var that = this;
-
-        if (!this.kr) {
-            console.debug("[message] incoming message");
-        } else {
-            console.debug("[message] incoming for user=" + this.kr.username + " app=" + this.app);
-        }
-
-        return new Promise(function (resolve, reject) {
-            switch (message.type) {
-            case KAP.KAP_MSG1:
-            case KAP.KAP_MSG2:
-            case KAP.KAP_MSG3:
-            case KAP.KAP_MSG4:
-                if (that.kr === null) {
-                    return reject(new Fail(Fail.NOKEYRING));
-                }
-                that.kapEngine.receive(message);
-                resolve(true);
-                break;
-            default:
-                reject(new Fail(Fail.BADTYPE, "unknown message"));
-            }
-        });
-    },
-
-    //TODO: REMOVE. UNNECESSARY NOW THAT CREATETWITTERAPP HANDLES THIS AS WELL
-    getDevKeys: function () {
-        "use strict";
-        var that = this;
-
-        if (that.kr === null) {
-            return new Fail(Fail.NOKEYRING, "Keyring not open.");
-        }
-
-        var prompt = UI.prompt(that, that.promptId++,
-           "Beeswax will get developer keys for twitter account and app " + "'@" + that.kr.username + "'\n Do you wish to continue?",
-           [UI.Prompt.ACCEPT, UI.Prompt.REFUSE]);
-
-        return prompt.getPromise().then(function (triggered) {
-            if (triggered !== UI.Prompt.ACCEPT) {
-                throw new Fail(Fail.REFUSED, "Streaming not accepted: " + triggered);
-            }
-            return API.getDevKeys(that.kr.username).catch(function (err) {
-                UI.log("error posting messages(" + err.code + "): " + err);
-                console.log('error', err);
-                throw err; // throw again
-            });
-        }).then(function (devKeys) {
-            var devKey = KeyLoader.fromStore(devKeys);
-            return that.storeKey('devKeys', devKey, "fr").catch(function (err) {
-                UI.log('error storing devKey : ' + err);
-                console.log('error', err);
-                throw err;
-            });
-        }).then (function (keyhandle) {
-            UI.log("Dev keys for @" + that.kr.username + " stored succesfully.");
-            console.log('keyhandle: ', keyhandle);
-            that.loadKey('devKeys', DevKey, 'fr').catch(function (err) {
-                UI.log('error loading devkey: ' + err);
-                console.log('error', err);
-                throw err;
-            });
-        }).then (function (devKey) {
-            console.log('got devKey', devKey);
-        }); 
-    },
-
-    createTwitterApp: function() {
-        "use strict";
-        var that = this;
-        
-        if (that.kr === null) {
-            return new Fail(Fail.NOKEYRING, "Keyring not open.");
-        }
-
-        var prompt = UI.prompt(that, that.promptId++,
-           "Beeswax will create a new twitter app for account " + "'@" + that.kr.username + "'\n Do you wish to continue?",
-           [UI.Prompt.ACCEPT, UI.Prompt.REFUSE]);
-
-        return prompt.getPromise().then(function (triggered) {
-            if (triggered !== UI.Prompt.ACCEPT) {
-                throw new Fail(Fail.REFUSED, "Creating app not accepted: " + triggered);
-            }
-        }).then(function () {
-            return API.createTwitterApp();
-        }).then(function (appName) {
-            console.log("created app " + appName + " succesfully.");
-            //getDevKeys also generates the keys.
-            //TODO: it's not enough to send the submission for the app creation, we need to wait until it's created to query for it.
-            //      fix getDevKeys for this: either wait until the new page loads or have the user trigger it.
-            return API.getDevKeys(that.kr.username, appName);
-        }).then(function (devKeys) {
-            var devKey = KeyLoader.fromStore(devKeys);
-            return that.storeKey('devKeys', devKey, "fr");
-        }).then (function (keyhandle) {
-            UI.log("Dev keys for @" + that.kr.username + " stored succesfully.");
-            console.log('keyhandle: ', keyhandle);
-            that.loadKey('devKeys', DevKey, 'fr');
-        }).then (function (devKey) {
-            console.log('got devKey', devKey);
-            return appName;
-        }).catch(function (err) {
-            UI.log("error creating app and handling dev keys(" + err.code + "): " + err);
-            throw err;
-        });
     },
 
     openTwitterStream: function (hashtag) {
@@ -1549,24 +679,8 @@ _extends(DistributeTask, Utils.PeriodicTask, {
     }
 });
 
-function ValidateTask(periodMs, username) {
-    "use strict";
-    ValidateTask.__super__.constructor.call(this, periodMs);
-    this.username = username;
-}
-
-_extends(ValidateTask, Utils.PeriodicTask, {
-    run: function () {
-        "use strict";
-        API.refreshAllFriends().then(function (count) {
-            UI.log("Refreshed " + count + " user key(s).");
-        });
-    }
-});
-
 function BGAPI() {
     "use strict";
-    this.validateTasks = {};
     this.distributeTasks = {};
 
     // accounts for which streaming is ON.
@@ -1591,19 +705,12 @@ function BGAPI() {
 }
 
 BGAPI.PERIOD_DISTRIBUTE_MS =          10 * 60 * 1000;  // run the distribute task every X ms
-BGAPI.PERIOD_VALIDATE_MS   =          30 * 60 * 1000;  // run the validate task every X ms
 BGAPI.MAX_KEY_POST_AGE_MS  = 3 * 24 * 60 * 60 * 1000;  // re-post a key after this amount of time.
 
 BGAPI.prototype._stopBackgroundTasks = function () {
     "use strict";
 
     var user;
-    for (user in this.validateTasks) {
-        if (this.validateTasks.hasOwnProperty(user)) {
-            this.validateTasks[user].stop();
-        }
-    }
-
     for (user in this.distributeTasks) {
         if (this.distributeTasks.hasOwnProperty(user)) {
             this.distributeTasks[user].stop();
@@ -1681,11 +788,6 @@ BGAPI.prototype.accountChanged = function (username) {
     account.groups.forEach(group => {
         this.streamerManager.subscribe(group.name, account.id, account.primaryApp);
     });
-
-    if (!this.validateTasks[username]) {
-        this.validateTasks[username] = new ValidateTask(BGAPI.PERIOD_VALIDATE_MS, username);
-    }
-    this.validateTasks[username].start();
 
     if (!this.distributeTasks[username]) {
         this.distributeTasks[username] = new DistributeTask(BGAPI.PERIOD_DISTRIBUTE_MS, username);
@@ -2024,91 +1126,6 @@ BGAPI.prototype.checkTwitter = function (username) {
     });
 };
 
-BGAPI.prototype.refreshAllFriends = function () {
-    "use strict";
-
-    return API.filterFriendships(function () { return true; })
-        .then(_loadUsernames)
-        .then(_fetchKeys)
-        .then(API._invalidate);
-
-    function _loadUsernames(friendships) {
-        // Determine the set of usernames to check.
-        var usernames = {};
-
-        var k, fr;
-        for (k in friendships) {
-            if (friendships.hasOwnProperty(k)) {
-                fr = friendships[k];
-                if (fr.self !== Vault.getUsername()) {
-                    usernames[fr.self] = false;
-                }
-                if (fr.other !== Vault.getUsername()) {
-                    usernames[fr.other] = false;
-                }
-            }
-        }
-        return usernames;
-    }
-
-    function _fetchKeys(usernames) {
-        var updates = [];
-        function _mkSetter(username) {
-            return function (keyStatus) {
-                usernames[username] = keyStatus;
-            };
-        }
-
-        // Determine which usernames are fresh and possibly regenerate keys.
-        for (var username in usernames) {
-            if (usernames.hasOwnProperty(username)) {
-                updates.push(_compareKeys(username).then(_mkSetter(username)));
-            }
-        }
-
-        return Promise.all(updates).then(function () {
-            return usernames;
-        });
-    }
-
-    // Compares local and online keys for one user.
-    //
-    // Promises:
-    //   true      -- twitter key and local key match
-    //   false     -- twitter key is expired
-    //   a pubkey  -- local and twitter mismatch. the key from twitter
-    //
-    function _compareKeys(username) {
-
-        var checkTime = Date.now();
-        var keyid = username;
-        var storageName = CryptoCtx.globalKeyName(keyid, "@");
-
-        var promises = [];
-        promises.push(API.loadKey(storageName, ECCPubKey));
-        promises.push(API.fetchTwitter(username));
-        return Promise.all(promises).then(function (values) {
-            var storeKey = values[0];
-            var twitterKeyContainer = values[1];
-            var twitterKey = twitterKeyContainer.key;
-            var stale = checkTime > twitterKeyContainer.expiration;
-
-            // Handle stale keys.
-            if (stale) {
-                return false;
-            }
-
-            // TODO(rjsumi): check staleness.
-            if (storeKey.equalTo(twitterKey)) {
-                return true;
-            } else {
-                return twitterKey;
-            }
-        });
-    }
-
-};
-
 // Invalidates the AES keys and deletes the Friendship objects for the users
 // that have fetched fresh keys from twitter, or that have had their keys go stale.
 BGAPI.prototype._invalidate = function (usernames) {
@@ -2158,23 +1175,6 @@ BGAPI.prototype._invalidate = function (usernames) {
 
     console.log("KEY STATUSES:", usernames);
     return Object.getOwnPropertyNames(usernames).length;
-};
-
-BGAPI.prototype.regenKeys = function () {
-    "use strict";
-
-    return new Promise(function (resolve, reject) {
-        if (Vault.regenKeys(Vault.getUsername()) !== null) {
-            console.log("new set of keys.");
-            // Invalidate AES keys and friendships involving ourself.
-            // TODO(rjsumi): Better error reporting.
-            API._invalidate({[Vault.getUsername()]: Vault.getAccountKP(Vault.getUsername())});
-            resolve();
-        } else {
-            console.log("could not regen");
-            reject();
-        }
-    });
 };
 
 /*
@@ -2660,18 +1660,6 @@ var handlers = {
         });
     },
 
-    // Debug function exposing the refresh of twitter-keys.
-    refresh_twitter: function (ctx, rpc) {
-        "use strict";
-
-        API.refreshAllFriends().then(function () {
-            ctx.port.postMessage({callid: rpc.callid, result: true});
-        }).catch(function (err) {
-            console.error(err);
-            ctx.port.postMessage({callid: rpc.callid, error: err.code || Fail.GENERIC});
-        });
-    },
-
     encrypt_aes: function (ctx, rpc) {
         "use strict";
 
@@ -2804,26 +1792,6 @@ var handlers = {
         rpc.params = assertType(rpc.params, {keyhandle: OneOf(KH_TYPE, ""), ciphertext: ""});
         var pt = ctx.decryptMessage(rpc.params.ciphertext);
         return pt;
-    },
-
-    get_dev_keys: function (ctx, rpc) {
-        "use strict";
-        ctx.getDevKeys().then(function (res) {
-             ctx.port.postMessage({callid: rpc.callid, result: res});
-        }).catch(function (err) {
-            console.error(err);
-            ctx.port.postMessage({callid: rpc.callid, error: Fail.toRPC(err)});
-        });
-    },
-
-    create_twitter_app: function (ctx, rpc) {
-        "use strict";
-        ctx.createTwitterApp().then(function (res) {
-            ctx.port.postMessage({callid: rpc.callid, result: res});
-        }).catch(function (err) {
-            console.error(err);
-            ctx.port.postMessage({callid: rpc.callid, error: Fail.toRPC(err)});
-        });
     }
 };
 

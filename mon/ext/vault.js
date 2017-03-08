@@ -64,19 +64,6 @@ window.Vault = (function () {
             return this._save();
         },
 
-        regenKeys: function (userid) {
-            var newkey = new ECCKeyPair();
-            var sk = "identity." + btoa(userid);
-            var settings = {};
-            if (!this.get(sk)) {
-                console.error("no such user");
-                return null;
-            }
-            settings[sk] = newkey.toStore();
-            this.set(settings);
-            return newkey;
-        },
-
         /** turns importData text into an ECCKeyPair */
         parseImportData: function (importData) {
             return ECCKeyPair.fromStore(JSON.parse(importData));
