@@ -26,7 +26,7 @@
   chrome,
   ECCPubKey,
   Events,
-  _extends
+  _extends,
   Fail,
   Friendship,
   getHost,
