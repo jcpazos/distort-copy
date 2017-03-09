@@ -799,74 +799,13 @@ BGAPI.prototype.accountChanged = function (username) {
 BGAPI.prototype.postCert = function (account) {
     "use strict";
 
-    var ts = Date.now();
+    var userCert = Certs.UserCert.fromAccount(account);
+    var groupNames = account.groups.map(groupStats => groupStats.name);
 
     return new Promise(resolve => {
-        var pubKey = account.key.toPubKey();
-        var pkPacked = pubKey.hexify();
-
-        var groupNames = account.groups.map(groupStats => groupStats.name);
-        groupNames.sort();
-
-        var groupString = groupNames.map(name => "#" + name).join(" ");
-
-        /**
-         * NOTE: Max length of a username on GitHub is 39 characters, so it should be okay with
-         * the default encoding.
-        */
-
-        var encryptStatus = [
-            "#" + Certs.PartialCert.ENCRYPTKEY,
-            ts.toString(16),
-            base16k.fromHex(pkPacked.encrypt),
-            groupString
-        ].join(" ");
-
-        var signStatus = [
-            "#" + Certs.PartialCert.SIGNKEY,
-            ts.toString(16),
-            base16k.fromHex(pkPacked.sign),
-            groupString
-        ].join(" ");
-
-        var expiration = Certs.UserCert.DEFAULT_EXPIRATION_MS;
-
-        var signedMessage = [
-            account.primaryHandle,
-            account.primaryId,
-            account.secondaryHandle,
-            pkPacked.encrypt,
-            pkPacked.sign,
-            ts.toString(16),
-            expiration.toString(16),
-            groupNames.join(" ") // no #
-        ].join("");
-
-        var signature = account.key.signText(signedMessage, {
-            encoding: 'domstring', outEncoding: 'hex'
-        });
-
-        var sigStatus = [
-            "#" + Certs.PartialCert.KEYSIG,
-            ts.toString(16),
-            expiration.toString(16),
-            base16k.fromHex(signature),
-            groupString
-        ].join(" ");
-
-        if (encryptStatus.length > 140) {
-            throw new Fail(Fail.PUBSUB, "encryption key cert tweet too long (" + encryptStatus.length + "B > 140B)");
-        }
-        if (signStatus.length > 140) {
-            throw new Fail(Fail.PUBSUB, "signing key cert tweet too long (" + signStatus.length + "B > 140B)");
-        }
-        if (sigStatus.length > 140) {
-            throw new Fail(Fail.PUBSUB, "cert signature tweet too long (" + sigStatus.length + "B > 140B)");
-        }
-
-        // Cert is broken into 3 chunks/messages
+        var tweets = userCert.toTweets(account.key);
         resolve({
-            msgs: [encryptStatus, signStatus, sigStatus],
+            msgs: tweets,
             groups: groupNames
         });
     }).then(certData => {
