@@ -131,8 +131,6 @@ window.Outbox = (function (module) {
 
     /*
       TWISTOR MESSAGE
-<<<<<<< HEAD
-
       tweet := <twistor_envelope> base16k(<twistor_body>)
 
       twistor_envelope: <recipient_group>+ 'space'
@@ -153,29 +151,6 @@ window.Outbox = (function (module) {
 
       rcptid := 64bit twitter id of recipient
 
-=======
-
-      tweet := <twistor_envelope> base16k(<twistor_body>)
-
-      twistor_envelope: <recipient_group>+ 'space'
-      recipient_group :=  '#' <group_name>
-      group_name := valid twitter hashtag
-
-      twistor_body := <version> <ciphertext> <signature> <unusedbody>
-
-      version := 0x01  # 1B
-
-      ciphertext := eg_encrypt(<plaintext>)
-
-      plaintext := <rcptid> <userbody>
-
-      signature := ecdsa_sign(<twistor_epoch>, <version>, <ciphertext>)
-
-      twistor_epoch := ((unix time in sec) >> 8) & 0xffffffff   // 256s is 4 min 16 sec
-
-      rcptid := 64bit twitter id of recipient
-
->>>>>>> github
       userbody := (len(<usermsg>) & 0xff) utf8encode(<usermsg>)  <padding>*  //this utf8encode has no trailing \0
       padding := 0x00
     */
@@ -318,12 +293,14 @@ window.Outbox = (function (module) {
                                                         pack.FieldRef('cref', {path: ["..", "ciphertext"]})),
                                     pack.Trunc('unused', {len: M.UNUSED_BITS}));
 
-            var tweet = pack.Str('tweet', {},
-                                 this._getPostGroups(),
-                                 ' ',
-                                 pack.Base16k('b16', {}, twistor_body));
+            var body_bits = twistor_body.toBits({debug: module.DEBUG});
+            var b16Encoding = pack.Base16k('b16').fromBits(body_bits)[0].val;
+            var tweet = [
+                this._getPostGroups(),
+                b16Encoding
+            ].join(' ');
 
-            return tweet.toString({debug: module.DEBUG});
+            return tweet;
         }
     });
 
