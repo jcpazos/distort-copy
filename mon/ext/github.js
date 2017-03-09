@@ -13,6 +13,10 @@ window.Github = (function() {
 
     Github.prototype = {
 
+        // GH handles are 39 bytes, alphanum and hyphen. may not begin
+        // nor end with hyphen.
+        HANDLE_MAX_LEN_BYTES: 39,
+
         // TODO getLatestCert:
         //
         // Promises a Certs.UserCert object constructed from the

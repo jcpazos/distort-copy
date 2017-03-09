@@ -19,14 +19,16 @@
 
 /*global
   base16k,
+  ECCKeyPair,
   ECCPubKey,
   Emitter,
   Fail,
   IDBKeyRange,
   KeyClasses,
   KeyLoader,
+  pack,
   Promise,
-  Utils
+  Utils,
 */
 
 /*exported Twitter */
@@ -116,17 +118,20 @@ window.Certs = (function (module) {
 
             var toks = tweetText.split(/\s+/);
 
-            if (toks.length < 2 || !_posNum(toks[1], 16)) {
+            if (toks.length < 2) {
                 throw new Fail(Fail.BADPARAM, "not a partialcert tweet");
             }
+
             var primaryMs = _posNum(toks[1], 16);
 
             if (!PartialCert.POUND_TAGS.includes(toks[0])) {
                 throw new Fail(Fail.BADPARAM, "invalid tokens for partialcert");
             }
 
-            if (Math.abs(createdAtMs - primaryMs) > UserCert.MAX_TIME_DRIFT_PRIMARY_MS) {
-                throw new Fail(Fail.STALE, "Time of post is too distant from certificate timestamp.");
+            if (primaryMs !== null) {
+                if (Math.abs(createdAtMs - primaryMs) > UserCert.MAX_TIME_DRIFT_PRIMARY_MS) {
+                    throw new Fail(Fail.STALE, "Time of post is too distant from certificate timestamp.");
+                }
             }
 
             var partialCerts = this._getPartialCert(cert => {
@@ -144,7 +149,7 @@ window.Certs = (function (module) {
             }
 
             try {
-                var userCert = partialCert.feedToks(toks);
+                var userCert = partialCert.feedToks(toks, createdAtMs);
                 if (userCert) {
                     // completed
                     this._removePartialCert(partialCert);
@@ -207,12 +212,16 @@ window.Certs = (function (module) {
         this.encryptkey = opts.encryptkey || null;
         this.keysig = opts.keysig || null;
     }
-    PartialCert.ENCRYPTKEY = "t1encr";
-    PartialCert.SIGNKEY = "t1sign";
-    PartialCert.KEYSIG = "t1ksig";
-    PartialCert.TAGS = [PartialCert.ENCRYPTKEY,
-                        PartialCert.SIGNKEY,
-                        PartialCert.KEYSIG];
+    //PartialCert.ENCRYPTKEY = "t1encr";
+    //PartialCert.SIGNKEY = "t1sign";
+    //PartialCert.KEYSIG = "t1ksig";
+    PartialCert.CERT = "t1crt";
+    PartialCert.TAGS = [
+        PartialCert.CERT,
+        //PartialCert.ENCRYPTKEY,
+        //PartialCert.SIGNKEY,
+        //PartialCert.KEYSIG
+    ];
     PartialCert.POUND_TAGS = PartialCert.TAGS.map(tag => "#" + tag);
 
     PartialCert.prototype = {
@@ -234,13 +243,18 @@ window.Certs = (function (module) {
         // this will attempt to complete the cert.
         // returns a full certificate if all the tokens
         // were received.
-        feedToks: function (toks) {
+        feedToks: function (toks, createdAtMs) {
+            createdAtMs = createdAtMs || 0;
+
             if (toks[0] === "#" + PartialCert.ENCRYPTKEY) {
                 this._parseEncryptKey(toks);
             } else if (toks[0] === "#" + PartialCert.SIGNKEY) {
                 this._parseSignKey(toks);
             } else if (toks[0] === "#" + PartialCert.KEYSIG) {
                 this._parseKeySig(toks);
+            } else if (toks[0] === "#" + PartialCert.CERT) {
+                // one shot deal
+                return this._parseCertTweet(toks, createdAtMs);
             } else {
                 throw new Fail(Fail.BADPARAM, "Expected one of " + PartialCert.POUND_TAGS + " but got: '" + toks[0] + "'");
             }
@@ -274,6 +288,62 @@ window.Certs = (function (module) {
             }
         },
 
+        _parseCertTweet: function (toks, envelopeTimeMs) {
+            // the whole cert fits in one tweet.
+            var b16 = toks[toks.length - 1];
+            var c1 = b16.charCodeAt(0);
+            if (toks.length < 2 || 0x5000 >= c1 || 0x8FFF < c1) {
+                throw new Fail(Fail.BADPARAM, "unrecognized syntax for cert msg");
+            }
+            var fmt = pack('cert',
+                           pack.Utf8('secondaryHdl', {len: UserCert.MAX_GH_LEN*8}),
+                           pack.ECCPubKey('key'),
+                           pack.Number('validFrom', {len: 48} /*, this.validFrom */),
+                           pack.Number('validUntil', {len: 24} /*,(this.validUntil - this.validFrom)*/),
+                           pack.Bits('signature', {len: KeyClasses.ECC_SIGN_BITS}/*, signature */));
+
+            var bits = pack.Base16k('b16', b16).toBits({debug: !!module.DEBUG});
+            var data = fmt.fromBits(bits)[0];
+            var signBits = pack.walk(data, 'cert', 'signature');
+
+            this._setGroups(toks.slice(1).filter(tok => tok && tok.substr(0, 1) === "#"));
+
+            var sortedGroups = this.groups.slice();
+            sortedGroups.sort();
+
+
+            var opts = {
+                primaryHdl: this.primaryHdl,
+                primaryId: this.primaryId,
+                secondaryHdl: pack.walk(data, 'cert', 'secondaryHdl'),
+                // validFrom is set to the date at which we receive the first part
+                validFrom: pack.walk(data, 'cert', 'validFrom'),
+                validUntil: pack.walk(data, 'cert', 'validUntil'),
+                completedOn: Date.now(), // unix. ms
+                verifiedOn: 0,
+                key: pack.walk(data, 'cert', 'key'),
+                // groups is set on the first key tweet
+                groups: sortedGroups,
+            };
+            opts.secondaryHdl = opts.secondaryHdl.trim();
+            opts.validUntil += opts.validFrom;
+
+            if (opts.validUntil * 1000 < Date.now() || opts.validUntil < opts.validFrom) {
+                throw new Fail(Fail.STALE, "Found only a stale key for " + opts.primaryHdl);
+            }
+
+            if (Math.abs(envelopeTimeMs - (opts.validFrom * 1000)) > UserCert.MAX_TIME_DRIFT_PRIMARY_MS) {
+                throw new Fail(Fail.STALE, "Time of post is too distant from certificate timestamp.");
+            }
+
+            var userCert = new UserCert(opts);
+
+            if (!userCert.verifySelf(signBits, null)) {
+                throw new Fail(Fail.CORRUPT, "verification failed");
+            }
+            return userCert;
+        },
+
         _parseSignKey: function (toks) {
             // var signStatus = "#signkey " + ts + " " + signKey;
             if (toks.length >= 3 && _posNum(toks[1], 16)) {
@@ -302,7 +372,7 @@ window.Certs = (function (module) {
             // var sigStatus = "#keysig " + ts + " " + expiration + " " + signature;
             if (toks.length >= 4 && _posNum(toks[1], 16) && _posNum(toks[2]), 16) {
                 this._updateTs(toks[1]);
-                this.expirationTs = _posNum(toks[2], 16);
+                this.expirationTs = _posNum(toks[2], 16) * 1000;
                 this.keysig = base16k.toHex(toks[3]);
                 // find all tags that follow -- assume they are groups for this cert
                 this._setGroups(toks.slice(4).filter(tok => tok && tok.substr(0, 1) === "#"));
@@ -376,8 +446,8 @@ window.Certs = (function (module) {
         //max 39 chars. alphanum + '-' . may not begin or end with '-'
         this.secondaryHdl = opts.secondaryHdl || null;
 
-        this.validFrom = opts.validFrom || 0; // Unix. ms. taken from cert body.
-        this.validUntil = opts.validUntil || 0; // Unix. ms. taken from cert body.
+        this.validFrom = opts.validFrom || 0; // Unix. sec. taken from cert body.
+        this.validUntil = opts.validUntil || 0; // Unix. sec. taken from cert body.
 
         this.completedOn = opts.completedOn || 0; // Date cert was assembled. Unix. seconds.
         this.verifiedOn = opts.verifiedOn || 0; // Date cert was verified. Unix. seconds.
@@ -389,6 +459,7 @@ window.Certs = (function (module) {
        timestamp on the tweet envelope */
     UserCert.MAX_TIME_DRIFT_PRIMARY_MS = 5 * 60 * 1000;
     UserCert.DEFAULT_EXPIRATION_MS = 7 * 24 * 3600 * 1000;
+    UserCert.MAX_GH_LEN = 39;   // max github handle length
     UserCert.STATUS_UNKNOWN = 0;
     UserCert.STATUS_FAIL = 1;
     UserCert.STATUS_OK = 2;
@@ -436,16 +507,22 @@ window.Certs = (function (module) {
     //
     // FIXME -- ideally the latest cert information would be available
     //          on the Account object directly.
-    UserCert.fromAccount = function (acct) {
+    UserCert.fromAccount = function (acct, validFromMs, validUntilMs) {
         var sortedGroupNames = acct.groups.map(stats => stats.name);
         sortedGroupNames.sort();
+
+        validFromMs = validFromMs || Date.now();
+        validUntilMs = validFromMs + UserCert.DEFAULT_EXPIRATION_MS;
+
         return new UserCert({
             primaryId: acct.primaryId,
             primaryHdl: acct.primaryHandle,
-            secondaryId: acct.secondaryId,
-            secondaryHdl: acct.secondaryHdl,
+            secondaryHdl: acct.secondaryHandle,
             groups: sortedGroupNames,
-            key: acct.key   // ECCKeyPair
+            validFrom: Math.ceil(validFromMs / 1000),
+            validUntil: Math.floor(validUntilMs / 1000),
+            key: acct.key,   // subclass of ECCPubKey
+            status: UserCert.STATUS_OK
         });
     };
 
@@ -457,6 +534,18 @@ window.Certs = (function (module) {
                 this._id = (new Date(this.validFrom * 1000)).toISOString() + " " + this.primaryId;
             }
             return this._id;
+        },
+
+        // basic field checks
+        _checkFields: function () {
+            if (!this.primaryId || !this.primaryHdl ||
+                !this.secondaryHdl) {
+                throw new Fail(Fail.CORRUPT, "invalid identifiers");
+            }
+            // TODO ALEX REGEX CHECKS on handles
+
+            // TODO ALEX CHECK At least part of one group
+
         },
 
         // valid in time
@@ -534,6 +623,53 @@ window.Certs = (function (module) {
             return KeyClasses.stringToBits(signedMessage, 'domstring');
         },
 
+        /** converts a cert into tweet(s) */
+        toTweets: function (kp) {
+
+            if (!kp && (this.key instanceof ECCKeyPair)) {
+                kp = this.key;
+            }
+
+            var groupNames = this.groups.slice();
+            var groupString = groupNames.map(name => "#" + name).join(" ");
+
+            var _packGH = () => {
+                const L = this.secondaryHdl.length,
+                      spaces = Utils.stringRepeat(' ', UserCert.MAX_GH_LEN - L);
+                return this.secondaryHdl + spaces;
+            };
+
+            var signature = this.getSignature(kp, null);
+
+            var certData = pack('body',
+                                pack.Utf8('secondaryHdl', {len: UserCert.MAX_GH_LEN*8}, _packGH()),
+                                pack.ECCPubKey('key', this.key),
+                                pack.Number('validFrom', {len: 48}, this.validFrom),
+                                pack.Number('validUntil', {len: 24}, (this.validUntil - this.validFrom)),
+                                pack.Bits('signature', {}, signature));
+
+            var certBits = certData.toBits({debug: !!module.DEBUG});
+            var certTweet = [
+                "#" + PartialCert.CERT,
+                groupString,
+                pack.Base16k('b16').fromBits(certBits)[0].val
+            ].join(" ");
+
+            var out = [{
+                msg: certTweet,
+                desc: "cert"
+            }];
+            return out.map(x => {
+                // XXX This is not exactly how tweet length is
+                // measured. But under the current encoding it is
+                // accurate.
+                if (x.msg.length > 140) {
+                    throw new Fail(Fail.PUBSUB, x[1] + " tweet too long (" + x.msg.length + "B > 140B)");
+                }
+                return x.msg;
+            });
+        },
+
         // produces a valid signature for the cert's info,
         // using the given ECCKeypair.
         getSignature: function (keypair, outEncoding) {
@@ -544,6 +680,8 @@ window.Certs = (function (module) {
         // verifies this certificate's given self signature.
         // returns true if it verifies, false otherwise
         verifySelf: function (sig, sigEncoding) {
+            this._checkFields();
+
             if (this.key.verifySignature(this._getSignedBits(), sig, {
                 encoding: null,
                 sigEncoding: sigEncoding})) {
@@ -553,20 +691,6 @@ window.Certs = (function (module) {
             }
         }
     };
-
-    /** creates a user certificate from the given account information.
-     */
-    UserCert.fromAccount = function (account, validFromMs, validUntilMs) {
-        var groups = account.groups.map(stats => stats.name);
-        groups.sort();
-        var opts = {
-            primaryId: account.primaryId,
-            primaryHdl: account.primaryHandle,
-            secondaryHdl: account.secondaryHandle,
-            groups: groups,
-            key: account.key,
-            
-    },
 
     /**
        Singleton class managing a certificate store.
