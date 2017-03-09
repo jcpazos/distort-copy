@@ -156,6 +156,7 @@ window.KeyClasses = (function (module) {
 
     const ECC_EG_MSG_BITS_PER_POINT = ECC_COORD_BITS - 8;
 
+    const BA = sjcl.bitArray;
     /*
       The encoding option applies if `s` is a string, and is one of:
 
@@ -293,6 +294,50 @@ window.KeyClasses = (function (module) {
         unpackEGCipher
     };
 
+    // A field packing a pubkey
+    pack.ECCPubKey = pack.define({
+        _fromBits: function (_path, bits, opts) {
+            /*jshint unused: false */
+            var len = KeyClasses.ECC_COORD_BITS * 4;
+            var fBits = BA.bitSlice(bits, 0, len);
+            var rest = BA.bitSlice(bits, len);
+            var key;
+            try {
+                key = new ECCPubKey(
+                    {pub: { // sign
+                        x: BA.bitSlice(fBits, 0 * KeyClasses.ECC_COORD_BITS, 1 * KeyClasses.ECC_COORD_BITS),
+                        y: BA.bitSlice(fBits, 1 * KeyClasses.ECC_COORD_BITS, 2 * KeyClasses.ECC_COORD_BITS)
+                    }},
+                    {pub: { // encrypt
+                        x: BA.bitSlice(fBits, 2 * KeyClasses.ECC_COORD_BITS, 3 * KeyClasses.ECC_COORD_BITS),
+                        y: BA.bitSlice(fBits, 3 * KeyClasses.ECC_COORD_BITS, 4 * KeyClasses.ECC_COORD_BITS)
+                    }});
+            } catch (err) {
+                if (err instanceof sjcl.exception.corrupt) {
+                    throw new Fail(Fail.CORRUPT, "invalid key data");
+                }
+                throw err;
+            }
+
+            return [
+                {
+                    name: this.name,
+                    val: key
+                },
+                rest
+            ];
+        },
+
+        fieldToBits: function (path, field) {
+            var ebits = field.encrypt.pub.get(),
+                sbits = field.sign.pub.get();
+
+            return [sbits.x,
+                    sbits.y,
+                    ebits.x,
+                    ebits.y].reduce((a,b) => {return sjcl.bitArray.concat(a, b);}, []);
+        }
+    });
 
     // packs an ECDSA signature.
     // The fields to sign must be listed
@@ -301,6 +346,11 @@ window.KeyClasses = (function (module) {
     //   key: ECCKeyPair
     // }
     pack.ECDSASignature = pack.define({
+        _fromBits: function (_path, bits, opts) {
+            /*jshint unused: false */
+            throw new Fail(Fail.NOTIMPL, "no fromBits signature");
+        },
+
         toBits: function () {
             // jshint bitwise: false
             var allBits =  pack.ECDSASignature.__super__.toBits.apply(this, [].slice.apply(arguments)); // super.toBits()
@@ -322,6 +372,11 @@ window.KeyClasses = (function (module) {
     // packs input into  [<Ybits 8bit><Xbits 2*192>
     //
     pack.EGPayload = pack.define({
+        _fromBits: function (_path, bits, opts) {
+            /*jshint unused: false */
+            throw new Fail(Fail.NOTIMPL, "no fromBits signature");
+        },
+
         toBits: function (path, opts) {
             var allBits =  pack.EGPayload.__super__.toBits.apply(this, [].slice.apply(arguments)); // super.toBits()
             var privKey = this.opts.encryptKey;
