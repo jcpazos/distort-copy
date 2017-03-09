@@ -20,6 +20,8 @@
 // cleaned up https://gist.github.com/commi/1583588
 // original license unknown
 
+/*global Fail*/
+
 /**
    Base16k is a way to encode 14bits of input into a valid a range of
    16*1024 == 16k unicode code points between U+5000 and U+8FFF. This
@@ -75,10 +77,14 @@ window.base16k = (function (module) {
 
         var length = inbin.length / 2;
         if (length % 1 !== 0) {
-            throw new Error("The binary input must have an even number of hex digits.");
+            throw new Fail(Fail.BADPARAM, "The binary input must have an even number of hex digits.");
         }
 
-        var out = length.toString();
+        // some variation
+        var lenBase = 0x5000 + Math.floor(Math.random() * (0x8FFF - 0x5000));
+        lenBase = lenBase & 0xFE00;
+
+        var out = String.fromCharCode(lenBase + length);
 
         var i;
         var byteValue;
@@ -128,16 +134,11 @@ window.base16k = (function (module) {
     };
 
     module.toHex = function toHex(s) {
-        // read the length
-        var length= /^[0-9]+/.exec(s);
-
-        if(length === null) {
-            throw new Error("The base16k string must begin with the decimal number of bytes that are encoded.");
-        }
-        length = parseInt(length);
+        // read the length in the first char
+        var length= s.charCodeAt(0) & 0x1FF; //./^[0-9]+/.exec(s);
 
         // remove all characters that don't encode binary data
-        s = s.replace(/[^\u5000-\u8fff]/g, "");
+        s = s.substr(1).replace(/[^\u5000-\u8fff]/g, "");
 
         // decode characters to bytes
         var out;
@@ -154,7 +155,7 @@ window.base16k = (function (module) {
             if (((1<<i) & 0x2b) !== 0) {
                 // fetch another Han character at i=0, 1, 3, 5
                 if(pos>=s.length) {
-                    throw new Error("premature end of input");
+                    throw new Fail(Fail.BADPARAM, "premature end of input");
                 }
                 code=s.charCodeAt(pos++)-0x5000;
             }
