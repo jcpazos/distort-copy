@@ -1013,7 +1013,46 @@ window.Utils = (function (module) {
         });
     }
 
+    /*Ajax promise for simple requests:
+
+      {
+         method: "GET",
+         url: "https://example.org/path/",
+         async: true,
+         query: [[k, v], ...]
+         headers: [[name, v], ...]
+      }
+
+      resolves(xhr) at onload event
+      rejects if onerror
+    */
+    function ajax(opts) {
+        return new Promise((resolve, reject) => {
+            var xhr = new XMLHttpRequest();
+            var query = (opts.query || []).map(([name, val]) => {
+                return encodeURIComponent(name) + "=" + encodeURIComponent(val);
+            }).join("&");
+
+            xhr.open(opts.method || "GET",
+                     opts.url + ((query)? "?" + query : ""),
+                     (opts.async === undefined) ? true : !!opts.async);
+
+            (opts.headers || []).forEach(([name, val]) => {
+                xhr.setRequestHeader(name, val);
+            });
+
+            xhr.onerror = function () {
+                reject(Fail.fromVal(xhr));
+            };
+            xhr.onload = function () {
+                resolve(xhr);
+            };
+            xhr.send();
+        });
+    }
+
     var exports = {
+        ajax,
         PeriodicTask,
 
         _extends,
