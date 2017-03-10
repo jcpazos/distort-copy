@@ -571,7 +571,7 @@ _extends(DistributeTask, Utils.PeriodicTask, {
 
         console.debug("Running DistributeTask for account: " + that.username);
 
-        function _repostKey() {
+        function _repostCert() {
             if (!account.groups || !account.groups.length) {
                 console.error("Account " + account.id + " is not part of any groups. aborting post.");
                 UI.log("Account " + account.id + " is not in any group. Cannot post.");
@@ -581,7 +581,7 @@ _extends(DistributeTask, Utils.PeriodicTask, {
                 UI.log("error reposting(" + err.code + "): " + err);
                 throw err; // throw again
             }).then(function () {
-                UI.log("Key for @" + that.username + " reposted.");
+                UI.log("Certificate for account " + account.id + " reposted.");
                 return true;
             });
         }
@@ -662,16 +662,16 @@ _extends(DistributeTask, Utils.PeriodicTask, {
             });
 
             if (services.findIndex(s => (s.repost === true) ) !== -1) {
-                console.log("Reposting temporarily disabled.");
-                return true; //_repostKey();
+                return _repostCert();
             } else {
                 // all good. key up to date.
+                console.debug("Certificates for account " + account.id + " up-to-date.");
                 return true;
             }
         }).catch(function (err) {
             if (err.code === Fail.NOIDENT) {
                 UI.log("No keys found on own user profile @" + that.username + ". Posting.");
-                return _repostKey();
+                return _repostCert();
             } else {
                 throw err;
             }
