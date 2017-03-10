@@ -56,61 +56,33 @@ window.Certs = (function (module) {
         this._timeoutMs = (timeoutMs === undefined) ? -1 : timeoutMs;
     }
 
-    // this object is fed tweets one by one and pumps out UserCert objects
-    // when all the proper bits have been ingested.
+    // this object is fed tweets or repo contents bit by bit and pumps
+    // out UserCert objects when all the proper bits have been
+    // ingested.
     PartialCertFeed.prototype = {
 
-        /**
-           return a full UserCert if the given tweet completes
-           a partial cert. returns null if more bits are needed.
-           throws error if the given tweet is not a partial cert tweet.
-
-           @tweetText the text of a tweet (body)
-
-           @envelope: the metadata around the tweet.
-                     { primaryId: userid string,
-                       primaryHdl: user handle string,
-                       createdAtMs: unix time posted in ms
-                     }
-        */
+        // returns a UserCert if the data provided forms a valid
+        // self-signed cert. otherwise null.
+        //
+        // errors are absorbed
         feedRepo: function (certText, envelope) {
-            var secondaryHdl = envelope.secondaryHdl;
-            // This function takes in the cert from a repo that is line separated.
-            // Each portion needs to be fed into feedToks(), and eventually feedToks()
-            // should return a full cert if valid, or an error if invalid.
-
-            var partialCerts = this._getPartialCert(cert => {
-                return cert.secondaryHdl === secondaryHdl;
+            var partialCert = new PartialCert({
+                secondaryHdl: envelope.secondaryHdl
             });
 
-            var partialCert = partialCerts[0];
-            if (!partialCert) {
-                partialCert = new PartialCert({
-                    secondaryHdl: secondaryHdl
-                });
-                this._addPartialCert(partialCert);
-            }
-
-            certText.split('\n').forEach(line => {
-                try {
-                    var toks = line.split(/\s+/).filter(tok => !!tok);
-                    var userCert = partialCert.feedToks(toks);
-                    if (userCert) {
-                        this._removePartialCert(userCert);
-                    }
-                    return userCert;
-                } catch (err) {
-                    if (err instanceof Fail) {
-                        // remove certs with invalid parts
-                        console.log("partial cert processing for github failed", err);
-                        this._removePartialCert(partialCert);
-                    }
+            try {
+                return partialCert.feedRepo(certText, envelope);
+            } catch (err) {
+                if (!(err instanceof Fail)) {
                     throw err;
                 }
-            });
-
+            }
         },
 
+        // returns a UserCert if the data provided forms a valid
+        // self-signed cert. otherwise null.
+        //
+        // errors are absorbed
         feedTweet: function (tweetText, envelope) {
             var primaryId = envelope.primaryId;
             var primaryHdl = envelope.primaryHdl;
@@ -260,6 +232,75 @@ window.Certs = (function (module) {
             }
 
             return this._completeCert();
+        },
+
+        feedRepo: function (certText, envelope) {
+            /*jshint unused: false */
+            var lineIdx = -1;
+            var b16Line = null;
+
+            certText.split('\n').map(l => l.trim()).filter(l => !!l).forEach(line => {
+                switch (lineIdx) {
+                case -1:
+                    if (line.startsWith("#" + PartialCert.CERT)) {
+                        lineIdx = 0;
+                    }
+                    break;
+                case 0:
+                    // groups line
+                    // starts with "groups:"
+                    this._setGroups(line.split(" ").slice(1));
+                    lineIdx = 1;
+                    break;
+                case 1:
+                    b16Line = line;
+                    lineIdx += 1;
+                    break;
+                }
+            });
+
+            if (!b16Line) {
+                return null;
+            }
+
+            var fmt = pack('repo',
+                           pack.Decimal('primaryId', {len: 64}),
+                           pack.Utf8('primaryHdl',   {len: UserCert.MAX_TH_LEN*8}),
+                           pack.ECCPubKey('key'),
+                           pack.Number('validFrom',  {len: 48}),
+                           pack.Number('validUntil', {len: 24}),
+                           pack.Bits('signature',    {len: KeyClasses.ECC_SIGN_BITS}));
+
+            var bits = pack.Base16k('b16', b16Line).toBits({debug: !!module.DEBUG});
+            var data = fmt.fromBits(bits)[0];
+            var signBits = pack.walk(data, 'repo', 'signature');
+            var sortedGroups = this.groups.slice();
+            sortedGroups.sort();
+
+            var opts = {
+                primaryHdl: pack.walk(data, 'repo', 'primaryHdl'),
+                primaryId: pack.walk(data, 'repo', 'primaryId'),
+                secondaryHdl: this.secondaryHdl,
+                validFrom: pack.walk(data, 'repo', 'validFrom'),
+                validUntil: pack.walk(data, 'repo', 'validUntil'),
+                completedOn: Date.now(),
+                verifiedOn: 0,
+                key: pack.walk(data, 'repo', 'key'),
+                groups: sortedGroups,
+            };
+            opts.primaryHdl = opts.primaryHdl.trim();
+            opts.validUntil += opts.validFrom;
+
+            if (opts.validUntil * 1000 < Date.now() || opts.validUntil < opts.validFrom) {
+                throw new Fail(Fail.STALE, "Found only a stale key for " + opts.primaryHdl);
+            }
+
+            var userCert = new UserCert(opts);
+
+            if (!userCert.verifySelf(signBits, null)) {
+                throw new Fail(Fail.CORRUPT, "verification failed");
+            }
+            return userCert;
         },
 
         _setGroups: function (toks) {
@@ -413,7 +454,7 @@ window.Certs = (function (module) {
             };
 
             if (pubKeyContainer.expiration < Date.now() || pubKeyContainer.expiration < pubKeyContainer.ts) {
-                throw new Fail(Fail.STALE, "Found only a stale key for " + that.primaryHdl);
+                throw new Fail(Fail.STALE, "Found only a stale key for gh:" + that.secondaryHdl);
             }
 
             var opts = {
@@ -442,6 +483,7 @@ window.Certs = (function (module) {
         opts = opts || {};
 
         this.primaryId = opts.primaryId || null;
+        //max 15 chars.
         this.primaryHdl = opts.primaryHdl || null;
         //max 39 chars. alphanum + '-' . may not begin or end with '-'
         this.secondaryHdl = opts.secondaryHdl || null;
@@ -459,6 +501,7 @@ window.Certs = (function (module) {
        timestamp on the tweet envelope */
     UserCert.MAX_TIME_DRIFT_PRIMARY_MS = 5 * 60 * 1000;
     UserCert.DEFAULT_EXPIRATION_MS = 7 * 24 * 3600 * 1000;
+    UserCert.MAX_TH_LEN = 15;   // based on some net post. twitter-text seems to indicate that the limit is 20 TODO ALEX
     UserCert.MAX_GH_LEN = 39;   // max github handle length
     UserCert.STATUS_UNKNOWN = 0;
     UserCert.STATUS_FAIL = 1;
@@ -542,7 +585,7 @@ window.Certs = (function (module) {
                 !this.secondaryHdl) {
                 throw new Fail(Fail.CORRUPT, "invalid identifiers");
             }
-            // TODO ALEX REGEX CHECKS on handles
+            // TODO ALEX REGEX CHECKS on handles (see mon/ext/lib/twistter-text.js )
 
             // TODO ALEX CHECK At least part of one group
 
@@ -623,6 +666,36 @@ window.Certs = (function (module) {
             return KeyClasses.stringToBits(signedMessage, 'domstring');
         },
 
+        /** converts a cert into a format suitable for gh */
+        toRepo: function (kp) {
+            if (!kp && (this.key instanceof ECCKeyPair)) {
+                kp = this.key;
+            }
+            var groupNames = this.groups.slice();
+            var groupString = groupNames.map(name => "#" + name).join(" ");
+            var signature = this.getSignature(kp, null);
+            var _packTH = () => {
+                const L = this.primaryHdl.length,
+                      spaces = Utils.stringRepeat(' ', UserCert.MAX_TH_LEN - L);
+                return this.primaryHdl + spaces;
+            };
+
+            var certData = pack('repo',
+                                pack.Decimal('primaryId', {len: 64}, this.primaryId),
+                                pack.Utf8('primaryHdl',   {len: UserCert.MAX_TH_LEN*8}, _packTH()),
+                                pack.ECCPubKey('key', this.key),
+                                pack.Number('validFrom', {len: 48}, this.validFrom),
+                                pack.Number('validUntil', {len: 24}, (this.validUntil - this.validFrom)),
+                                pack.Bits('signature', {}, signature));
+
+            var certBits = certData.toBits({debug: !!module.DEBUG});
+            return [
+                "#" + PartialCert.CERT +  " " + this.primaryHdl + ":" + this.secondaryHdl,
+                "groups: " + groupString,
+                pack.Base16k('b16').fromBits(certBits)[0].val
+            ].join("\n");
+        },
+
         /** converts a cert into tweet(s) */
         toTweets: function (kp) {
 
@@ -641,7 +714,7 @@ window.Certs = (function (module) {
 
             var signature = this.getSignature(kp, null);
 
-            var certData = pack('body',
+            var certData = pack('cert',
                                 pack.Utf8('secondaryHdl', {len: UserCert.MAX_GH_LEN*8}, _packGH()),
                                 pack.ECCPubKey('key', this.key),
                                 pack.Number('validFrom', {len: 48}, this.validFrom),

@@ -811,7 +811,7 @@ BGAPI.prototype.postCert = function (account) {
     }).then(certData => {
         // post to github first as it will invalidate the currently active cert
         // on twitter.
-        return Github.postGithubKey(account, certData.msgs).then(() => certData);
+        return Github.postCert(account, userCert).then(() => certData);
     }).then(certData => {
         return API.postTweets(account, certData.msgs.map(m => ({msg: m, groups: certData.groups})));
     }).then(() => {
