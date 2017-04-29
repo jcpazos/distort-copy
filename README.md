@@ -15,7 +15,7 @@ The extension code requires compilation. There are several files that are prepro
 1. Just hit make
 
    `$ make`
-   
+
 *There is a debug flag that can be turned on to disable some name mangling and ease debugging: `$ make DEBUG=1`  Be warned that the debugging option includes additional code in the runtime useful for testing crypto routines, which shouldn't be present normally.*
 
 Installation
