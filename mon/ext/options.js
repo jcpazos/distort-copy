@@ -605,7 +605,7 @@ function loadPage() {
         leaveGroup(username, groupName).then(function () {
             updateStatus(`Username ${username} left group ${groupName}`);
             cancelConfirmation($leaveLink);
-            //showPage("main");
+            refreshGroupStats();
         }).catch(err => {
             updateStatus(err.message, true);
         }).then(() => {
