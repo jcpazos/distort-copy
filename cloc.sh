@@ -1,4 +1,4 @@
-#!/bin/bash -x 
+#!/bin/bash -x
 
 # Beeswax - Anti-Exfiltration Web Platform
 # Copyright (C) 2016  Jean-Sebastien Legare
@@ -48,6 +48,12 @@ EXCLUDE_FILES=(
  "$EXT"/pageapi/runtime.body.js
  "$EXT"/pageapi/runtime.min.js
  "$EXT"/pageapi/runtime.globals.js
+
+ # exfiltration code excluded
+ "$EXT"/pageapi/runtime.body.js.in
+ "$EXT"/pageapi/runtime.globals.js.in
+ "$EXT"/pageapi/runtime.js.in
+
 
  #"$EXT"/pageapi/Makefile
  #"$EXT"/pageapi/runtime.body.js.in
