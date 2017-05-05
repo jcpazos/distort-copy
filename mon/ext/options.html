@@ -149,10 +149,28 @@
           </span>
 	  <span class="action-confirm" data-username="">
 	    <form name="new-group-form">
-	      <input placeholder="enter group name, e.g. #twistor" type="text" name="new-group-name"></input>
-	      <!-- actions -->
-	      <i title="Save" class="action-button action-join fa fa-check"></i>
-	      <i title="Close" class="action-button action-cancel fa fa-close"></i>
+	      <div class="row">
+		<div class="col" style="width: 33%">
+		  <label for="new-group-name">Group Name: <i title="default" class="action-button action-default">[use default]</i></label>
+		  <input placeholder="e.g. #foo" type="text" name="new-group-name"></input>
+		  <!-- actions -->
+		</div>
+		<div class="col" style="width: 33%">
+		  <label for="new-group-level">Bandwidth:</label>
+		  <select name="new-group-position">
+		    <option value="0" selected>Everything (0)</option>
+		    <option value="1">Level -1</option>
+		    <option value="1">Level -2</option>
+		    <option value="1">Level -3</option>
+		    <option value="1">Level -4</option>
+		    <option value="1">Trickle (-5)</option>
+		  </select>
+		</div>
+		<div class="col" style="33%">
+		  <i title="Save" class="action-button action-join fa fa-check"></i>
+		  <i title="Close" class="action-button action-cancel fa fa-close"></i>
+		</div>
+	      </div>
 	    </form>
 	  </span>
 	</span>

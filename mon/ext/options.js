@@ -14,6 +14,10 @@ var DateUtil = BG.DateUtil;
 // lib/twitter-text.js
 var TT = window.twttr;
 
+// "빵"
+var DEFAULT_GROUP = String.fromCharCode(48757);
+var MAX_LEVEL = 5;
+
 /**
    Displays the error/status text in the Options UI.
 
@@ -308,7 +312,7 @@ function initStep(className, stepNo) {
     "use strict";
     var $stepDiv = $doc.find("." + className + "[data-step='" + stepNo + "']");
     var $elt;
-    
+
     switch(className + "." + stepNo) {
     case "new-account-step.start":
         $stepDiv.find("#twitter-info").hide();
@@ -425,15 +429,14 @@ function refreshImportKeys() {
 /**
    promises to make the user join a group
 */
-function joinNewGroup(userid, groupName) {
+function joinNewGroup(userid, opts) {
     "use strict";
-
     return new Promise(function (resolve) {
         if (!userid) {
             throw new Fail(Fail.BADPARAM, "Invalid userid. Could not determine selected element?");
         }
 
-        groupName = groupName.trim();
+        var groupName = (opts.name || "").trim();
 
         if (!groupName) {
             throw new Fail(Fail.BADPARAM, "Invalid group name.");
@@ -453,7 +456,7 @@ function joinNewGroup(userid, groupName) {
         groupName = first.hashtag;
 
         var account = Vault.getAccount(userid);
-        resolve(account.joinGroup(groupName));
+        resolve(account.joinGroup({name: groupName, level: opts.level}));
     });
 }
 
@@ -623,6 +626,11 @@ function loadPage() {
         }
     });
 
+    $doc.find(".groups").on("click", ".action-default", function (evt) {
+        evt.preventDefault();
+        $doc.find("input[name='new-group-name']").val("#" + DEFAULT_GROUP);
+    });
+
     $doc.find(".groups").on("click", ".action-join", function (evt) {
         evt.preventDefault();
         $doc.find("form[name='new-group-form']").submit();
@@ -633,13 +641,17 @@ function loadPage() {
         var $groupNameInput = $(this).find("input[name='new-group-name']");
         var groupName = $groupNameInput.val();
 
+        var $levelInput = $(this).find("select[name='new-group-level']").val();
+
+        var level = parseInt($levelInput.val()) || 0;
+
         // selected username
         var username = getSelectedUsername();
 
         var $confirm = $doc.find(".groups .action-group[data-action='join-group'] .action-confirm");
         showSpinner($confirm, true, "joining group...");
 
-        joinNewGroup(username, groupName).then(function () {
+        joinNewGroup(username, {name: groupName, level: level}).then(function () {
             updateStatus(`Added user ${username} to group ${groupName}`);
             cancelConfirmation($groupNameInput);
             showPage("main");

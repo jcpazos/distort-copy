@@ -1073,6 +1073,11 @@ window.Utils = (function (module) {
             return result + pattern;
         },
 
+        randomUint32: function () {
+            /* jshint bitwise: false */
+            return (sjcl.random.randomWords(1)[0] & 0xffffffff) >>> 0;
+        },
+
         // string made from 128 random bits
         randomStr128: function () {
             var arr = sjcl.random.randomWords(4);

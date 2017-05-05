@@ -18,13 +18,14 @@
 **/
 
 /*jshint
-  esversion: 6
+  esversion: 6,
+  bitwise: false
 */
 
 /*global
   Promise, ECCKeyPair,
   KeyLoader, Fail,
-  Events
+  Events, Utils
 */
 
 window.Vault = (function () {
@@ -286,6 +287,8 @@ window.Vault = (function () {
 
     function GroupStats(opts) {
         this.name = opts.name || null;
+        this.level = opts.level || 0;
+        this.subgroup = opts.subgroup || 0;
         this.joinedOn = opts.joinedOn || null; // unix. in seconds.
 
         // Bumped when a message has the user as a recipient.
@@ -299,11 +302,66 @@ window.Vault = (function () {
         this.txPeriodMs = 15*60*1000;  // in ms. for timers.
     }
 
+    GroupStats.MAX_LEVEL = 5; // group leaf
+    GroupStats.MIN_LEVEL = 0; // group root
+    GroupStats.SUBGROUP_MASK = (1 << (GroupStats.MAX_LEVEL + 1)) - 1;
+    GroupStats.SUBGROUP_BASE = 0x5000;
+
+    /**
+       returns a random path from a binary tree of height @leafHeight.
+       level 0 being just one root node.
+
+                  a       L0
+                /   \
+               b     x    L1
+              / \   / \
+             x   c x   x  L2
+
+        each selected node is encoded as its offset in the tree.
+        left to right, top to bottom. [a, b, c] is [0, 1, 4]
+
+    */
+    GroupStats.randomTreePath = function (leafHeight) {
+        if (leafHeight > 32 || leafHeight < 0) {
+            throw Error("not impl.");
+        }
+        var iPath = Utils.randomUint32();
+        var path = [0];
+        var lvlBit = 1;
+        // jshint bitwise: false
+        while (path.length <= leafHeight) {
+            if (iPath & lvlBit) {
+                // go left
+                path.push(2*path[path.length - 1] + 1);
+            } else {
+                // go right
+                path.push(2*path[path.length - 1] + 2);
+            }
+            lvlBit <<= 2;
+        }
+        return path;
+    };
+
+    GroupStats.nameToSubgroup = function (groupName) {
+        var last = groupName.charCodeAt(groupName.length - 1);
+        return last & GroupStats.SUBGROUP_BASE;
+    },
+
     GroupStats.prototype = {
+        subgroupToName: function (subgroup) {
+            return this.name + String.fromCharCode(GroupStats.SUBGROUP_BASE + subgroup);
+        },
+
+        pathToNames: function (nodePath) {
+            return nodePath.map(subgroup => this.subgroupToName(subgroup));
+        },
+
         toStore: function () {
             return {
                 'typ': "grp",
                 name: this.name,
+                level: this.level,
+                subgroup: this.subgroup,
                 joinedOn: this.joinedOn,
                 lastReceivedOn: this.lastReceivedOn,
                 numReceived: this.numReceived,
@@ -371,10 +429,26 @@ window.Vault = (function () {
         /**
            Promises a GroupStats for the newly joined group.
 
-           Resulting account is saved in the process. Emits accout:updated.
+           Resulting account is saved in the process. Emits account:updated.
+
+           opts:
+            {name: groupName,
+             level: level
+            }
         **/
-        joinGroup: function (groupName) {
+        joinGroup: function (opts) {
+            var groupName = opts.name;
+            var level = parseInt(opts.level);
+
             return new Promise(resolve => {
+                if (isNaN(level)) {
+                    throw new Fail(Fail.BADPARAM, "Invalid level.");
+                }
+                if (level < GroupStats.MIN_LEVEL || level > GroupStats.MAX_LEVEL) {
+                    throw new Fail(Fail.BADPARAM, "Level must be in range " + GroupStats.MIN_LEVEL + " to " +
+                                   GroupStats.MAX_LEVEL);
+                }
+
                 this.groups.forEach(function (grp) {
                     if (grp.name === groupName) {
                         throw new Fail(Fail.EXISTS, "Already joined that group.");
@@ -383,6 +457,7 @@ window.Vault = (function () {
 
                 var groupStats = new GroupStats({
                     name: groupName,
+                    level: level,
                     joinedOn: Date.now() / 1000,
                     lastReceivedOn: 0,
                     lastSentOn: 0,
