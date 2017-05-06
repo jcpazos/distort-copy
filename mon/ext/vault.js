@@ -25,8 +25,124 @@
 /*global
   Promise, ECCKeyPair,
   KeyLoader, Fail,
-  Events, Utils
+  Events, Utils, GroupStats
 */
+
+window.GroupStats = (function () {
+    "use strict";
+
+    function GroupStats(opts) {
+        this.name = opts.name || null;
+        this.level = opts.level || 0;
+        this.subgroup = opts.subgroup || 0;
+        this.joinedOn = opts.joinedOn || null; // unix. in seconds.
+
+        // Bumped when a message has the user as a recipient.
+        this.lastReceivedOn = opts.lastReceivedOn || null; // unix. in seconds.
+        this.numReceived = opts.numReceived || 0;
+
+        // Bumped when the user sends a message on that group.
+        this.lastSentOn = opts.lastSentOn || null; // unix. in seconds.
+        this.numSent = opts.numSent || 0;
+
+        this.txPeriodMs = 15*60*1000;  // in ms. for timers.
+    }
+
+    GroupStats.MAX_LEVEL = 5; // group leaf
+    GroupStats.MIN_LEVEL = 0; // group root
+    GroupStats.SUBGROUP_MASK = (1 << (GroupStats.MAX_LEVEL + 1)) - 1;
+    GroupStats.SUBGROUP_BASE = 0x5000;
+
+    /**
+       returns a random path from a binary tree of height @leafHeight.
+       level 0 being just one root node.
+
+                  a       L0
+                /   \
+               b     x    L1
+              / \   / \
+             x   c x   x  L2
+
+        each selected node is encoded as its offset in the tree.
+        left to right, top to bottom. [a, b, c] is [0, 1, 4]
+
+    */
+    GroupStats.randomTreePath = function (leafHeight) {
+        if (leafHeight === undefined) {
+            leafHeight = GroupStats.MAX_LEVEL;
+        }
+
+        if (leafHeight > 32 || leafHeight < 0) {
+            throw Error("not impl.");
+        }
+        var iPath = Utils.randomUint32();
+        var path = [0];
+        var lvlBit = 1;
+        // jshint bitwise: false
+        while (path.length <= leafHeight) {
+            if (iPath & lvlBit) {
+                // go left  i' = 2i + 1
+                path.push(2*path[path.length - 1] + 1);
+            } else {
+                // go right i' = 2i + 2
+                path.push(2*path[path.length - 1] + 2);
+            }
+            lvlBit <<= 2;
+        }
+        return path;
+    };
+
+    GroupStats.getSubgroup = function (groupName) {
+        var last = groupName.charCodeAt(groupName.length - 1);
+        return last & GroupStats.SUBGROUP_BASE;
+    };
+
+    GroupStats.getSubgroupName = function (baseName, subgroup) {
+            if (subgroup === 0) {
+                return baseName;
+            } else {
+                var last = String.fromCharCode(baseName.charCodeAt(baseName.length - 1) + subgroup);
+                return this.name.substr(0, baseName.length - 1) + last;
+            }
+    };
+
+    GroupStats.subgroupNames = function (baseName, nodePath) {
+        return nodePath.map(subgroup => GroupStats.subgroupToName(baseName, subgroup));
+    };
+
+    GroupStats.prototype = {
+        get subgroupName() {
+            return GroupStats.getSubgroupName(this.name, this.subgroup);
+        },
+
+        randomSubgroupNames: function () {
+            return GroupStats.subgroupNames(this.name, GroupStats.randomTreePath(GroupStats.MAX_LEVEL));
+        },
+
+        toStore: function () {
+            return {
+                'typ': "grp",
+                name: this.name,
+                level: this.level,
+                subgroup: this.subgroup,
+                joinedOn: this.joinedOn,
+                lastReceivedOn: this.lastReceivedOn,
+                numReceived: this.numReceived,
+                numSent: this.numSent,
+                txPeriodMs: this.hourlyRate
+            };
+        }
+    };
+    GroupStats.fromStore = function (obj) {
+        if (obj.typ !== "grp") {
+            return null;
+        }
+        return new GroupStats(obj);
+    };
+    KeyLoader.registerClass("grp", GroupStats);
+    return GroupStats;
+})();
+
 
 window.Vault = (function () {
     "use strict";
@@ -285,99 +401,6 @@ window.Vault = (function () {
         }
     };
 
-    function GroupStats(opts) {
-        this.name = opts.name || null;
-        this.level = opts.level || 0;
-        this.subgroup = opts.subgroup || 0;
-        this.joinedOn = opts.joinedOn || null; // unix. in seconds.
-
-        // Bumped when a message has the user as a recipient.
-        this.lastReceivedOn = opts.lastReceivedOn || null; // unix. in seconds.
-        this.numReceived = opts.numReceived || 0;
-
-        // Bumped when the user sends a message on that group.
-        this.lastSentOn = opts.lastSentOn || null; // unix. in seconds.
-        this.numSent = opts.numSent || 0;
-
-        this.txPeriodMs = 15*60*1000;  // in ms. for timers.
-    }
-
-    GroupStats.MAX_LEVEL = 5; // group leaf
-    GroupStats.MIN_LEVEL = 0; // group root
-    GroupStats.SUBGROUP_MASK = (1 << (GroupStats.MAX_LEVEL + 1)) - 1;
-    GroupStats.SUBGROUP_BASE = 0x5000;
-
-    /**
-       returns a random path from a binary tree of height @leafHeight.
-       level 0 being just one root node.
-
-                  a       L0
-                /   \
-               b     x    L1
-              / \   / \
-             x   c x   x  L2
-
-        each selected node is encoded as its offset in the tree.
-        left to right, top to bottom. [a, b, c] is [0, 1, 4]
-
-    */
-    GroupStats.randomTreePath = function (leafHeight) {
-        if (leafHeight > 32 || leafHeight < 0) {
-            throw Error("not impl.");
-        }
-        var iPath = Utils.randomUint32();
-        var path = [0];
-        var lvlBit = 1;
-        // jshint bitwise: false
-        while (path.length <= leafHeight) {
-            if (iPath & lvlBit) {
-                // go left
-                path.push(2*path[path.length - 1] + 1);
-            } else {
-                // go right
-                path.push(2*path[path.length - 1] + 2);
-            }
-            lvlBit <<= 2;
-        }
-        return path;
-    };
-
-    GroupStats.nameToSubgroup = function (groupName) {
-        var last = groupName.charCodeAt(groupName.length - 1);
-        return last & GroupStats.SUBGROUP_BASE;
-    },
-
-    GroupStats.prototype = {
-        subgroupToName: function (subgroup) {
-            return this.name + String.fromCharCode(GroupStats.SUBGROUP_BASE + subgroup);
-        },
-
-        pathToNames: function (nodePath) {
-            return nodePath.map(subgroup => this.subgroupToName(subgroup));
-        },
-
-        toStore: function () {
-            return {
-                'typ': "grp",
-                name: this.name,
-                level: this.level,
-                subgroup: this.subgroup,
-                joinedOn: this.joinedOn,
-                lastReceivedOn: this.lastReceivedOn,
-                numReceived: this.numReceived,
-                numSent: this.numSent,
-                txPeriodMs: this.hourlyRate
-            };
-        }
-    };
-    GroupStats.fromStore = function (obj) {
-        if (obj.typ !== "grp") {
-            return null;
-        }
-        return new GroupStats(obj);
-    };
-    KeyLoader.registerClass("grp", GroupStats);
-
     function Account(opts) {
         this.primaryId = opts.primaryId || null;           // string userid (e.g. large 64 integer as string)
         this.primaryHandle = opts.primaryHandle || null;   // string username (e.g. twitter handle)
@@ -449,15 +472,22 @@ window.Vault = (function () {
                                    GroupStats.MAX_LEVEL);
                 }
 
+                if (groupName.charCodeAt(groupName.length - 1) & GroupStats.SUBGROUP_MASK) {
+                    groupName += GroupStats.SUBGROUP_BASE;
+                }
+
                 this.groups.forEach(function (grp) {
                     if (grp.name === groupName) {
                         throw new Fail(Fail.EXISTS, "Already joined that group.");
                     }
                 });
 
+                var path = GroupStats.randomTreePath(GroupStats.MAX_LEVEL);
+
                 var groupStats = new GroupStats({
                     name: groupName,
                     level: level,
+                    subgroup: path[level],
                     joinedOn: Date.now() / 1000,
                     lastReceivedOn: 0,
                     lastSentOn: 0,

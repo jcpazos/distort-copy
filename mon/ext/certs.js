@@ -551,7 +551,7 @@ window.Certs = (function (module) {
     // FIXME -- ideally the latest cert information would be available
     //          on the Account object directly.
     UserCert.fromAccount = function (acct, validFromMs, validUntilMs) {
-        var sortedGroupNames = acct.groups.map(stats => stats.name);
+        var sortedGroupNames = acct.groups.map(stats => stats.subgroupName);
         sortedGroupNames.sort();
 
         validFromMs = validFromMs || Date.now();

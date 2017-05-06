@@ -696,8 +696,7 @@ function BGAPI() {
         var initialUser = Vault.getUsername();
         API.accountChanged(initialUser);
 
-        var messageQueue = new Outbox.Queue({FIXME: true});
-        var sender = new Outbox.PeriodicSend({queue: messageQueue});
+        var sender = new Outbox.PeriodicSend();
         window.setTimeout(function () {
             sender.start();
         }, 5000);               // give it some time to breathe when loading the extension.
@@ -786,7 +785,7 @@ BGAPI.prototype.accountChanged = function (username) {
     var account = Vault.getAccount(username);
     this.activeAccounts[account.id] = account;
     account.groups.forEach(group => {
-        this.streamerManager.subscribe(group.name, account.id, account.primaryApp);
+        this.streamerManager.subscribe(group.subgroupName, account.id, account.primaryApp);
     });
 
     if (!this.distributeTasks[username]) {

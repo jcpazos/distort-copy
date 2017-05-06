@@ -41,9 +41,11 @@ window.Outbox = (function (module) {
        }
      */
     function PeriodicSend(opts) {
+        opts = opts || {};
         var period = opts.periodMs || PeriodicSend.DEFAULT_POST_INTERVAL_MS;
         PeriodicSend.__super__.constructor.call(this, period);
-        this.queue = opts.queue || null;
+        this.queue = new Queue();
+        this.sendCount = 0;
     }
 
     // once every 15 min
@@ -55,25 +57,50 @@ window.Outbox = (function (module) {
                 if (!this.queue) {
                     throw new Fail(Fail.GENERIC, "no associated queue");
                 }
-                var next = this.queue.dequeue();
+
+                var acct = Vault.getAccount();
+                if (!acct) {
+                    console.log("no current account. cannot send message");
+                    resolve(false);
+                }
+
+                var groups = acct.groups;
+                if (groups.length === 0) {
+                    console.log("not taking part in any group. cannot send message");
+                    resolve(false);
+                }
+
+                // round-robin between groups of the account.
+                var chosenGroup = acct.groups[this.sendCount % acct.groups.length];
+                this.sendCount += 1;
+
+                var subGroups = chosenGroup.randomSubgroupNames();
+
+                // check if there is a message in the queue:
+                //    - from this account
+                //    - to a user covered by the random path selection.
+                //
+                var next = this.queue.dequeueMatching(m => {
+                    if (m.fromAccount !== acct) {
+                        return false;
+                    }
+                    if (m.to !== null) {
+                        return false;
+                    }
+                    var matchingSubgroup = m.to.groups.find(sname => (subGroups.indexOf(sname) !== -1));
+                    return (matchingSubgroup !== undefined);
+                });
+
                 if (next === null) {
                     next = this.generateNoise();
+                    console.debug("noise message.");
+                } else {
+                    console.debug("sending out queued message:" + next.payload);
                 }
 
-                //FIXME might have to requeue.
-                if (!next.fromAccount) {
-                    throw new Fail(Fail.GENERIC, "no account associated with message");
-                }
-                var groupNames = next.fromAccount.groups.map(stats => stats.name);
-
-                if (!groupNames || groupNames.length === 0) {
-                    throw new Fail(Fail.GENERIC, "account has no groups to post to. aborting message post");
-                }
-
-                groupNames.sort();
                 resolve(API.postTweets(next.fromAccount, [
                     {msg: next.encodeForTweet(),
-                     groups: groupNames}
+                     groups: subGroups}
                 ]));
             });
         },
@@ -304,8 +331,7 @@ window.Outbox = (function (module) {
         }
     });
 
-    function Queue(opts) {
-        this.account = opts.account;
+    function Queue() {
         this.messages = [];
     }
 
@@ -320,13 +346,23 @@ window.Outbox = (function (module) {
             this.messages.push(m);
         },
 
+        /* remove the first message that passes test function fn. null if n/a */
+        dequeueMatching: function (fn) {
+            var m = this.messages.find(fn);
+            if (m) {
+                return this.dequeue(m);
+            } else {
+                return null;
+            }
+        },
+
         /* remove m from the queue, or the first at the front */
         dequeue: function (m) {
             if (m) {
                 if (m.queue !== this) {
                     throw new Fail(Fail.GENERIC, "invalid queue");
                 }
-                var idx = this.messages.findIndex(m);
+                var idx = this.messages.indexOf(m);
                 if (idx > -1) {
                     this.messages.splice(idx, 1);
                 }
