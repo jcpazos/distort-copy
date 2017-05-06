@@ -576,7 +576,8 @@ window.UI = (function () {
 
     UI.prototype.log = function () {
         var msg = [].slice.call(arguments).join(" ");
-        this.logBuffer += msg + "\n";
+        var ts = (new Date()).toLocaleDateString("en-GB", { month: 'narrow', day: 'numeric', hour: 'numeric', minute:'numeric', second: 'numeric'});
+        this.logBuffer += "[" + ts + "] " + msg + "\n";
         if (this._logHook) {
             this._logHook(this.logBuffer);
         }
