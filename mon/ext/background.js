@@ -744,7 +744,7 @@ BGAPI.prototype.accountUpdated = function (userid) {
 
     var oldSubs = this.streamerManager.hashtagsByRef(userid);
     var account = Vault.getAccount(userid);
-    var newSubs = account.groups.map(grp => grp.name);
+    var newSubs = account.groups.map(stats => stats.subgroupName);
 
     oldSubs.forEach(hashtag => {
         if (newSubs.indexOf(hashtag) === -1) {
@@ -753,7 +753,8 @@ BGAPI.prototype.accountUpdated = function (userid) {
     });
 
     this.streamerManager.unsubscribe(oldSubs, account.id);
-    this.streamerManager.subscribe(newSubs, account.id, account.primaryApp);
+    //this.streamerManager.subscribe(newSubs, account.id, account.primaryApp);
+    console.debug("subscribing to groups: " + newSubs);
 
     // update account info -- FIXME copy stats over
     this.activeAccounts[account.id] = account;

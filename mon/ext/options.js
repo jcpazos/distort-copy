@@ -280,6 +280,8 @@ function refreshGroupStats() {
             'lastReceivedOn': (grp.lastReceivedOn)? DateUtil.fromNowBoth(grp.lastReceivedOn) : "never",
             'numReceived': "" + grp.numReceived,
             'numSent': "" + grp.numSent,
+            'subgroup': "" + grp.subgroup,
+            'level': "" + grp.level
         };
         for (var key in plug) {
             if (plug.hasOwnProperty(key)) {
@@ -641,7 +643,7 @@ function loadPage() {
         var $groupNameInput = $(this).find("input[name='new-group-name']");
         var groupName = $groupNameInput.val();
 
-        var $levelInput = $(this).find("select[name='new-group-level']").val();
+        var $levelInput = $(this).find("select[name='new-group-level']");
 
         var level = parseInt($levelInput.val()) || 0;
 

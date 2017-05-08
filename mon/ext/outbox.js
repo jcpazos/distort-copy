@@ -74,7 +74,7 @@ window.Outbox = (function (module) {
                 var chosenGroup = acct.groups[this.sendCount % acct.groups.length];
                 this.sendCount += 1;
 
-                var subGroups = chosenGroup.randomSubgroupNames();
+                var subgroups = chosenGroup.randomSubgroupNames();
 
                 // check if there is a message in the queue:
                 //    - from this account
@@ -87,7 +87,7 @@ window.Outbox = (function (module) {
                     if (m.to !== null) {
                         return false;
                     }
-                    var matchingSubgroup = m.to.groups.find(sname => (subGroups.indexOf(sname) !== -1));
+                    var matchingSubgroup = m.to.groups.find(sname => (subgroups.indexOf(sname) !== -1));
                     return (matchingSubgroup !== undefined);
                 });
 
@@ -99,8 +99,8 @@ window.Outbox = (function (module) {
                 }
 
                 resolve(API.postTweets(next.fromAccount, [
-                    {msg: next.encodeForTweet(),
-                     groups: subGroups}
+                    {msg: next.encodeForTweet(subgroups),
+                     groups: subgroups}
                 ]));
             });
         },
@@ -186,7 +186,7 @@ window.Outbox = (function (module) {
         const MSG_VERSION = 0x01;
 
         const TWEET_COUNT = 140;
-        const RECIPIENT_GROUP_COUNT = 19;
+        const RECIPIENT_GROUP_COUNT = 23;
         const ENVELOPE_COUNT = RECIPIENT_GROUP_COUNT + 1;
         const USABLE_BITS_PER_TWITTER_CHAR = 14; // base16k
         const TWISTOR_BODY_BITS = (TWEET_COUNT - ENVELOPE_COUNT) * USABLE_BITS_PER_TWITTER_CHAR;
@@ -285,13 +285,27 @@ window.Outbox = (function (module) {
             }
         },
 
-        _getPostGroups: function () {
-            // FIXME we should hop to a different post leaf.
-            // the groups shouldn't be inferred from the cert.
-            return this.fromAccount.groups.map(stats => "#" + stats.name).join(" ");
+        _getPostGroups: function (subgroups) {
+            if (!subgroups || subgroups.length <= 0) {
+                throw new Fail(Fail.BADPARAM, "no subgroup names specified");
+            }
+
+            var validNames = this.fromAccount.groups.map(stats => stats.name);
+
+            // ensure we are part of the subgroups
+            if (validNames.find(name => (subgroups.indexOf(name) !== -1)) === undefined) {
+                throw new Fail(Fail.BADPARAM, "user is in groups " + subgroups +
+                               " but none match message subgroups: " + subgroups);
+            }
+            return subgroups.map(subgroupName => "#" + subgroupName).join(" ");
         },
 
-        encodeForTweet: function () {
+        /** binary-packs a message into a valid 140-char tweet
+
+           - subgroupPath is an array of subgroup names (no #-sign)
+         */
+        encodeForTweet: function (subgroupPath) {
+            subgroupPath = subgroupPath || [];
             var userbody = pack('userbody',
                                 pack.Trunc('usermsg_padded', {len: M.USER_BODY_BITS},
                                            pack.VarLen('usermsg',
@@ -323,7 +337,7 @@ window.Outbox = (function (module) {
             var body_bits = twistor_body.toBits({debug: module.DEBUG});
             var b16Encoding = pack.Base16k('b16').fromBits(body_bits)[0].val;
             var tweet = [
-                this._getPostGroups(),
+                this._getPostGroups(subgroupPath),
                 b16Encoding
             ].join(' ');
 

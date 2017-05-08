@@ -101,13 +101,14 @@ window.GroupStats = (function () {
             if (subgroup === 0) {
                 return baseName;
             } else {
+                // change the bits of the last character to match subgroup
                 var last = String.fromCharCode(baseName.charCodeAt(baseName.length - 1) + subgroup);
-                return this.name.substr(0, baseName.length - 1) + last;
+                return baseName.substr(0, baseName.length - 1) + last;
             }
     };
 
     GroupStats.subgroupNames = function (baseName, nodePath) {
-        return nodePath.map(subgroup => GroupStats.subgroupToName(baseName, subgroup));
+        return nodePath.map(subgroup => GroupStats.getSubgroupName(baseName, subgroup));
     };
 
     GroupStats.prototype = {
@@ -473,7 +474,7 @@ window.Vault = (function () {
                 }
 
                 if (groupName.charCodeAt(groupName.length - 1) & GroupStats.SUBGROUP_MASK) {
-                    groupName += GroupStats.SUBGROUP_BASE;
+                    groupName += String.fromCharCode(GroupStats.SUBGROUP_BASE);
                 }
 
                 this.groups.forEach(function (grp) {

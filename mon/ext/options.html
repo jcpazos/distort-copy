@@ -157,7 +157,7 @@
 		</div>
 		<div class="col" style="width: 33%">
 		  <label for="new-group-level">Bandwidth:</label>
-		  <select name="new-group-position">
+		  <select name="new-group-level">
 		    <option value="0" selected>Everything (0)</option>
 		    <option value="1">Level -1</option>
 		    <option value="1">Level -2</option>
@@ -183,6 +183,8 @@
     <div class="row" data-groupname="" data-username="">
       <div class="col groupname" style="width: 20%;"></div>
       <div class="col groupstatus" style="width: 60%;">
+	<span class="bullet">Subgroup:</span><span data-field="subgroup"></span>
+	<br />
 	<span class="bullet">Joined On:</span><span data-field="joinedOn"></span>
 	<br />
 	<span class="bullet">Last delivery:</span><span data-field="lastReceivedOn"></span>
@@ -190,6 +192,8 @@
 	<span class="bullet"># Received:</span><span data-field="numReceived"></span>
 	<br />
 	<span class="bullet"># Sent:</span><span data-field="numSent"></span>
+	<br />
+	<span class="bullet">Bdw. Level:</span><span data-field="level"></span>
       </div>
       <div class="col actions group-leave">
 	<span class="action-group" data-action="leave">
