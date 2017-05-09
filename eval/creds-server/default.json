@@ -1,0 +1,9 @@
+{
+    "config": true
+    "primaryHandle": "init_js2",
+    "primaryPass": "foo"
+    "secondaryHandle": "init-js2",
+    "secondaryPass": "foo",
+    "groupName": "\ube75",
+    "subgroup": 1
+}
