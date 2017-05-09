@@ -1192,8 +1192,46 @@ var Twitter = (function (module) {
         });
     };
 
-    module.bargeIn = function bargeIn(username, password) {
+    module.bargeOut = function bargeOut(opts) {
+        return new Promise(resolve => {
+            function isTwitterCtx(ctx) {
+                return (!ctx.isMaimed && ctx.app === "twitter.com");
+            }
 
+            var twitterContexts = API.filterContext(isTwitterCtx);
+            if (twitterContexts.length > 0) {
+                return resolve(twitterContexts[0]);
+            } else {
+                return resolve(API.openContext("https://twitter.com/"));
+            }
+        }).then(ctx => {
+            return ctx.callCS("twitter_barge_out", opts);
+        });
+    },
+    /*
+      force login.
+      fixme oauth posts
+
+      opts {
+         username: foo
+         password: bar
+      }
+    */
+    module.bargeIn = function bargeIn(opts) {
+        return new Promise(resolve => {
+            function isTwitterCtx(ctx) {
+                return (!ctx.isMaimed && ctx.app === "twitter.com");
+            }
+
+            var twitterContexts = API.filterContext(isTwitterCtx);
+            if (twitterContexts.length > 0) {
+                return resolve(twitterContexts[0]);
+            } else {
+                return resolve(API.openContext("https://twitter.com/"));
+            }
+        }).then(ctx => {
+            return ctx.callCS("twitter_barge_in", opts);
+        });
     },
     /**
        posts the given messages to the given account app

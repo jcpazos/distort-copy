@@ -282,9 +282,102 @@
     };
 
     var CSAPI = {
+        _get_twitter_token: function () {
+            return new Promise((resolve, reject) => {
+                var tokens = document.getElementsByName("authenticity_token");
+                if (tokens.length < 1) {
+                    return reject(new Fail(Fail.GENERIC, "could not find token"));
+                }
+                var token = tokens[0].getAttribute("value");
+                if (token === null) {
+                    return reject(new Fail(Fail.GENERIC, "token format changed?"));
+                }
+                resolve(token);
+            });
+        },
+
         ui_protection_change: function (params) {
             protectedKeyid = params.keyid;
             return Promise.resolve(null);
+        },
+
+        twitter_barge_out: function (data) {
+            data = data || {};
+            return CSAPI._get_twitter_token().then(token => {
+                var url = "https://twitter.com/logout";
+                var preq = new XMLHttpRequest();
+                preq.open("POST", url, true);
+                preq.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+                //application/x-www-form-urlencoded
+                var formData = [
+                    ['authenticity_token', token],
+                    ['reliability_event', ''],
+                    ['scribe_log', '']
+                ];
+
+                var body = formData.map(item => encodeURIComponent(item[0]) + "=" + encodeURIComponent(item[1])).join("&");
+                preq.onload = function () {
+                    if (preq.status < 200 || preq.status > 302) {
+                        // usually a 302 on success
+                        return reject(Fail.fromVal(preq).prefix("Could not barge out of twitter account"));
+                    }
+                    resolve(true);
+                };
+
+                preq.onerror = function (err) {
+                    return reject(Fail.fromVal(preq).prefix("Could not barge out of twitter account"));
+                };
+
+                preq.send(body);
+            });
+        },
+
+        twitter_barge_in: function (data) {
+            data = data || {};
+            return CSAPI._get_twitter_token().then(token => {
+
+                var fields = ["username", "password"];
+                var missing = [];
+                for (var i in fields) {
+                    if (data[fields[i]] === undefined) {
+                        missing.push(fields[i]);
+                    }
+                }
+                if (missing.length > 0) {
+                    throw new Fail(Fail.BADPARAM, "parameters missing: " + missing.join(" "));
+                }
+
+                var url = "https://twitter.com/sessions";
+                var preq = new XMLHttpRequest();
+                preq.open("POST", url, true);
+                preq.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+                //application/x-www-form-urlencoded
+                var formData = [
+                    ['session[username_or_email]', data.username],
+                    ['session[password]', data.password],
+                    ['remember_me', "1"],
+                    ['return_to_ssl', "true"],
+                    ['scribe_log', ""],
+                    ['redirect_after_login', "/settings/account"],
+                    ['repository[description]', data.description],
+                    ['authenticity_token', token]
+                ];
+
+                var body = formData.map(item => encodeURIComponent(item[0]) + "=" + encodeURIComponent(item[1])).join("&");
+                preq.onload = function () {
+                    if (preq.status < 200 || preq.status > 302) {
+                        // usually a 302 on success
+                        return reject(Fail.fromVal(preq).prefix("Could not barge in twitter account"));
+                    }
+                    resolve(true);
+                };
+
+                preq.onerror = function (err) {
+                    return reject(Fail.fromVal(preq).prefix("Could not barge in twitter account"));
+                };
+
+                preq.send(body);
+            });
         },
 
         // tweet posting needs to be done in the context of the content script not the background
