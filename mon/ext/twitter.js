@@ -1192,6 +1192,9 @@ var Twitter = (function (module) {
         });
     };
 
+    module.bargeIn = function bargeIn(username, password) {
+
+    },
     /**
        posts the given messages to the given account app
 
