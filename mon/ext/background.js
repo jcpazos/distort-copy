@@ -687,18 +687,22 @@ function BGAPI() {
     // accountid => Vault.Account
     this.activeAccounts = {};
     this.streamerManager = new Twitter.StreamerManager();
+    this.outboxTask = new Outbox.PeriodicSend();
+
     Certs.listenForTweets(this.streamerManager);
 
+    // a different account is activated
     Events.on('account:updated', this.accountUpdated, this);
+
+    // an account has been deleted
     Events.on('account:deleted', this.accountDeleted, this);
 
-    window.setTimeout(function () {
+    window.setTimeout(() => {
         var initialUser = Vault.getUsername();
         API.accountChanged(initialUser);
 
-        var sender = new Outbox.PeriodicSend();
-        window.setTimeout(function () {
-            sender.start();
+        window.setTimeout(() => {
+            this.outboxTask.start();
         }, 5000);               // give it some time to breathe when loading the extension.
     }, 0);
 }
@@ -723,6 +727,10 @@ BGAPI.prototype._stopBackgroundTasks = function () {
             this.streamerManager.unsubscribe(elt, acct.id);
         });
     });
+
+    if (this.outboxTask) {
+        this.outboxTask.stop();
+    }
 };
 
 
@@ -739,7 +747,6 @@ BGAPI.prototype.accountUpdated = function (userid) {
         return;
     }
 
-
     // update streams
 
     var oldSubs = this.streamerManager.hashtagsByRef(userid);
@@ -753,11 +760,15 @@ BGAPI.prototype.accountUpdated = function (userid) {
     });
 
     this.streamerManager.unsubscribe(oldSubs, account.id);
-    //this.streamerManager.subscribe(newSubs, account.id, account.primaryApp);
-    console.debug("subscribing to groups: " + newSubs);
+    this.streamerManager.subscribe(newSubs, account.id, account.primaryApp);
+    UI.log("subscribed to hashtags: " + newSubs.map(sub => "#" + sub).join(" "));
 
-    // update account info -- FIXME copy stats over
     this.activeAccounts[account.id] = account;
+
+    // start sending messages periodically again
+    if (this.outboxTask) {
+        this.outboxTask.start();
+    }
 };
 
 BGAPI.prototype.accountDeleted = function (userid) {
@@ -772,6 +783,7 @@ BGAPI.prototype.accountDeleted = function (userid) {
 BGAPI.prototype.accountChanged = function (username) {
     "use strict";
 
+    // stops certificate distro and twitter streaming
     this._stopBackgroundTasks();
 
     // FIXME more than one active account at a time
