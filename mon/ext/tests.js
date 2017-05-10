@@ -17,6 +17,7 @@
     <http://www.gnu.org/licenses/>.
 **/
 /*global sjcl,
+  GroupStats,
   ECCPubKey,
   ECCKeyPair,
   AESKey,
@@ -98,9 +99,32 @@ window.Tests = (function (module) {
     module.generate_users = function (opts) {
         opts = opts || {};
         opts.start = opts.start || 0;
-        opts.num = opts.num || 100;
-        //mepp.
-    },
+        opts.num = opts.num || 200;
+        var i = 0;
+        var xport, keyEnc, keySign;
+        var csv = "";
+        for (i = 0; i < opts.num; i += 1) {
+            xport = new ECCKeyPair().xport();
+            keySign = sjcl.codec.hex.fromBits(xport.sign.priv);
+            keyEnc = sjcl.codec.hex.fromBits(xport.encrypt.priv);
+
+            var randomUsername = sjcl.codec.hex.fromBits(sjcl.random.randomWords(1)).substr(0, 4);
+            var randomLevel = Math.floor(Math.random() * (GroupStats.MAX_LEVEL + 1));
+            var randomPath = GroupStats.randomTreePath(randomLevel);
+            csv += [
+                opts.start + i,  // instanceid
+                "twx" + randomUsername, // twid
+                "twxPass" + i, //tw pass
+                "tw-twx" + randomUsername, //gh id
+                "twxPass" + i, //gh pass
+                "", // group name  (default)
+                randomPath[randomLevel], // subgroup
+                keyEnc, // private enc key
+                keySign // private sign key
+            ].join(",") + "\n";
+        }
+        console.log(csv);
+    };
 
     module.test_point_encoding = function (trials) {
         trials = trials || 1000;
