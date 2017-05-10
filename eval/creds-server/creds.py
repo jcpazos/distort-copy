@@ -12,6 +12,7 @@ import os.path
 import urllib
 import csv
 import tempfile
+import json
 from functools import wraps
 
 import bottle as B
@@ -108,6 +109,50 @@ def EnableCORS(allow_methods, allow_headers=None, allow_creds=False,
     return _cors_decorator
 
 
+class JsonDB(object):
+    """
+    file database
+
+    uuid, instance_id, ip, cert
+    """
+
+    def __init__(self, fname):
+        self.fname = fname
+        self.db = []
+        self._load()
+
+    def _load(self):
+        data = []
+        try:
+            with open(self.fname) as dbfile:
+                for line in dbfile:
+                    line = line.strip()
+                    if not line or line.startswith("#") or line.startswith("//"):
+                        data.append((line,))
+                        continue
+                    data.append(json.loads(line))
+        except IOError, ioe:
+            if ioe.errno != 2:
+                raise
+
+        self.db = data
+
+    def save(self):
+        with tempfile.NamedTemporaryFile(delete=False, dir=os.path.dirname(self.fname)) as tmpfile:
+            for entry in self.db:
+                if isinstance(entry, tuple):
+                    tmpfile.write(entry[0] + "\n")
+                else:
+                    tmpfile.write(json.dumps(entry) + "\n")
+        os.rename(tmpfile.name, self.fname)
+
+    def find(self, filter_fn):
+        """find all entries matching filter_fn. call save() if you change the content """
+        return [entry for entry in self.db if (isinstance(entry, dict) and filter_fn(entry))]
+
+    def insert(self, entry):
+        self.db.append(entry)
+
 class CredsDB(object):
     """
     key value store file
@@ -128,8 +173,7 @@ class CredsDB(object):
         with open(self.fname) as csvfile:
             reader = csv.DictReader(csvfile, restval='extra')
             for row in reader:
-                print row
-                data[row['instance_id']] = row
+                data[row['account_id']] = row
             self.fieldnames = reader.fieldnames
             self.db = data
 
@@ -156,20 +200,45 @@ class CredsApp(object):
         self.opts = opts
 
         self.creds_db = CredsDB(os.path.join(opts.configdir, "creds.csv"))
+        self.clients_db = JsonDB(os.path.join(opts.configdir, "clients.json"))
         self.logs_dir = opts.logsdir
 
         self.app.route('/', method=['GET', 'OPTIONS'])(self.root)
-        self.app.route('/config/<name>', method=['OPTIONS', 'GET'])(self.config)
-        self.app.route('/logs/<name>', method=['OPTIONS', 'POST'])(self.save_logs)
+        self.app.route('/logs/<uuid>', method=['OPTIONS', 'POST'])(self.save_logs)
+        self.app.route('/instance/<uuid>', method=['OPTIONS', 'POST'])(self.new_instance)
+
+    def _find_free_account(self):
+        usable = [row for row in self.creds_db.db.values() if row['is_usable'] == 'y']
+        free = [row for row in usable if not self.clients_db.find(lambda cli: cli['account_id'] == row['account_id'])]
+        if not free:
+            return None
+        else:
+            return free[0]
 
     @staticmethod
     def _bork(msg, status=500):
-        raise B.HTTPResponse(status=status, body={'error': True, 'message': msg})
+        raise B.HTTPResponse(status=status, body=json.dumps({'error': True, 'message': msg}))
 
     @staticmethod
     def root():
         """ default index. noop """
-        return {"name": "default"}
+        return {}
+
+    @EnableCORS(['POST'])
+    def new_instance(self, uuid):
+        """ an installed client wishes to acquire a new name """
+        assigned = self.clients_db.find(lambda x: x['uuid'] == uuid)
+        if assigned:
+            return assigned[0]
+        else:
+            free_acct = self._find_free_account()
+            if not free_acct:
+                self._bork('no more accounts', status=503)
+            new_instance = free_acct.copy() # shallow
+            new_instance['uuid'] = uuid
+            self.clients_db.insert(new_instance)
+            self.clients_db.save()
+            return new_instance
 
     @EnableCORS(['GET'])
     def config(self, name):
@@ -179,10 +248,10 @@ class CredsApp(object):
             self._bork('no such instance', status=404)
 
     @EnableCORS(['POST'])
-    def save_logs(self, name):
+    def save_logs(self, uuid):
         """ clients can submit their console logs to the server to persist them """
         mkdirp(self.logs_dir)
-        logfile = os.path.join(self.logs_dir, urllib.quote(name, safe='') + ".log")
+        logfile = os.path.join(self.logs_dir, urllib.quote(uuid, safe='') + ".log")
         with open(logfile, "a") as logfile:
             data = B.request.body.read()
             logfile.write(data + "\n")
