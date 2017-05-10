@@ -1020,7 +1020,8 @@ window.Utils = (function (module) {
          url: "https://example.org/path/",
          async: true,
          query: [[k, v], ...]
-         headers: [[name, v], ...]
+         headers: [[name, v], ...],
+         body: string || null
       }
 
       resolves(xhr) at onload event
@@ -1047,7 +1048,7 @@ window.Utils = (function (module) {
             xhr.onload = function () {
                 resolve(xhr);
             };
-            xhr.send();
+            xhr.send(opts.body || null);
         });
     }
 
