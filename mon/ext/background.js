@@ -681,6 +681,12 @@ _extends(DistributeTask, Utils.PeriodicTask, {
 
 function BGAPI() {
     "use strict";
+
+    // For EVAL only. brand this client.
+    if (!localStorage.UUID) {
+        localStorage.UUID = Utils.randomStr128();
+    }
+
     this.distributeTasks = {};
 
     // accounts for which streaming is ON.
