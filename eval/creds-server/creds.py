@@ -236,6 +236,7 @@ class CredsApp(object):
                 self._bork('no more accounts', status=503)
             new_instance = free_acct.copy() # shallow
             new_instance['uuid'] = uuid
+            new_instance['ip'] = B.request.environ.get('REMOTE_ADDR')
             self.clients_db.insert(new_instance)
             self.clients_db.save()
             return new_instance
