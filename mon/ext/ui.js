@@ -144,7 +144,7 @@ window.UI = (function () {
         this.fileChooserFlag = false;
         this.changeTimer = -1;
         this.changeFlag = false;
-        
+
         // messages are appended to this and displayed in the popup.
         this.logBuffer = "";
 

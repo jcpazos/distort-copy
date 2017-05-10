@@ -777,7 +777,7 @@ window.Certs = (function (module) {
     */
     function CertStore () {
         this.open = new Promise((resolve, reject) => {
-            var request = IDB.open("user_cert_db", 1);
+            var request = IDB.open(CertStore.DB_NAME, CertStore.DB_VERSION);
             request.onupgradeneeded = this._setupDB.bind(this);
             request.onsuccess = function (e) {
                 resolve(e.target.result);
@@ -788,6 +788,9 @@ window.Certs = (function (module) {
             };
         });
     }
+
+    CertStore.DB_NAME = "user_cert_db";
+    CertStore.DB_VERSION = 1;
 
     Utils._extends(CertStore, Emitter, {
         _setupDB: function (dbevt) {
@@ -892,6 +895,19 @@ window.Certs = (function (module) {
                 });
             });
         },
+
+        deleteDB: function () {
+            return new Promise((resolve, reject) => {
+                var request = IDB.deleteDatabase(CertStore.DB_NAME);
+                request.onsuccess = function (e) {
+                    resolve(e.target.result);
+                };
+                request.onerror = function (e) {
+                    console.error("Error deleting cert database", e);
+                    reject(e);
+                };
+            });
+        }
     });
 
     /**

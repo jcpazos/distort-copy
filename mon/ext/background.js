@@ -1362,7 +1362,7 @@ BGAPI.prototype.delStorageVal = function (name) {
     });
 };
 
-BGAPI.prototype.clearStorage = function () {
+BGAPI.prototype.resetToFactory = function () {
     "use strict";
 
     return new Promise(function (resolve, reject) {
@@ -1374,6 +1374,15 @@ BGAPI.prototype.clearStorage = function () {
             }
             resolve();
         });
+    }).then(() => {
+        // deletes accounts -- indirectly stops background tasks
+        return Vault.reset();
+    }).then(() => {
+        // delete received certificates
+        return Certs.Store.deleteDB();
+    }).catch(err => {
+        UI.log("could not reset to factory: " + err);
+        return false;
     });
 };
 

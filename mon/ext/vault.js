@@ -177,9 +177,22 @@ window.Vault = (function () {
             return this._save();
         },
 
+        // deletes all account information stored in the vault.
         reset: function () {
-            this.db = this._defaults();
-            return this._save();
+            var accountIds = this.getAccountNames();
+            var chain = Promise.resolve(true);
+            var deletions = accountIds.forEach(aid => {
+                chain = chain.then(() => {
+                    return this.deleteAccount(aid).catch(err => {
+                        console.error("failed to delete account " + aid + ": " + err);
+                        return true;
+                    });
+                });
+            });
+            return deletions.then(() => {
+                this.db = this._defaults();
+                return this._save();
+            });
         },
 
         /** turns importData text into an ECCKeyPair */
@@ -268,6 +281,7 @@ window.Vault = (function () {
             }).filter(filter);
         },
 
+        // userid is the Account.id value
         deleteAccount: function (userid) {
             var that = this;
             return new Promise(function (resolve) {

@@ -148,8 +148,7 @@ function onClearClick() {
     "use strict";
 
     if (confirm("Are you sure you want to clear all settings? \n(you'll also have to reload the extension after)")) {
-        API.clearStorage().then(function () {
-            Vault.reset();
+        API.resetToFactory().then(function () {
             render();
         }).catch(function (err) {
             alert("failed to clear:" + err);
@@ -482,6 +481,8 @@ function sethooks() {
     UI.setLogHook(function (txt) {
         var $log = $doc.find("#messagelog");
         $log.val(txt);
+        // show latest entries. (scroll to bottom)
+        $log.prop("scrollTop", $log.prop("scrollHeight"));
     });
 }
 
