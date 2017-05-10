@@ -95,6 +95,13 @@ window.Tests = (function (module) {
         return aes.encryptText(msg);
     };
 
+    module.generate_users = function (opts) {
+        opts = opts || {};
+        opts.start = opts.start || 0;
+        opts.num = opts.num || 100;
+        //mepp.
+    },
+
     module.test_point_encoding = function (trials) {
         trials = trials || 1000;
         var msgBits = 184,
