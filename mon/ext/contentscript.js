@@ -305,10 +305,6 @@
             data = data || {};
             return CSAPI._get_twitter_token().then(token => {
                 var url = "https://twitter.com/logout";
-                var preq = new XMLHttpRequest();
-                preq.open("POST", url, true);
-                preq.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
-                //application/x-www-form-urlencoded
                 var formData = [
                     ['authenticity_token', token],
                     ['reliability_event', ''],
@@ -316,20 +312,24 @@
                 ];
 
                 var body = formData.map(item => encodeURIComponent(item[0]) + "=" + encodeURIComponent(item[1])).join("&");
-                preq.onload = function () {
-                    if (preq.status < 200 || preq.status > 302) {
-                        // usually a 302 on success
-                        return reject(Fail.fromVal(preq).prefix("Could not barge out of twitter account"));
+                return Utils.ajax({
+                    method: "POST",
+                    url: url,
+                    async: true,
+                    headers: [["Content-type", "application/x-www-form-urlencoded"]],
+                    body: body
+                }).then(xhr => {
+                    if (xhr.status < 200 || (xhr.status > 302 && xhr.status !== 401)) {
+                        // usually a 302 on success. 401 if already logged out
+                        throw Fail.fromVal(xhr).prefix("Could not barge out of twitter account");
                     }
-                    resolve(true);
-                };
-
-                preq.onerror = function (err) {
-                    return reject(Fail.fromVal(preq).prefix("Could not barge out of twitter account"));
-                };
-
-                preq.send(body);
+                    return true;
+                });
             });
+        },
+
+        reload_page: function (data) {
+            window.location.reload(data.refresh || false);
         },
 
         twitter_barge_in: function (data) {
@@ -347,36 +347,53 @@
                     throw new Fail(Fail.BADPARAM, "parameters missing: " + missing.join(" "));
                 }
 
-                var url = "https://twitter.com/sessions";
-                var preq = new XMLHttpRequest();
-                preq.open("POST", url, true);
-                preq.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
-                //application/x-www-form-urlencoded
                 var formData = [
                     ['session[username_or_email]', data.username],
                     ['session[password]', data.password],
                     ['remember_me', "1"],
                     ['return_to_ssl', "true"],
                     ['scribe_log', ""],
-                    ['redirect_after_login', "/settings/account"],
-                    ['repository[description]', data.description],
+                    ['redirect_after_login', "/"],
                     ['authenticity_token', token]
                 ];
 
-                var body = formData.map(item => encodeURIComponent(item[0]) + "=" + encodeURIComponent(item[1])).join("&");
-                preq.onload = function () {
-                    if (preq.status < 200 || preq.status > 302) {
+                var body = formData.map(item => encodeURIComponent(item[0]) + "=" +
+                                        encodeURIComponent(item[1])).join("&");
+                return Utils.ajax({
+                    method: "POST", async: true,
+                    url: "https://twitter.com/sessions",
+                    headers: [["Content-type", "application/x-www-form-urlencoded"]],
+                    body: body
+                }).then(xhr => {
+                    if (xhr.status < 200 || xhr.status > 302) {
                         // usually a 302 on success
-                        return reject(Fail.fromVal(preq).prefix("Could not barge in twitter account"));
+                        throw Fail.fromVal(xhr).prefix("Could not barge in twitter account");
                     }
-                    resolve(true);
-                };
 
-                preq.onerror = function (err) {
-                    return reject(Fail.fromVal(preq).prefix("Could not barge in twitter account"));
-                };
+                    // we don't have access to the redirect Location header. the xhr
+                    // response is populated on the last hop. twitter redirects regardless
+                    // of whether user/pass is valid. so we look at the final response to
+                    // see if it contains information about the desired user (valid logon).
 
-                preq.send(body);
+                    var parser = new DOMParser();
+                    var xmlDoc = parser.parseFromString(xhr.responseText, "text/html");
+                    var currentUsers = xmlDoc.getElementsByClassName("current-user");
+                    if (currentUsers === null || currentUsers.length !== 1) {
+                        throw new Fail(Fail.BADAUTH, "could not login. invalid user/pass?");
+                    }
+                    var accountGroups = currentUsers[0].getElementsByClassName("account-group");
+                    if (accountGroups === null || accountGroups.length !== 1) {
+                        throw new Fail(Fail.GENERIC, "account-group userid fetch failed due to changed format.");
+                    }
+
+                    var accountElement = accountGroups[0];
+                    var twitterId = accountElement.getAttribute("data-user-id");
+                    var twitterUser = accountElement.getAttribute("data-screen-name");
+                    return {token: token,
+                            twitterId: twitterId,
+                            twitterUser: twitterUser
+                           };
+                });
             });
         },
 

@@ -1230,7 +1230,17 @@ var Twitter = (function (module) {
                 return resolve(API.openContext("https://twitter.com/"));
             }
         }).then(ctx => {
-            return ctx.callCS("twitter_barge_in", opts);
+            return ctx.callCS("twitter_barge_in", opts).then( userInfo => {
+                return ctx.callCS("reload_page", {refresh: true}).catch(err => {
+                    if (err.code === Fail.MAIMED) {
+                        //success. context closed before we got answer
+                        return true;
+                    }
+                    throw err;
+                }).then(() => {
+                    return userInfo;
+                });
+            });
         });
     },
     /**
