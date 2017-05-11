@@ -206,6 +206,7 @@ class CredsApp(object):
         self.app.route('/', method=['GET', 'OPTIONS'])(self.root)
         self.app.route('/logs/<uuid>', method=['OPTIONS', 'POST'])(self.save_logs)
         self.app.route('/instance/<uuid>', method=['OPTIONS', 'POST'])(self.new_instance)
+        self.app.route('/test-rate/<per_second>', method=['OPTIONS', 'GET'])(self.test_rate)
 
     def _find_free_account(self):
         usable = [row for row in self.creds_db.db.values() if row['is_usable'] == 'y']
@@ -240,6 +241,12 @@ class CredsApp(object):
             self.clients_db.insert(new_instance)
             self.clients_db.save()
             return new_instance
+
+    @EnableCORS(['GET'])
+    def test_rate(self, per_second):
+        """spits out tweets at per_second rate"""
+        B.response.headers['X-Alex'] = "yeah man"
+        return {"foo": int(per_second)}
 
     @EnableCORS(['GET'])
     def config(self, name):
