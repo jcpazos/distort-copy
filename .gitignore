@@ -1,3 +1,4 @@
+pip-selfcheck.json
 ^lint/jslint.js
 mon/ext/closure-compiler/
 mon/ext/pageapi/runtime.min.js
