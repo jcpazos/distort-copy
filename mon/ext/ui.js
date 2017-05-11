@@ -178,9 +178,9 @@ window.UI = (function () {
 
     /**
        prompt the user for an action/permission.
-       
+
        returns a Prompt
-       
+
        @param CryptoCtx a ctx in which this prompt is valid.
        @param String name A name to refer to this prompt, unique within the context
        @param String prompt user-readable message to show the user.
