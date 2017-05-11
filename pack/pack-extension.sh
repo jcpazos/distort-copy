@@ -18,7 +18,7 @@ function cleanup ()
 
 trap cleanup EXIT
 if [[ ! -f "$KEY" ]]; then
-    openssl rsa -in "$KEY".des3 -out "$KEY".tmp
+    openssl rsa -in "$KEY".des3 -out "$KEY"
 fi
 
 make -C "$TOPDIR" clean
