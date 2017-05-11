@@ -16,5 +16,6 @@ ext:
 
 clean:
 	rm -f sjcl/sjcl.js
+	$(MAKE) -C mon/ext clean
 
 .PHONY: ext clean
