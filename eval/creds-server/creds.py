@@ -266,8 +266,7 @@ class CredsApp(object):
         n = 1
 
         while True:
-            if (n % int(per_second) == 0):
-                yield '%i\n' % (time.time()*1000)
+            yield '%i\n' % n
             n += 1
             time.sleep(send_interval)
 
