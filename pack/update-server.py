@@ -74,23 +74,19 @@ class UpdateApp(object):
         Where <extension_data> is a URL-encoded string of the format:
 
         id=<id>&v=<version>
-
-        ex:
-        /updates?os=linux&arch=x64&nacl_arch=x86-64&prod=chromecrx&prodchannel=&prodversion=58.0.3029.81&lang=en-GB&x=id%3Dohmpdiobkemenjbaamoeeenbniglebli%26v%3D0.0.0.0%26installsource%3Dnotfromwebstore%26uc
         """
         requested = {}
         for x in B.request.query.getall("x"):
             kvs = cgi.parse_qs(x)
             if 'id' in kvs:
-                requested[kvs['id']] = kvs.get('v', '0.0.0.0')
+                requested[kvs['id'][0]] = kvs.get('v', ['0.0.0.0'])[0]
 
         hostname = self.opts.hostname
         scheme = "http"
         port = self.opts.port
-
         B.response.headers['Content-Type'] = "application/xml"
         yield """<?xml version='1.0' encoding='UTF-8'?>
-  <gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>"""
+<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>"""
         for crx in self._find_crx_files():
             info = crxinfo.examine(crx)
             if not info:
@@ -104,13 +100,15 @@ class UpdateApp(object):
              "host":hostname,
              "port": port,
              "filepath": self._webpath(crx)}
+        yield """
+</gupdate>"""
 
 def main():
     """parse args and start server"""
     import argparse
     import socket
 
-    parser = argparse.ArgumentParser(description='omaha-style update server')
+    parser = argparse.ArgumentParser(description='omaha update server')
 
     parser.add_argument('--dldir', metavar="D",
                         help='directory where extensions are stored',
