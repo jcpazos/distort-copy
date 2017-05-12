@@ -37,8 +37,8 @@
 		    "certs.js",
 		    "github.js",
 		    "background.js",
-		    "main.js",
-		    "tests.js"
+		    "tests.js",
+		    "main.js"
 		   ]
     },
     "options_ui": {
@@ -46,7 +46,7 @@
 	"chrome_style": true
     },
     "content_scripts": [
-        {"matches": ["https://twitter.com/*", "https://github.com/*"],
+        {"matches": ["https://twitter.com/*", "https://apps.twitter.com/*", "https://github.com/*"],
          "js": ["utils.js", "contentscript.js"],
 	 "run_at": "document_start",
 	 "all_frames": true
