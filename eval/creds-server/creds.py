@@ -8,11 +8,12 @@
 import logging
 import logging.handlers
 import datetime
-import os.path
+import os, os.path
 import urllib
 import csv
 import tempfile
 import json
+import sys
 from functools import wraps
 
 import bottle as B
@@ -21,31 +22,45 @@ log = logging.getLogger(__name__)
 
 def init_log(logger, levelname):
     """initialize logger to syslog"""
-    _id = "[creds]"
+    _id = "creds" + "[%(process)d]"
     LOG_ATTR = {
         'debug': (logging.DEBUG,
-                  _id + ' %(levelname)-9s %(name)-15s %(threadName)-14s L%(lineno)-4d %(message)s'),
+                  _id + ' %(levelname)-5s %(name)s L%(lineno)-4d %(message)s'),
         'info': (logging.INFO,
-                 _id + ' %(levelname)-9s %(message)s'),
+                 _id + ' %(levelname)-5s %(message)s'),
         'warning': (logging.WARNING,
-                    _id + ' %(levelname)-9s %(message)s'),
+                    _id + ' %(levelname)-5s %(message)s'),
         'error': (logging.ERROR,
-                  _id + ' %(levelname)-9s %(message)s'),
+                  _id + ' %(levelname)-5s %(message)s'),
         'critical': (logging.CRITICAL,
-                     _id + ' %(levelname)-9s %(message)s')}
+                     _id + ' %(levelname)-5s %(message)s')}
     loglevel, logformat = LOG_ATTR[levelname]
 
     logger.setLevel(loglevel)
     # Clearing previous logs
     logger.handlers = []
 
+    if os.name not in ['posix', 'mac']:
+        raise Exception("unsupported platform")
+
+    logsock = None
+    for cand in ('/dev/log', '/var/run/syslog'):
+        if os.path.exists(cand):
+            logsock = cand
+
     # Setting formaters and adding handlers.
     formatter = logging.Formatter(logformat)
     handlers = []
-    handler = logging.handlers.SysLogHandler(address='/dev/log')
+    handler = logging.handlers.SysLogHandler(address=logsock)
     handlers.append(handler)
+
+    if getattr(sys.stderr, "isatty", False):
+        sh = logging.StreamHandler(sys.stderr)
+        handlers.append(sh)
+
     for hnd in handlers:
         hnd.setFormatter(formatter)
+        hnd.setLevel(loglevel)
         logger.addHandler(hnd)
 
     logger.addHandler(handler)
@@ -295,6 +310,8 @@ class AccessLogMiddleware(object):
         self.log_after_request()
         return ret_val
 
+class QuietWSGIRefServer(B.WSGIRefServer):
+    quiet = True
 
 def main():
     import argparse
@@ -317,7 +334,7 @@ def main():
     init_log(log, 'debug')
     creds = CredsApp(args)
     logged_app = AccessLogMiddleware(creds.app)
-    B.run(host=args.host, port=args.port, app=logged_app)
+    B.run(host=args.host, port=args.port, app=logged_app, server=QuietWSGIRefServer)
     return 0
 
 if __name__ == "__main__":
