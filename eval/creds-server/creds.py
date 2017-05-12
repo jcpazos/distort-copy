@@ -341,6 +341,7 @@ def main():
     init_log(log, 'debug')
     creds = CredsApp(args)
     logged_app = AccessLogMiddleware(creds.app)
+    log.info("Running server on %s, port %s", args.host, args.port)
     B.run(host=args.host, port=args.port, app=logged_app, server=QuietWSGIRefServer)
     return 0
 
