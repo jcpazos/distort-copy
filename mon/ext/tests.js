@@ -22,7 +22,9 @@
   ECCKeyPair,
   AESKey,
   calc_y_p192,
-  Stats
+  Stats,
+  UI,
+  Utils
 */
 
 window.Tests = (function (module) {
@@ -218,6 +220,18 @@ window.Tests = (function (module) {
         return [ct, pt];
     };
 
+    module.Harness = {
+        getUUID: function () {
+            return localStorage.UUID;
+        },
+
+        init: function () {
+            if (!localStorage.UUID) {
+                localStorage.UUID = Utils.randomStr128();
+            }
+            UI.log("extension loading. test harness uuid=" + localStorage.UUID);
+        }
+    };
     return module;
 
 })(window.Tests || {});

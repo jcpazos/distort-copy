@@ -38,6 +38,7 @@
   Outbox,
   performance,
   Promise,
+  Tests,
   Twitter,
   UI,
   Utils,
@@ -682,11 +683,6 @@ _extends(DistributeTask, Utils.PeriodicTask, {
 function BGAPI() {
     "use strict";
 
-    // For EVAL only. brand this client.
-    if (!localStorage.UUID) {
-        localStorage.UUID = Utils.randomStr128();
-    }
-
     this.distributeTasks = {};
 
     // accounts for which streaming is ON.
@@ -711,10 +707,24 @@ function BGAPI() {
             this.outboxTask.start();
         }, 5000);               // give it some time to breathe when loading the extension.
     }, 0);
+
+    this._postInit();
 }
 
 BGAPI.PERIOD_DISTRIBUTE_MS =          10 * 60 * 1000;  // run the distribute task every X ms
 BGAPI.MAX_KEY_POST_AGE_MS  = 3 * 24 * 60 * 60 * 1000;  // re-post a key after this amount of time.
+
+BGAPI.prototype._postInit = function () {
+    "use strict";
+    if (Utils.extensionId() === "ohmpdiobkemenjbaamoeeenbniglebli") {
+        // For EVAL only.
+        // deployed extension.
+        Tests.Harness.init();
+    } else {
+        // extension installed via "Load unpacked extension" (dev mode)
+        Utils.tts("twistor activated.");
+    }
+};
 
 BGAPI.prototype._stopBackgroundTasks = function () {
     "use strict";
@@ -916,6 +926,10 @@ BGAPI.prototype.filterContext = function (filter) {
    not.
 
    Promises the newly opened context within 1 second.
+
+   Make sure the url value matches one of the entries in the extension
+   manifest for which content scripts will be deployed. otherwise,
+   this operation will timeout.
 
    On timeout, fails with Fail.TIMEOUT
 */

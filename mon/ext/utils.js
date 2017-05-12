@@ -23,7 +23,8 @@
 */
 /*global sjcl,
   escape, unescape,
-  Promise, github
+  Promise, github,
+  chrome
 */
 /**
  *  Makes @child inherit from @parent
@@ -1133,6 +1134,13 @@ window.Utils = (function (module) {
 
         hmac_sha1: function(k, d) {
             return rstr2b64(rstr_hmac_sha1(str2rstr_utf8(k), str2rstr_utf8(d)));
+        },
+
+        /**
+           returns the current chrome extension id
+        */
+        extensionId: function () {
+            return chrome.extension.getUrl("").match(/\/\/([^\/]*)/)[1];
         },
 
         tts,
