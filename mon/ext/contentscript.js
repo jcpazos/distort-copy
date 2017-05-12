@@ -282,9 +282,10 @@
     };
 
     var CSAPI = {
-        _get_twitter_token: function () {
+        _get_twitter_token: function (doc) {
             return new Promise((resolve, reject) => {
-                var tokens = document.getElementsByName("authenticity_token");
+                doc = doc || document;
+                var tokens = doc.getElementsByName("authenticity_token");
                 if (tokens.length < 1) {
                     return reject(new Fail(Fail.GENERIC, "could not find token"));
                 }
@@ -294,6 +295,11 @@
                 }
                 resolve(token);
             });
+        },
+
+        _get_github_token: function (doc) {
+            // just so happens that it's the same names
+            return CSAPI._get_twitter_token(doc);
         },
 
         ui_protection_change: function (params) {
@@ -331,6 +337,105 @@
         reload_page: function (data) {
             window.location.reload(data.refresh || false);
         },
+
+        github_barge_out: function (data) {
+            data = data || {};
+            return new Promise((resolve, reject) => {
+                var logoutInput = document.querySelector("form.logout-form input[name='authenticity_token']");
+                if (logoutInput === null) {
+                    return reject(new Fail(Fail.GENERIC, "no logout form in current page"));
+                }
+                return resolve(logoutInput.value);
+            }).then(token => {
+                var url = "https://github.com/logout";
+                var formData = [
+                    ['utf8', decodeURIComponent("%E2%9C%93")], // checkmark character
+                    ['authenticity_token', token]
+                ];
+
+                var body = formData.map(item => encodeURIComponent(item[0]) + "=" + encodeURIComponent(item[1])).join("&");
+                return Utils.ajax({
+                    method: "POST",
+                    url: url,
+                    async: true,
+                    headers: [["Content-type", "application/x-www-form-urlencoded"]],
+                    body: body
+                }).then(xhr => {
+                    if (xhr.status < 200 || (xhr.status > 302 && xhr.status !== 401)) {
+                        // usually a 302 on success. 401 if already logged out
+                        throw Fail.fromVal(xhr).prefix("Could not barge out of github account");
+                    }
+                    return true;
+                });
+            });
+        },
+
+
+        github_barge_in: function (data) {
+            data = data || {};
+            return new Promise((resolve, reject) => {
+                var fields = ["username", "password"];
+                var missing = [];
+                for (var i in fields) {
+                    if (data[fields[i]] === undefined) {
+                        missing.push(fields[i]);
+                    }
+                }
+                if (missing.length > 0) {
+                    throw new Fail(Fail.BADPARAM, "parameters missing: " + missing.join(" "));
+                }
+                resolve(Utils.ajax({
+                    method: "GET", async: true,
+                    url: "https://github.com/login",
+                }));
+            }).then(xhr => {
+                if (xhr.status < 200 || xhr.status > 400) {
+                    throw Fail.fromVal(xhr).prefix("Could not barge in gh account");
+                }
+                var parser = new DOMParser();
+                var xmlDoc = parser.parseFromString(xhr.responseText, "text/html");
+                return CSAPI._get_github_token(xmlDoc);
+            }).then(token => {
+                var formData = [
+                    ['commit', "Sign in"],
+                    ['utf8', decodeURIComponent("%E2%9C%93")], // checkmark character
+                    ['authenticity_token', token],
+                    ['login', data.username],
+                    ['password', data.password]
+                ];
+
+                var body = formData.map(item => encodeURIComponent(item[0]) +
+                                        "=" + encodeURIComponent(item[1])).join("&");
+                return Utils.ajax({
+                    method: "POST", async: true,
+                    url: "https://github.com/session",
+                    headers: [["Content-type", "application/x-www-form-urlencoded"]],
+                    body: body
+                });
+            }).then(xhr => {
+                if (xhr.status < 200 || (xhr.status >= 300)) {
+                    // usually a 302 on success. 401 if already logged out
+                    throw Fail.fromVal(xhr).prefix("Could not barge in github account");
+                }
+                var parser = new DOMParser();
+                var xmlDoc = parser.parseFromString(xhr.responseText, "text/html");
+                var userLogin = xmlDoc.getElementsByName("user-login");
+                if (userLogin === null || userLogin.length !== 1) {
+                    throw new Fail(Fail.GENERIC, "user-login username fetch failed due to changed format");
+                }
+                var handle = userLogin[0].content;
+                if (!handle) {
+                    throw new Fail(Fail.BADAUTH, "Could not barge in github account. bad user/pass");
+                }
+                return {
+                    githubUser: handle
+                };
+            }).catch(err => {
+                console.log(err, err.stack);
+                throw err;
+            });
+        },
+
 
         twitter_barge_in: function (data) {
             data = data || {};

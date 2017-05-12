@@ -314,6 +314,58 @@ window.Github = (function() {
         },
 
         /*
+          force login
+          fixme oauth posts
+          opts {
+            username: "foo"
+            password: "bar"
+          }
+        */
+        bargeIn: function bargeIn(opts) {
+            return new Promise(resolve => {
+                function isGithubCtx(ctx) {
+                    return (!ctx.isMaimed && ctx.app === "github.com");
+                }
+                var githubContexts = API.filterContext(isGithubCtx);
+                if (githubContexts.length > 0) {
+                    resolve(githubContexts[0]);
+                } else {
+                    resolve(API.openContext("https://github.com/"));
+                }
+            }).then(ctx => {
+                return ctx.callCS("github_barge_in", opts).then( userInfo => {
+                    console.log("bat", userInfo);
+                    return ctx.callCS("reload_page", {refresh: true}).catch(err => {
+                        if (err.code === Fail.MAIMED) {
+                            //success. context closed before we got answer
+                            return userInfo;
+                        }
+                        throw err;
+                    }).then(() => {
+                        return userInfo;
+                    });
+                });
+            });
+        },
+
+        bargeOut: function bargeOut(opts) {
+            opts = opts || {};
+            return new Promise(resolve => {
+                function isGithubCtx(ctx) {
+                    return (!ctx.isMaimed && ctx.app === "github.com");
+                }
+                var githubContexts = API.filterContext(isGithubCtx);
+                if (githubContexts.length > 0) {
+                    resolve(githubContexts[0]);
+                } else {
+                    resolve(API.openContext("https://github.com/"));
+                }
+            }).then(ctx => {
+                return ctx.callCS("github_barge_out", opts);
+            });
+        },
+
+        /*
           creates a new cert repo for the given account
 
           resolves {
