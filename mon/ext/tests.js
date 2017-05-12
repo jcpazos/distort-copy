@@ -221,7 +221,7 @@ window.Tests = (function (module) {
     module.test_load = function(rate) {
 
         var xhr = new XMLHttpRequest();
-        var url = "localhost:60000/test-rate/";
+        var url = "http://localhost:60000/test-rate/";
         xhr.open("GET", url + rate, true);
         xhr.send();
 
