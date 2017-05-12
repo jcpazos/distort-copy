@@ -218,6 +218,37 @@ window.Tests = (function (module) {
         return [ct, pt];
     };
 
+    module.test_load = function(rate) {
+
+        var xhr = new XMLHttpRequest();
+        var url = "localhost:60000/test-rate/";
+        xhr.open("GET", url + rate, true);
+        xhr.send();
+
+        // TODO Do we need to do anything with xhr's onreadystate?
+
+        var startIdx = 0;
+        var endIdx = 0;
+        var currIdx = 0;
+
+        var res = xhr.responseText;
+
+        while(1) {
+            var currChar = res.charAt(currIdx);
+            if (currChar !== '') {
+                currIdx += 1;
+                if (currChar == '\n') {
+                    if (endIdx !== 0) {
+                        startIdx = endIdx+1;
+                    }
+                    endIdx = currIdx;
+                }
+                var newTweet = res.substring(startIdx, endIdx);
+                // TODO Emit newTweet to listener for processing
+            }
+        }
+    };
+
     return module;
 
 })(window.Tests || {});
