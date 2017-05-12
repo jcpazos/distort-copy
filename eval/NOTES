@@ -1,0 +1,10 @@
+
+# Avoid prompts on first run
+
+google-chrome-stable --user-data-dir=temp --make-default-browser --make-chrome-default
+
+# chrome will create the user's profile folder and terminate right away.
+
+# run it again without flags
+
+google-chrome-stable --user-data-dir=temp --make-default-browser --make-chrome-default
