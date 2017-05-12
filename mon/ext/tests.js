@@ -22,7 +22,8 @@
   ECCKeyPair,
   AESKey,
   calc_y_p192,
-  Stats
+  Stats,
+  Emitter
 */
 
 window.Tests = (function (module) {
@@ -229,13 +230,11 @@ window.Tests = (function (module) {
         xhr.open("GET", url + rate, true);
         xhr.send();
 
-        // TODO Do we need to do anything with xhr's onreadystate?
-
         var startIdx = 0;
         var endIdx = 0;
         var currIdx = 0;
 
-        await sleep(10000);
+        await sleep(3000);
 
         while(1) {
             var currChar = xhr.responseText.charAt(currIdx);
@@ -243,13 +242,21 @@ window.Tests = (function (module) {
                 currIdx += 1;
                 if (currChar == '\n') {
                     if (endIdx !== 0) {
-                        startIdx = endIdx+1;
+                        startIdx = endIdx + 1;
                     }
-                    endIdx = currIdx;
+                    endIdx = currIdx - 1;
+
+                    // Skip through any remaining linebreak characters.
+                    var thisChar = xhr.responseText.charAt(currIdx);
+                    while (thisChar == '\n' || thisChar == '\r') {
+                        currIdx += 1;
+                        thisChar = xhr.responseText.charAt(currIdx);
+                    }
+
+                    var newTweet = xhr.responseText.substring(startIdx, endIdx);
+                    // console.log("newTweet: " + newTweet);
+                    Events.emit('tweet', newTweet);
                 }
-                var newTweet = xhr.responseText.substring(startIdx, endIdx);
-                console.log(newTweet);
-                // TODO Emit newTweet to listener for processing
             }
         }
     };
