@@ -218,7 +218,11 @@ window.Tests = (function (module) {
         return [ct, pt];
     };
 
-    module.test_load = function(rate) {
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    module.test_load = async function(rate) {
 
         var xhr = new XMLHttpRequest();
         var url = "http://localhost:60000/test-rate/";
@@ -231,10 +235,10 @@ window.Tests = (function (module) {
         var endIdx = 0;
         var currIdx = 0;
 
-        var res = xhr.responseText;
+        await sleep(10000);
 
         while(1) {
-            var currChar = res.charAt(currIdx);
+            var currChar = xhr.responseText.charAt(currIdx);
             if (currChar !== '') {
                 currIdx += 1;
                 if (currChar == '\n') {
@@ -243,7 +247,8 @@ window.Tests = (function (module) {
                     }
                     endIdx = currIdx;
                 }
-                var newTweet = res.substring(startIdx, endIdx);
+                var newTweet = xhr.responseText.substring(startIdx, endIdx);
+                console.log(newTweet);
                 // TODO Emit newTweet to listener for processing
             }
         }
