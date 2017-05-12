@@ -1,2 +1,3 @@
 pack-key.pem
 *.crx
+*.pyc
