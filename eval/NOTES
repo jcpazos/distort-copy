@@ -1,3 +1,15 @@
+# creating accounts
+
+- Create twitter account
+  - on the first screen, under "advanced", disable search by phone/email.
+  - enter phone number
+  - in the extension background console:
+
+Twitter.createApp("Morecowbellsplz!").then(appInfo => Twitter.createAccessToken(appInfo.appId)).then(res => console.log(res))
+
+- Create github account. skip as many steps as possible.
+  (got flagged immediately after uploading a picture of rowan atkinson as the profile picture)
+
 
 # Avoid prompts on first run
 
