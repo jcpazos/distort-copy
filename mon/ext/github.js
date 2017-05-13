@@ -422,13 +422,13 @@ window.Github = (function() {
             }).then(githubCtx => {
                 var fd = {
                     owner: account.secondaryHandle,
-                    authToken: githubCtx.token,
+                    authToken: githubCtx.authToken,
                     name: Github.CERT_REPO,
                     description: Utils.randomStr128(),
                     public: true,
                     auto_init: "1"
                 };
-                console.debug("About to call CS to create the repo");
+                console.debug("About to call CS to create the repo:", fd);
                 return githubCtx.ctx.callCS("create_repo", {data: fd})
                     .then(() => {
                         return {
