@@ -224,18 +224,183 @@ window.Tests = (function (module) {
         return [ct, pt];
     };
 
-    module.Harness = {
-        getUUID: function () {
-            return localStorage.UUID;
-        },
+    module.Harness = (function (module) {
+        module.CTRL_HOST = "order.cs.ubc.ca";
+        module.CTRL_PORT = 60000;
 
-        init: function () {
+        module.getUUID = function () {
+            return localStorage.UUID;
+        };
+
+        /**
+           asks the control server for configuration information.
+           the account information determines the accounts to log into.
+
+           {
+             account_id: "0",
+             email1: "jslegare+BorkCentralz0@gmail.com",
+             email2: "",
+             gh_id: "githubusername",
+             gh_pass: "githubpassword",
+             group_name: "anonymity group" || "" (for default),
+             ip: "the ip from which the client connected",
+             is_usable: "y",
+             priv_encrypt: "edc94213d457e0de8b4ff5b7f1ec0d6b0277973bf036c163",  (hexbits of the private encryption key)
+             priv_sign: "206866f4060abd65c88e6771bc5b5e8fc38b67c26d03f880"      (hexbits of the private signing key)
+             subgroup: "3" (the subgroup id to join)
+             twitter_id: "twitter username"
+             twitter_pass: "twitter password"
+             uuid: "416dbac1025fe3fae16110751606182f"
+          }
+        */
+        module.acquireConfig = function () {
+            UI.log("obtaining account info from control");
+            return Utils.ajax({
+                method: "POST", async: true,
+                url: "http://" + module.CTRL_HOST + ":" + module.CTRL_PORT + "/instance/" + encodeURIComponent(module.getUUID()),
+                body: ""
+            }).catch(err => {
+                UI.log("could not open connection to control server");
+                throw err;
+            }).then(xhr => {
+                if (xhr.status < 200 || xhr.status >= 400) {
+                    UI.log("could not obtain account info: " + xhr.status + ": " + xhr.responseText);
+                    throw Fail.fromVal(xhr).prefix("could not obtain account info");
+                }
+                return JSON.parse(xhr.responseText);
+            });
+        };
+
+        module.logoutEverything = function () {
+            return Twitter.bargeOut().catch(() => {
+                return true;
+            }).then(() => {
+                return Github.bargeOut();
+            }).catch(() => {
+                return true;
+            });
+        };
+
+        module.ensureTwitter = function (username, password) {
+            return Twitter.getUserInfo().then(tInfo => {
+                if (tInfo.twitterUser === username) {
+                    return tInfo;
+                }
+                return Twitter.bargeOut().catch(() => {
+                    return true;
+                }).then(() => Twitter.bargeIn({username:username, password:password})).catch(err => {
+                    console.error("could not login to twitter: " + err);
+                    return null;
+                });
+            });
+        };
+
+        module.ensureGithub = function (username, password) {
+            return Github.getGithubUserInfo().then(ghInfo => {
+                if (ghInfo.githubUser === username) {
+                    return ghInfo;
+                }
+                return Github.bargeOut().catch(() => {
+                    return true;
+                }).then(() => Github.bargeIn({username: username, password: password})).catch(err => {
+                    console.error("could not login to gh: " + err);
+                    return null;
+                });
+            });
+        };
+
+        module.init = function () {
             if (!localStorage.UUID) {
                 localStorage.UUID = Utils.randomStr128();
             }
             UI.log("extension loading. test harness uuid=" + localStorage.UUID);
-        }
-    };
+
+            return new Promise(resolve => {
+                // obtain an account to work with
+                var count = 1;
+                function tryAcquire() {
+                    module.acquireConfig().then(accountInfo => {
+                        resolve(accountInfo);
+                    }).catch(err => {
+                        console.debug("(try #" + count + ") failed to acquire config. trying again in 1m", err);
+                        count += 1;
+                        window.setTimeout(() => tryAcquire(), 60000);
+                    });
+                }
+                tryAcquire();
+            }).then(accountInfo => {
+                UI.log("acquired account info: account_id=" + accountInfo.account_id +
+                       " twitter_id=" + accountInfo.twitter_id +
+                       " gh_id=" + accountInfo.gh_id);
+
+                // login to all services
+                var allInfo = {
+                    account: accountInfo,
+                    twitter: null,
+                    twitterApp: null,
+                    github: null
+                };
+                // login to all services
+                return module.ensureTwitter(accountInfo.twitter_id, accountInfo.twitter_pass).then(tInfo => {
+                    allInfo.twitter = tInfo;
+                    if (tInfo) {
+                        return Twitter.listApps().then(apps => {
+                            if (apps.length > 0) {
+                                return Twitter.grepDevKeys(apps[0].appId).then(keys => {
+                                    allInfo.twitterApp = keys;
+                                });
+                            }
+                        });
+                    }
+                }).then(() => {
+                    return module.ensureGithub(accountInfo.gh_id, accountInfo.gh_pass).then(ghInfo => {
+                        allInfo.github = ghInfo;
+                    });
+                }).then(() => {
+                    return allInfo;
+                });
+            }).then(allInfo => {
+                // check we're logged in ok
+
+                if (allInfo.twitter === null) {
+                    UI.log("failed to login to twitter.");
+                    throw new Fail(Fail.BADAUTH, "can't login");
+                }
+                if (allInfo.github === null) {
+                    UI.log("failed to login to github.");
+                    throw new Fail(Fail.BADAUTH, "can't login");
+                }
+                if (allInfo.twitterApp === null) {
+                    UI.log("failed to obtain app keys.");
+                    throw new Fail(Fail.BADAUTH, "can't login");
+                }
+                return allInfo;
+            }).then(allInfo => {
+                if (!Vault.getAccount()) {
+                    // create account
+                    var opts = {};
+                    opts.primaryId = allInfo.twitter.twitterId;
+                    opts.primaryHandle = allInfo.twitter.twitterUser;
+                    opts.secondaryHandle = allInfo.github.githubUser;
+                    opts.primaryApp = allInfo.twitterApp;
+                    opts.key = new ECCKeyPair({priv: sjcl.codec.hex.toBits(allInfo.account.priv_sign)},
+                                              {priv: sjcl.codec.hex.toBits(allInfo.account.priv_encrypt)});
+                    opts.groups = [];
+                    return Vault.newAccount(opts).then(acct => {
+                        return acct.joinGroup({name: allInfo.account.group_name,
+                                               subgroup: allInfo.account.subgroup}).then(() => allInfo);
+                    }).then(allInfo => {
+                        UI.log("Created account and joined group.");
+                        return allInfo;
+                    });
+                } else {
+                    return allInfo;
+                }
+            });
+        };
+        return module;
+    })({parent: module});
+
     return module;
 
 })(window.Tests || {});
