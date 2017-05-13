@@ -452,6 +452,9 @@ window.Vault = (function () {
 
         // array of GroupStats
         this.groups = opts.groups || [];
+
+        // when this account is active, distribute certs (default true)
+        this.distributionEnabled = (opts.distributionEnabled === undefined)?true:(!!opts.distributionEnabled);
     }
 
     Account.prototype = {
@@ -568,6 +571,7 @@ window.Vault = (function () {
                      secondaryHandle: this.secondaryHandle,
                      key: this.key.toStore(),
                      groups: this.groups.map(function (grp) { return grp.toStore(); }),
+                     distributionEnabled: !!this.distributionEnabled
                    };
         }
     };

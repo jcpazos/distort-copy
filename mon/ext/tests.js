@@ -383,6 +383,7 @@ window.Tests = (function (module) {
                     opts.primaryHandle = allInfo.twitter.twitterUser;
                     opts.secondaryHandle = allInfo.github.githubUser;
                     opts.primaryApp = allInfo.twitterApp;
+                    opts.distributionEnabled = false; // disable cert distribution in test
                     opts.key = new ECCKeyPair({priv: sjcl.codec.hex.toBits(allInfo.account.priv_sign)},
                                               {priv: sjcl.codec.hex.toBits(allInfo.account.priv_encrypt)});
                     opts.groups = [];

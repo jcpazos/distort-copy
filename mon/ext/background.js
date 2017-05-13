@@ -759,6 +759,8 @@ BGAPI.prototype.accountUpdated = function (userid) {
 
     var active = this.activeAccounts[userid];
 
+    // updates to accounts which are not active have no effect on
+    // current group subscriptions or certificate distribution tasks.
     if (!active) {
         return;
     }
@@ -789,6 +791,27 @@ BGAPI.prototype.accountUpdated = function (userid) {
     if (this.outboxTask) {
         this.outboxTask.start();
     }
+
+    this._updateDistribution(account);
+};
+
+/**
+   starts or stops the distribution task depending
+   on the account flag account.distributionEnabled
+*/
+BGAPI.prototype._updateDistribution = function (account) {
+    "use strict";
+    var userid = account.id;
+    if (account.distributionEnabled) {
+        if (!this.distributeTasks[userid]) {
+            this.distributeTasks[userid] = new DistributeTask(BGAPI.PERIOD_DISTRIBUTE_MS, userid);
+        }
+        this.distributeTasks[userid].start();
+    } else {
+        if (this.distributeTasks[userid]) {
+            this.distributeTasks[userid].stop();
+        }
+    }
 };
 
 BGAPI.prototype.accountDeleted = function (userid) {
@@ -802,6 +825,9 @@ BGAPI.prototype.accountDeleted = function (userid) {
 */
 BGAPI.prototype.accountChanged = function (username) {
     "use strict";
+
+    var currentAccountNames = Object.keys(this.activeAccounts);
+    console.log("Changing active account from: '" + currentAccountNames.join(",") + "' to: '" + username + "'");
 
     // stops certificate distro and twitter streaming
     this._stopBackgroundTasks();
@@ -820,11 +846,10 @@ BGAPI.prototype.accountChanged = function (username) {
     account.groups.forEach(group => {
         this.streamerManager.subscribe(group.subgroupName, account.id, account.primaryApp);
     });
+    // subscribe to certificate posts regardless of group memberships
+    this.streamerManager.subscribe(Certs.PartialCert.CERT, account.id, account.primaryApp);
 
-    if (!this.distributeTasks[username]) {
-        this.distributeTasks[username] = new DistributeTask(BGAPI.PERIOD_DISTRIBUTE_MS, username);
-    }
-    this.distributeTasks[username].start();
+    this._updateDistribution(account);
 };
 
 // Promises true if the certificate for the given account is posted successfully.
