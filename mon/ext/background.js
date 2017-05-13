@@ -1091,8 +1091,17 @@ BGAPI.prototype.checkTwitter = function (username) {
     tweet is intended for this user it is passed along to the inbox, else it is dropped.
  */
 BGAPI.prototype.handleTweet = function(tweet) {
-    // TODO Process tweet to determine if it belongs to the currently logged in user.
     console.log("Tweet: " + tweet);
+    var sender_id = tweet.id;
+    var date = tweet.created_at;
+
+    // Strip hashtags off body of tweet text
+    var hashtags = tweet.entities.hashtags;
+    var lastHashtagIdx = hashtags[hashtags.length-1].indices[1];
+    var body = tweet.text.substring(lastHashtagIdx+1);
+
+    // TODO Process tweet to determine if it belongs to the currently logged in user.
+
 
     // TODO If tweet is intended for current user, pass tweet along to inbox.
 };

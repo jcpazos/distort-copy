@@ -266,6 +266,7 @@ class CredsApp(object):
         n = 1
 
         while True:
+            # TODO This should yield a JSON-formatted tweet rather than just an integer.
             yield '%i\n' % n
             n += 1
             time.sleep(send_interval)
