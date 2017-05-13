@@ -17,14 +17,18 @@
     <http://www.gnu.org/licenses/>.
 **/
 /*global sjcl,
-  GroupStats,
-  ECCPubKey,
-  ECCKeyPair,
   AESKey,
   calc_y_p192,
+  ECCPubKey,
+  ECCKeyPair,
+  Fail,
+  Github,
+  GroupStats,
   Stats,
+  Twitter,
   UI,
-  Utils
+  Utils,
+  Vault
 */
 
 window.Tests = (function (module) {
