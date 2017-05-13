@@ -326,15 +326,16 @@ def main():
     parser.add_argument('--port', metavar='P', type=int,
                         help='port number',
                         default=60000)
-    parser.add_argument('--host', metavar="H",
-                        help="hostname",
+    parser.add_argument('--address', metavar="H",
+                        help="address to bind socket on (or hostname)",
                         default="localhost")
 
     args = parser.parse_args()
     init_log(log, 'debug')
     creds = CredsApp(args)
     logged_app = AccessLogMiddleware(creds.app)
-    B.run(host=args.host, port=args.port, app=logged_app, server=QuietWSGIRefServer)
+    log.info("Running server on http://%s:%s", args.address, args.port)
+    B.run(host=args.address, port=args.port, app=logged_app, server=QuietWSGIRefServer)
     return 0
 
 if __name__ == "__main__":
