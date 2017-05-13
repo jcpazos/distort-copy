@@ -240,7 +240,7 @@ window.Tests = (function (module) {
              account_id: "0",
              email1: "jslegare+BorkCentralz0@gmail.com",
              email2: "",
-             gh_id: "githubusername",
+             gh_hdl: "githubusername",
              gh_pass: "githubpassword",
              group_name: "anonymity group" || "" (for default),
              ip: "the ip from which the client connected",
@@ -248,7 +248,7 @@ window.Tests = (function (module) {
              priv_encrypt: "edc94213d457e0de8b4ff5b7f1ec0d6b0277973bf036c163",  (hexbits of the private encryption key)
              priv_sign: "206866f4060abd65c88e6771bc5b5e8fc38b67c26d03f880"      (hexbits of the private signing key)
              subgroup: "3" (the subgroup id to join)
-             twitter_id: "twitter username"
+             twitter_hdl: "twitter username"
              twitter_pass: "twitter password"
              uuid: "416dbac1025fe3fae16110751606182f"
           }
@@ -330,8 +330,8 @@ window.Tests = (function (module) {
                 tryAcquire();
             }).then(accountInfo => {
                 UI.log("acquired account info: account_id=" + accountInfo.account_id +
-                       " twitter_id=" + accountInfo.twitter_id +
-                       " gh_id=" + accountInfo.gh_id);
+                       " twitter_hdl=" + accountInfo.twitter_hdl +
+                       " gh_id=" + accountInfo.gh_hdl);
 
                 // login to all services
                 var allInfo = {
@@ -341,7 +341,7 @@ window.Tests = (function (module) {
                     github: null
                 };
                 // login to all services
-                return module.ensureTwitter(accountInfo.twitter_id, accountInfo.twitter_pass).then(tInfo => {
+                return module.ensureTwitter(accountInfo.twitter_hdl, accountInfo.twitter_pass).then(tInfo => {
                     allInfo.twitter = tInfo;
                     if (tInfo) {
                         return Twitter.listApps().then(apps => {
@@ -353,7 +353,7 @@ window.Tests = (function (module) {
                         });
                     }
                 }).then(() => {
-                    return module.ensureGithub(accountInfo.gh_id, accountInfo.gh_pass).then(ghInfo => {
+                    return module.ensureGithub(accountInfo.gh_hdl, accountInfo.gh_pass).then(ghInfo => {
                         allInfo.github = ghInfo;
                     });
                 }).then(() => {
