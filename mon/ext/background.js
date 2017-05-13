@@ -769,6 +769,10 @@ BGAPI.prototype.accountUpdated = function (userid) {
     var account = Vault.getAccount(userid);
     var newSubs = account.groups.map(stats => stats.subgroupName);
 
+
+    // subscribe to certificate posts regardless of group memberships
+    newSubs.push(Certs.PartialCert.CERT);
+
     oldSubs.forEach(hashtag => {
         if (newSubs.indexOf(hashtag) === -1) {
             this.streamerManager.unsubscribe(hashtag, account.id);
