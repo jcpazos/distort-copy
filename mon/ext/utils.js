@@ -1140,7 +1140,7 @@ window.Utils = (function (module) {
            returns the current chrome extension id
         */
         extensionId: function () {
-            return chrome.extension.getUrl("").match(/\/\/([^\/]*)/)[1];
+            return chrome.extension.getURL("").match(/\/\/([^\/]*)/)[1];
         },
 
         tts,
