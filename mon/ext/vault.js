@@ -117,7 +117,7 @@ window.GroupStats = (function () {
 
     GroupStats.getSubgroup = function (groupName) {
         var last = groupName.charCodeAt(groupName.length - 1);
-        return last & GroupStats.SUBGROUP_BASE;
+        return last & GroupStats.SUBGROUP_MASK;
     };
 
     GroupStats.getSubgroupName = function (baseName, subgroup) {
