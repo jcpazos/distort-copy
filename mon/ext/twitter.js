@@ -642,10 +642,10 @@ var Twitter = (function (module) {
         },
 
         removeStreamer: function(streamer) {
-            console.log("removing streamer ", streamer);
             if (!streamer) {
                 return;
             }
+            console.log("removing streamer ", streamer);
 
             var id;
 

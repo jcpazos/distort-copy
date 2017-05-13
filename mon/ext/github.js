@@ -334,7 +334,6 @@ window.Github = (function() {
                 }
             }).then(ctx => {
                 return ctx.callCS("github_barge_in", opts).then( userInfo => {
-                    console.log("bat", userInfo);
                     return ctx.callCS("reload_page", {refresh: true}).catch(err => {
                         if (err.code === Fail.MAIMED) {
                             //success. context closed before we got answer
