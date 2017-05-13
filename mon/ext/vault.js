@@ -52,7 +52,30 @@ window.GroupStats = (function () {
     GroupStats.MIN_LEVEL = 0; // group root
     GroupStats.SUBGROUP_MASK = (1 << (GroupStats.MAX_LEVEL + 1)) - 1;
     GroupStats.SUBGROUP_BASE = 0x5000;
+    // "빵"
+    GroupStats.DEFAULT_GROUP = String.fromCharCode(48757);
 
+    /*
+      converts the subgroup integer into the level
+    */
+    GroupStats.levelOf = function (subgroup) {
+        if (subgroup < 0 || subgroup > GroupStats.SUBGROUP_MASK) {
+            throw new Fail(Fail.BADPARAM, "invalid subgroup: " + subgroup);
+        }
+        var count = 0;
+        while (subgroup > 0) {
+            // go to parent
+            if (subgroup % 2 === 1) {
+                // left child
+                subgroup = (subgroup - 1) >>> 1;
+            } else {
+                // right child
+                subgroup = (subgroup - 2) >>> 1;
+            }
+            count += 1;
+        }
+        return count;
+    };
     /**
        returns a random path from a binary tree of height @leafHeight.
        level 0 being just one root node.
@@ -205,35 +228,35 @@ window.Vault = (function () {
            The account is saved in the database.
 
            This will set the currently active account to the newly
-           created account.
+           created account if the new account is the only one.
+           (emits: account:changed)
+
         */
         newAccount: function (acctOpts) {
-            var that = this;
-
-            return new Promise(function (resolve) {
+            return new Promise(resolve => {
                 var acct = new Account(acctOpts);
                 var userid = acct.id;
 
                 var sk = Vault.ACCOUNT_PREFIX + btoa(userid);
                 var settings = {};
 
-                if (that.get(sk)) {
+                if (this.get(sk)) {
                     console.error("user already exists");
                     return null;
                 }
 
                 // shallow copy
-                var users = that.get("usernames");
+                var users = this.get("usernames");
                 users.push(userid);
 
                 settings[sk] = acct;
 
-                // single user -- set default username
-                if (users.length === 1) {
-                    settings.username = userid;
-                }
-
-                resolve(that.set(settings).then(function () {
+                // single user -- maybe set default username
+                resolve(this.set(settings).then(() => {
+                    var users = this.get('usernames');
+                    if (users.length === 1 && users[0] === userid) {
+                        return this.setUsername(userid).then(() => acct);
+                    }
                     return acct;
                 }));
             });
@@ -471,20 +494,36 @@ window.Vault = (function () {
 
            opts:
             {name: groupName,
-             level: level
+             level: int,      (one of level or subgroup must be specified)
+             subgroup: int    (a random subgroup on the level is chosen if unspecified)
             }
         **/
         joinGroup: function (opts) {
-            var groupName = opts.name;
+            var groupName = opts.name || GroupStats.DEFAULT_GROUP;
             var level = parseInt(opts.level);
+            var subgroup = (opts.subgroup === undefined) ? undefined : parseInt(opts.subgroup);
 
             return new Promise(resolve => {
-                if (isNaN(level)) {
-                    throw new Fail(Fail.BADPARAM, "Invalid level.");
-                }
-                if (level < GroupStats.MIN_LEVEL || level > GroupStats.MAX_LEVEL) {
-                    throw new Fail(Fail.BADPARAM, "Level must be in range " + GroupStats.MIN_LEVEL + " to " +
-                                   GroupStats.MAX_LEVEL);
+
+                if (subgroup === undefined) {
+                    if (isNaN(level)) {
+                        throw new Fail(Fail.BADPARAM, "Invalid level.");
+                    }
+                    if (level < GroupStats.MIN_LEVEL || level > GroupStats.MAX_LEVEL) {
+                        throw new Fail(Fail.BADPARAM, "Level must be in range " + GroupStats.MIN_LEVEL + " to " +
+                                       GroupStats.MAX_LEVEL);
+                    }
+                    var path = GroupStats.randomTreePath(GroupStats.MAX_LEVEL);
+                    subgroup = path[level];
+                } else {
+                    if (isNaN(subgroup)) {
+                        throw new Fail(Fail.BADPARAM, "Invalid subgroup.");
+                    }
+                    level = GroupStats.levelOf(subgroup);
+                    if (level > GroupStats.MAX_LEVEL) {
+                        throw new Fail(Fail.BADPARAM, "Level must be in range " + GroupStats.MIN_LEVEL + " to " +
+                                       GroupStats.MAX_LEVEL);
+                    }
                 }
 
                 if (groupName.charCodeAt(groupName.length - 1) & GroupStats.SUBGROUP_MASK) {
@@ -497,12 +536,10 @@ window.Vault = (function () {
                     }
                 });
 
-                var path = GroupStats.randomTreePath(GroupStats.MAX_LEVEL);
-
                 var groupStats = new GroupStats({
                     name: groupName,
                     level: level,
-                    subgroup: path[level],
+                    subgroup: subgroup,
                     joinedOn: Date.now() / 1000,
                     lastReceivedOn: 0,
                     lastSentOn: 0,
