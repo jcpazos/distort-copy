@@ -701,7 +701,7 @@ function BGAPI() {
 
     window.setTimeout(() => {
         var initialUser = Vault.getUsername();
-        API.accountChanged(initialUser);
+        this.accountChanged(initialUser);
 
         window.setTimeout(() => {
             this.outboxTask.start();
@@ -1562,7 +1562,7 @@ var handlers = {
 
         var convid = rpc.params.convid;
         var convhandle = ((typeof convid) === "string") ? {keyid: convid} : convid;
-        
+
         return ctx.invite(rpc.params.friend, convhandle.keyid);
     },
 
