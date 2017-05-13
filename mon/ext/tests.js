@@ -228,37 +228,43 @@ window.Tests = (function (module) {
         var xhr = new XMLHttpRequest();
         var url = "http://localhost:60000/test-rate/";
         xhr.open("GET", url + rate, true);
-        xhr.send();
 
         var startIdx = 0;
         var endIdx = 0;
         var currIdx = 0;
 
-        await sleep(3000);
-
-        while(1) {
-            var currChar = xhr.responseText.charAt(currIdx);
-            if (currChar !== '') {
-                currIdx += 1;
-                if (currChar == '\n') {
-                    if (endIdx !== 0) {
-                        startIdx = endIdx + 1;
-                    }
-                    endIdx = currIdx - 1;
-
-                    // Skip through any remaining linebreak characters.
-                    var thisChar = xhr.responseText.charAt(currIdx);
-                    while (thisChar == '\n' || thisChar == '\r') {
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState === 3) {
+                // In while loop, search for next newline char.
+                while (1) {
+                    var currChar = xhr.responseText.charAt(currIdx);
+                    if (currChar !== '') {
                         currIdx += 1;
-                        thisChar = xhr.responseText.charAt(currIdx);
-                    }
+                        if (currChar == '\n') {
+                            if (endIdx !== 0) {
+                                startIdx = endIdx + 1;
+                            }
+                            endIdx = currIdx - 1;
 
-                    var newTweet = xhr.responseText.substring(startIdx, endIdx);
-                    // console.log("newTweet: " + newTweet);
-                    Events.emit('tweet', newTweet);
+                            // Skip through any remaining linebreak characters.
+                            var thisChar = xhr.responseText.charAt(currIdx);
+                            while (thisChar == '\n' || thisChar == '\r') {
+                                currIdx += 1;
+                                thisChar = xhr.responseText.charAt(currIdx);
+                            }
+
+                            var newTweet = xhr.responseText.substring(startIdx, endIdx);
+                            // console.log("newTweet: " + newTweet);
+                            Events.emit('tweet', newTweet);
+                        }
+                    } else {
+                        break;
+                    }
                 }
             }
-        }
+        };
+
+        xhr.send();
     };
 
     return module;
