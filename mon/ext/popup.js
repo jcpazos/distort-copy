@@ -486,4 +486,9 @@ function sethooks() {
     });
 }
 
-$(document).ready(sethooks);
+document.addEventListener("DOMContentLoaded", function() {
+    "use strict";
+    console.log("calling hooks.");
+    sethooks();
+    console.log("page wired.");
+});
