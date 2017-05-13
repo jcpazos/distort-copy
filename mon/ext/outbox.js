@@ -17,10 +17,18 @@
     <http://www.gnu.org/licenses/>.
 **/
 
-/*global Fail, Utils, Emitter, Vault,
-  KeyClasses, Certs,
+/*global
+  API,
+  Certs,
+  Emitter,
+  Fail,
+  GroupStats,
+  KeyClasses,
+  pack,
   unescape,
-  pack, API
+  UI,
+  Utils,
+  Vault
 */
 
 window.Outbox = (function (module) {
@@ -75,6 +83,8 @@ window.Outbox = (function (module) {
                 this.sendCount += 1;
 
                 var subgroups = chosenGroup.randomSubgroupNames();
+
+                UI.log("chosen subgroups: " + subgroups.map(name => GroupStats.getSubgroup(name)).join(" "));
 
                 // check if there is a message in the queue:
                 //    - from this account
