@@ -244,7 +244,18 @@ function render() {
     "use strict";
 
     var currentUser = Vault.getUsername();
-    var task = null;
+
+    function _drawTaskStatus(task, taskType) {
+        if (!task) {
+            $doc.find(".status[data-type=" + taskType + "]").text("inactive");
+            $doc.find(".datetime[data-type=" + taskType + "][data-when=next]").text("N/A");
+            $doc.find(".datetime[data-type=" + taskType + "][data-when=last]").text("N/A");
+        } else {
+            $doc.find(".status[data-type=" + taskType + "]").text(task.status);
+            $doc.find(".datetime[data-type=" + taskType + "][data-when=next]").text((task.nextRun === null) ? "N/A" : Utils.DateUtil.fromNow(task.nextRun));
+            $doc.find(".datetime[data-type=" + taskType + "][data-when=last]").text((task.lastRun === null) ? "N/A" : Utils.DateUtil.fromNow(task.lastRun));
+        }
+    }
 
     if (currentUser) {
         $doc.find("#activeusername").text(Vault.getUsername());
@@ -254,11 +265,8 @@ function render() {
         $doc.find(".kp-regen").removeClass("disabled");
         $doc.find(".kp-post[data-type=post-twitter]").removeClass("disabled");
 
-        // status on background tasks
-        task = API.distributeTasks[currentUser];
-        $doc.find(".status[data-type=distribute]").text(task.status);
-        $doc.find(".datetime[data-type=distribute][data-when=next]").text((task.nextRun === null) ? "N/A" : Utils.DateUtil.fromNow(task.nextRun));
-        $doc.find(".datetime[data-type=distribute][data-when=last]").text((task.lastRun === null) ? "N/A" : Utils.DateUtil.fromNow(task.lastRun));
+        _drawTaskStatus(API.outboxTask, "outbox");
+        _drawTaskStatus(API.distributeTasks[currentUser], "distribute");
     } else {
         $doc.find("#activeusername").text("N/A");
         $doc.find("#exportuser").addClass("disabled");
@@ -268,13 +276,8 @@ function render() {
         $doc.find(".kp-post[data-type=post-twitter]").addClass("disabled");
 
         // status on background tasks
-        $doc.find(".status[data-type=distribute]").text("-");
-        $doc.find(".datetime[data-type=distribute][data-when=next]").text("N/A");
-        $doc.find(".datetime[data-type=distribute][data-when=last]").text("N/A");
-        $doc.find(".status[data-type=validate]").text("-");
-        $doc.find(".datetime[data-type=validate][data-when=next]").text("N/A");
-        $doc.find(".datetime[data-type=validate][data-when=last]").text("N/A");
-
+        _drawTaskStatus(null, "outbox");
+        _drawTaskStatus(null, "distribute");
     }
 
     // show information on current active stream
