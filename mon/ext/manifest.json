@@ -33,6 +33,7 @@
 		    "vault.js",
 		    "ui.js",
                     "outbox.js",
+		    "inbox.js",
 		    "twitter.js",
 		    "certs.js",
 		    "github.js",

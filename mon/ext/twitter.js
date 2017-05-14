@@ -416,7 +416,8 @@ var Twitter = (function (module) {
 
         // one of the managed streamers received a tweet
         onTweet: function (tweet) {
-            var containedHashes = TT.txt.extractHashtagsWithIndices(tweet.text).map(tok => tok.hashtag);
+            var entities = tweet.entities || {};
+            var containedHashes = (entities.hashtags || []).map(ht => ht.text);
 
             // just the hashtags we are subscribed to
             var groupTags = containedHashes.filter(hashtag => (this.hash2ref[hashtag] || []).length > 0);
@@ -449,6 +450,8 @@ var Twitter = (function (module) {
            Indicate that a user account should receive tweets for the
            given list of hashtags. The refname is a unique name designating the given
            credentials object. This name is used again when unsubscribing.
+
+           hashtags is a list of hashtag names (without "#")
 
            The refName is used to do reference counting on the
            streaming instance. (we try to maintain a single open

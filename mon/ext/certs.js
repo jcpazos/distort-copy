@@ -951,9 +951,9 @@ window.Certs = (function (module) {
                 var batch = this._pendingTweets;
                 this._pendingTweets = [];
 
-                Promise.all(batch.map(tweetInfo => this._processTweet(tweetInfo))).catch(err => {
-                    console.error("error processing certificate tweets", err);
-                }).then(() => {
+                Promise.all(batch.map(tweetInfo => this._processTweet(tweetInfo).catch(err => {
+                    console.error("[certs] error processing certificate tweet: " + err.stack, err);
+                }))).then(() => {
                     batch = null;
                     this._scheduled = false;
                     this._scheduleProcessing();

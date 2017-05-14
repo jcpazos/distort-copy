@@ -379,8 +379,8 @@ window.KeyClasses = (function (module) {
 
         toBits: function (path, opts) {
             var allBits =  pack.EGPayload.__super__.toBits.apply(this, [].slice.apply(arguments)); // super.toBits()
-            var privKey = this.opts.encryptKey;
-            var ciphers = privKey.encryptEG(allBits, {encoding: "bits"});
+            var key = this.opts.encryptKey;
+            var ciphers = key.encryptEG(allBits, {encoding: "bits"});
             if (opts && opts.debug) {
                 console.debug("EGPayload nciphers: " + ciphers.length, "inputbits: " + sjcl.bitArray.bitLength(allBits));
             }
