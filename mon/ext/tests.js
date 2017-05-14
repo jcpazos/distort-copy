@@ -21,6 +21,8 @@
   calc_y_p192,
   ECCPubKey,
   ECCKeyPair,
+  Emitter,
+  Events,
   Fail,
   Github,
   GroupStats,
@@ -223,6 +225,70 @@ window.Tests = (function (module) {
 
         return [ct, pt];
     };
+
+    module.sleep = function (ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    };
+
+    module.test_load = function(rate) {
+
+        var xhr = new XMLHttpRequest();
+        var url = "http://localhost:60000/test-rate/";
+        xhr.open("GET", url + rate, true);
+
+        var startIdx = 0;
+        var endIdx = 0;
+        var currIdx = 0;
+
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState === 3) {
+                // In while loop, search for next newline char.
+
+                // FIXME please don't do it this way. consider regex.exec:
+                //
+                //   /\n[^\n]*$/g
+                //
+                //   this regex will give you the index of the last newline of a multiline string. (or null).
+                //
+                // > (/\n[^\n]*$/g).exec("abc\nabcd\ne")
+                // ["\ne", index: 8, input: "abc\nabcd\ne"]
+                //
+                // > (/\n[^\n]*$/g).exec("abc\nabcd\n")
+                // ["\n", index: 8, input: "abc\nabcd\n"]
+                //
+                // > (/\n[^\n]*$/g).exec("abc")
+                // null
+                while (1) {
+                    var currChar = xhr.responseText.charAt(currIdx);
+                    if (currChar !== '') {
+                        currIdx += 1;
+                        if (currChar == '\n') {
+                            if (endIdx !== 0) {
+                                startIdx = endIdx + 1;
+                            }
+                            endIdx = currIdx - 1;
+
+                            // Skip through any remaining linebreak characters.
+                            var thisChar = xhr.responseText.charAt(currIdx);
+                            while (thisChar == '\n' || thisChar == '\r') {
+                                currIdx += 1;
+                                thisChar = xhr.responseText.charAt(currIdx);
+                            }
+
+                            var newTweet = xhr.responseText.substring(startIdx, endIdx);
+                            // console.log("newTweet: " + newTweet);
+                            Events.emit('tweet', newTweet);
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            }
+        };
+
+        xhr.send();
+    };
+
 
     module.Harness = (function (module) {
         module.CTRL_HOST = "order.cs.ubc.ca";

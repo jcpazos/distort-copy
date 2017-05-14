@@ -14,6 +14,7 @@ import csv
 import tempfile
 import json
 import sys
+import time
 from functools import wraps
 
 import bottle as B
@@ -260,8 +261,15 @@ class CredsApp(object):
     @EnableCORS(['GET'])
     def test_rate(self, per_second):
         """spits out tweets at per_second rate"""
-        B.response.headers['X-Alex'] = "yeah man"
-        return {"foo": int(per_second)}
+        send_interval = 1 / float(per_second)
+
+        n = 1
+
+        while True:
+            # TODO This should yield a JSON-formatted tweet rather than just an integer.
+            yield '%i\n' % n
+            n += 1
+            time.sleep(send_interval)
 
     @EnableCORS(['GET'])
     def config(self, name):

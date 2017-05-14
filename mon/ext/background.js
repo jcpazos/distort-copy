@@ -699,6 +699,9 @@ function BGAPI() {
     // an account has been deleted
     Events.on('account:deleted', this.accountDeleted, this);
 
+    // A tweet was received from the stream and must be processed
+    Events.on('tweet', this.handleTweet, this);
+
     window.setTimeout(() => {
         var initialUser = Vault.getUsername();
         this.accountChanged(initialUser);
@@ -1124,6 +1127,26 @@ BGAPI.prototype.checkTwitter = function (username) {
 
         return twitterKey.equalTo(myKey);
     });
+};
+
+/*
+    Checks a tweet to see if the received tweet is designated for the current user or not. If the
+    tweet is intended for this user it is passed along to the inbox, else it is dropped.
+ */
+BGAPI.prototype.handleTweet = function(tweet) {
+    console.log("Tweet: " + tweet);
+    var sender_id = tweet.id;
+    var date = tweet.created_at;
+
+    // Strip hashtags off body of tweet text
+    var hashtags = tweet.entities.hashtags;
+    var lastHashtagIdx = hashtags[hashtags.length-1].indices[1];
+    var body = tweet.text.substring(lastHashtagIdx+1);
+
+    // TODO Process tweet to determine if it belongs to the currently logged in user.
+
+
+    // TODO If tweet is intended for current user, pass tweet along to inbox.
 };
 
 // Invalidates the AES keys and deletes the Friendship objects for the users
