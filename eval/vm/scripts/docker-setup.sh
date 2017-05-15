@@ -19,7 +19,6 @@ curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
 sudo apt-key fingerprint 0EBFCD88
 
 
-
 sudo add-apt-repository \
    "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
    $(lsb_release -cs) \
@@ -35,3 +34,6 @@ sudo usermod -aG docker ubuntu
 
 #enable docker on boot
 sudo systemctl enable docker
+
+#analyze network traffic and interfaces
+sudo apt-get install -y bridge-utils iproute2

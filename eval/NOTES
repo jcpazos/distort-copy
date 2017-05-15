@@ -19,4 +19,4 @@ google-chrome-stable --user-data-dir=temp --make-default-browser --make-chrome-d
 
 # run it again without flags
 
-google-chrome-stable --user-data-dir=temp --make-default-browser --make-chrome-default
+google-chrome-stable --user-data-dir=temp

@@ -42,6 +42,7 @@ function cmd_destroy () #name
 {
     local readonly name="$1"
     az vm delete -g "$RESGROUP" -n "$name" --yes -o json
+    rm -f "$HERE"/pool/"$name".json || :
 }
 
 function vm_ip () #name
