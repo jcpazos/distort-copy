@@ -1,0 +1,125 @@
+#!/bin/bash -ex
+
+RESGROUP="twistor-eval"
+HERE=$(cd "$(dirname "$0")" && pwd)
+PUBKEY="$HERE/eval.key.pub"
+
+# az vm list-sizes --location westus2 --output table
+# pricing: https://azure.microsoft.com/en-us/pricing/details/virtual-machines/linux/
+# https://docs.microsoft.com/en-us/azure/virtual-machines/linux/sizes-general
+
+# Persistent storage disks are billed separately from virtual
+# machines. To use premium storage disks, use the variant “Dsv2”
+# virtual machines. The pricing and billing meters for Dsv2 sizes are
+# the same as Dv2 series. Pricing for disks is available
+VMSIZE=Standard_DS1_v2
+
+SSHARGS=(
+    -l ubuntu
+    -o StrictHostKeyChecking=no
+    -o UserKnownHostsFile=/dev/null
+    -q
+)
+
+function cmd_create ()  #name
+{
+    local readonly name=$1
+    az vm create \
+	--resource-group "$RESGROUP" \
+	--name "$name" \
+	--admin-username ubuntu \
+	--image UbuntuLTS \
+	`: --size "$VMSIZE"` \
+	--authentication-type ssh \
+	--ssh-key-value "$PUBKEY" -o json > "$HERE"/pool/"$name".json.tmp
+
+    cat "$HERE"/pool/"$name".json.tmp
+    mv "$HERE/pool/$name".json{.tmp,}
+
+}
+
+function cmd_destroy () #name
+{
+    local readonly name="$1"
+    az vm delete -g "$RESGROUP" -n "$name" --yes -o json
+}
+
+function vm_ip () #name
+{
+    local readonly jsonfile="$HERE"/pool/"$1".json
+    python -c "import json, sys; print json.load(sys.stdin)['publicIpAddress']" < "$jsonfile"
+}
+
+function cmd_ssh () #name args
+{
+    local readonly name="$1"
+    shift
+    local readonly vmip=$(vm_ip "$name")
+    exec ssh "${SSHARGS[@]}" "$vmip" "$@"
+}
+
+function usage ()
+{
+    echo "Usage: $(basename "$0") CMD [CMDARGS]
+  Commands:
+
+    create VMNAME
+      creates VM named VMNAME
+
+    destroy VMNAME
+      stops and deletes vm VMNAME
+
+    ssh VMNAME SSHARGS
+      connects with ssh into vm VMNAME with provided args
+"
+}
+
+POSARGS=()
+
+while [[ $# -gt 0 ]]; do
+
+    case "$1" in
+	--help)
+	    usage
+	    exit 0
+	    ;;
+	--)
+	    shift
+	    POSARGS+=("$@")
+	    shift "$#"
+	    break;
+	    ;;
+	-*|--*)
+	    echo "invalid flag: $1" >&2;
+	    exit 1
+	    ;;
+	*)
+	    POSARGS+=("$1")
+	    ;;
+    esac
+    shift
+done
+
+if [[ ${#POSARGS[@]} -lt 1 ]]; then
+    echo "missing argument." >&2;
+    usage >&2;
+    exit 1
+fi
+
+CMD="${POSARGS[0]}"
+unset POSARGS[0]
+
+case "$CMD" in
+    create|ssh)
+	cmd_"$CMD" "${POSARGS[@]}"
+	exit $?;
+	;;
+    delete|destroy)
+	cmd_destroy "${POSARGS[@]}"
+	exit $?;
+	;;
+    *)
+	echo "invalid command: $CMD" >&2
+	exit 2;
+	;;
+esac
