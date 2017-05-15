@@ -182,14 +182,15 @@ var Twitter = (function (module) {
                                 console.debug("opening stream failed with 420. retryCount=" +
                                               conn.retryCount + ", trying again in " + (conn.retryCount * 300) + "s");
                                 conn.retryTimer = window.setTimeout(() => {
-                                    conn.retryTimer = -1;
                                     conn.send();
-                                }, conn.retryCount * 300);
+                                }, conn.retryCount * 300 * 1000);
                             } else {
                                 return conn.connected.reject(Fail.fromVal(xhr).prefix("server refused to open stream"));
                             }
                         } else if (xhr.readyState > 2)  {
-                            streamer.onChunk(conn);
+                            if (xhr.status === 200) {
+                                streamer.onChunk(conn);
+                            }
                         }
                     };
                     xhr.onerror = (err) => {
