@@ -138,7 +138,7 @@ window.Inbox = (function (module) {
             var cipherInfo1 = KeyClasses.unpackEGCipher(cipherBits1, {encoding: 'bits'});
 
             var account = Vault.getAccount();
-            var decryptedBits1 = account.key.decryptEGCipher(cipherInfo1, {outEncoding: 'bits'});
+            var decryptedBits1 = account.key.decryptEGCipher(cipherInfo1.cipher, {outEncoding: 'bits'});
 
                 //decryptedBits1 has a 64bit recipient id, followed by 1B for the usermessage length, followed by the first 12B of the user's message.
 
