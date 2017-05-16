@@ -168,6 +168,7 @@ window.KeyClasses = (function (module) {
       'base64':    plainText is a base64-encoded string.
 
       if `s` is not a string, then it is not transformed.
+      (in this case it is assumed to be a bitArray)
     */
     function stringToBits (s, encoding) {
         if (typeof s === 'string') {
@@ -214,9 +215,20 @@ window.KeyClasses = (function (module) {
     }
 
     /**
-       packs 1 input elgamal ciphertext into a dense form
+       packs 1 input elgamal cipher into a dense form.
+       (the ciphers are a pair of sjcl.ecc.points)
 
-       <1B for y values><2*192bit for x values>
+       input:
+         cipher is
+           {c1: sjcl.ecc.point,
+            c2: sjcl.ecc.point}
+
+         opts is
+           {outEncoding: "bits", "domstring", "utf8", etc.}
+
+       output:
+           <1B for y values><2*192bit for x values>
+
        @returns packed representation, encoded as outEncoding.
     */
     function packEGCipher(cipher, opts) {
@@ -231,7 +243,7 @@ window.KeyClasses = (function (module) {
         var yBits = 0;
         var out = [];
         var c1 = cipher.c1.compress(), c2 = cipher.c2.compress();
-        var layout = new sjcl.bn(yBits | (c1.parity * C1_Y_MASK) | (c2.parity * C2_Y_MASK)).toBits();
+        var layout = new sjcl.bn(yBits | (c1.parity * C1_Y_MASK) | (c2.parity * C2_Y_MASK)).toBits(8);
         out = w.concat(c1.x, c2.x);
         out = w.concat(layout, out);
         return  KeyClasses.bitsToString(out, opts.outEncoding);
@@ -256,15 +268,16 @@ window.KeyClasses = (function (module) {
 
         packed = KeyClasses.stringToBits(packed, opts.encoding || null);
 
-        const offset = opts.offset || 0,
-              CMPRS_C1_MASK = 0x1,
-              CMPRS_C2_MASK = 0x2,
-              C1_Y_MASK = 0x4,
+        var offset = opts.offset || 0;
+        const C1_Y_MASK = 0x4,
               C2_Y_MASK = 0x8,
               w = sjcl.bitArray;
 
         var layout = w.extract(packed, offset, 8),
             cipher = {};
+
+        // read past layout
+        offset += 8;
 
         cipher.c1 = {x: w.bitSlice(packed, offset + (0*ECC_COORD_BITS), offset + (1*ECC_COORD_BITS)),
                      parity: !!(layout & C1_Y_MASK)

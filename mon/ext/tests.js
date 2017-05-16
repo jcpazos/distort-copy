@@ -26,6 +26,7 @@
   Fail,
   Github,
   GroupStats,
+  KeyClasses,
   Stats,
   Twitter,
   UI,
@@ -182,6 +183,21 @@ window.Tests = (function (module) {
             }
         }
         module.metric = metric; // debug
+    };
+
+    module.test_encrypt_eg = function (msg, opts) {
+        msg = msg || "12345678901234567890123";
+        opts = opts || {};
+        var kp = new ECCKeyPair();
+
+        var cipherPoints = kp.encryptEG(msg, {encoding: "domstring"});
+        console.log(cipherPoints);
+
+        var packedCipher = KeyClasses.packEGCipher(cipherPoints[0], {outEncoding: "bits"});
+        var unpackedCipher = KeyClasses.unpackEGCipher(packedCipher, {encoding: "bits", offset: 0}).cipher;
+
+        var outmsg = kp.decryptEGCipher(unpackedCipher, {outEncoding: "domstring"});
+        console.log("eg encrypted msg: " + outmsg);
     };
 
     module.test_encrypt_ecc = function (msg, mac, opts) {
