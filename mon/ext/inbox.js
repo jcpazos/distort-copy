@@ -27,7 +27,7 @@
 window.Inbox = (function (module) {
     "use strict";
 
-    module.QUEUE_LIMIT = 1000;
+    module.QUEUE_LIMIT = 50;
     module._pendingTweets = [];
     module._dropCount = 0;
     module._scheduled = false;
@@ -90,7 +90,7 @@ window.Inbox = (function (module) {
         // the tweets sent by Twitter
         var tweet = tweetInfo.tweet;
 
-        console.log("[inbox]", tweet);
+        // console.log("[inbox]", tweet);
         module.stats.numProcessed += 1;
 
         return new Promise(resolve => {
@@ -116,38 +116,44 @@ window.Inbox = (function (module) {
             // TODO Process tweet to determine if it belongs to the currently logged in user.
 
             // 1. convert base16k body toBits  (see Certs L274) => bits
-            /*
-               2. define the struct for the message, and unpack:
 
-                var fmt = pack('twist',
-                               pack.Number('version', {len: 8}),
-                               pack.Bits('eg1', {len: KeyClasses.ECC_DEFLATED_CIPHER_BITS}),
-                               pack.Bits('eg2', {len: KeyClasses.ECC_DEFLATED_CIPHER_BITS}),
-                               pack.Bits('eg3', {len: KeyClasses.ECC_DEFLATED_CIPHER_BITS}),
-                               pack.Bits('signaturebits', {len: KeyClassses.ECC_SIGN_BITS}));
-                var parsed = fmt.fromBits(bits);
-                var data = parsed[0];
-                var unusedBits = data[1];
+            var bits = pack.Base16k('b16', body).toBits({debug: !!module.DEBUG});
 
-               3. access first cipher
+            // 2. define the struct for the message, and unpack:
 
-                var cipherBits1 = pack.walk(data, 'twist', 'eg1')  // extract 'eg1' bits
-                var cipherInfo1 = KeyClasses.unpackEGCipher(cipherBits1, {encoding: 'bits'});
+            var fmt = pack('twist',
+                           pack.Number('version', {len: 8}),
+                           pack.Bits('eg1', {len: KeyClasses.ECC_DEFLATED_CIPHER_BITS}),
+                           pack.Bits('eg2', {len: KeyClasses.ECC_DEFLATED_CIPHER_BITS}),
+                           pack.Bits('eg3', {len: KeyClasses.ECC_DEFLATED_CIPHER_BITS}),
+                           pack.Bits('signaturebits', {len: KeyClasses.ECC_SIGN_BITS}));
+            var parsed = fmt.fromBits(bits);
+            var data = parsed[0];
+            var unusedBits = data[1];
 
-                var decryptedBits1 = account.key.decryptEGCipher(cipherInfo1, {outEncoding: 'bits'})
+
+            // 3. access first cipher
+
+            var cipherBits1 = pack.walk(data, 'twist', 'eg1');  // extract 'eg1' bits
+            var cipherInfo1 = KeyClasses.unpackEGCipher(cipherBits1, {encoding: 'bits'});
+
+            var account = Vault.getAccount();
+            var decryptedBits1 = account.key.decryptEGCipher(cipherInfo1, {outEncoding: 'bits'});
 
                 //decryptedBits1 has a 64bit recipient id, followed by 1B for the usermessage length, followed by the first 12B of the user's message.
 
-               4. unpack the recipient id from the 1st point
+            // 4. unpack the recipient id from the 1st point
 
-                var fmtBlock1 = pack('block1',
-                                     pack.Decimal('rcptid', {len: 64}));
-                                     // don't care about the rest for now
-                var block1Data = fmtBlock1.fromBits(decryptedBits1)[0];
-                var recipientId = pack.walk(block1Data, 'block1', 'rcptid');
+            var fmtBlock1 = pack('block1',
+                                 pack.Decimal('rcptid', {len: 64}));
+                                 // don't care about the rest for now
+            var block1Data = fmtBlock1.fromBits(decryptedBits1)[0];
+            var recipientId = pack.walk(block1Data, 'block1', 'rcptid');
 
-                check if recipientId === account.primaryId
-            */
+            console.log("RECIPIENT ID: " + recipientId);
+            //
+            // check if recipientId === account.primaryId
+
 
             // if we have a match. check the signature.  recompute the
             // signature text (as is done in outbox.js) and verify
