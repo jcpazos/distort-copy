@@ -2,7 +2,8 @@
 
 RESGROUP="twistor-eval"
 HERE=$(cd "$(dirname "$0")" && pwd)
-PUBKEY="$HERE/eval.key.pub"
+KEY="$HERE/eval.key"
+PUBKEY="$KEY".pub
 
 # az vm list-sizes --location westus2 --output table
 # pricing: https://azure.microsoft.com/en-us/pricing/details/virtual-machines/linux/
@@ -18,7 +19,8 @@ SSHARGS=(
     -l ubuntu
     -o StrictHostKeyChecking=no
     -o UserKnownHostsFile=/dev/null
-    -q
+    -i "$KEY"
+    #-q
 )
 
 function cmd_create ()  #name
@@ -56,7 +58,17 @@ function cmd_ssh () #name args
     local readonly name="$1"
     shift
     local readonly vmip=$(vm_ip "$name")
+    chmod 0600 "$KEY"
     exec ssh "${SSHARGS[@]}" "$vmip" "$@"
+}
+
+function cmd_evalsetup () #vmname
+{
+    local readonly name="$1"
+    shift
+    cmd_ssh "$name" /bin/bash < "$HERE"/scripts/docker-setup.sh
+    tar czf - "$HERE"/vm-tools | cmd_ssh "$name" tar -C /home/ubuntu xzvf -
+    cmd_ssh "$name" /home/ubuntu/run-client.sh init
 }
 
 function usage ()
@@ -72,6 +84,9 @@ function usage ()
 
     ssh VMNAME SSHARGS
       connects with ssh into vm VMNAME with provided args
+
+    evalsetup VMNAME
+      sets up eval scripts on vm VMNAME
 "
 }
 
@@ -111,7 +126,7 @@ CMD="${POSARGS[0]}"
 unset POSARGS[0]
 
 case "$CMD" in
-    create|ssh)
+    create|ssh|evalsetup)
 	cmd_"$CMD" "${POSARGS[@]}"
 	exit $?;
 	;;
