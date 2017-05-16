@@ -256,7 +256,7 @@ window.KeyClasses = (function (module) {
 
         packed = KeyClasses.stringToBits(packed, opts.encoding || null);
 
-        const offset = opts.offset,
+        const offset = opts.offset || 0,
               CMPRS_C1_MASK = 0x1,
               CMPRS_C2_MASK = 0x2,
               C1_Y_MASK = 0x4,
