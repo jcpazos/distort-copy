@@ -87,6 +87,7 @@ function start_xvfb ()
 
 function launch_browser ()
 {
+    #if [[ -f "${DATA_DIR}"/chrome_debug.log ]]
     DISPLAY="${XVFB_DISPLAY}" "${BROWSER[@]}" "$site" &
     if [[ ${FIRST_BROWSER} == yes ]]; then
         FIRST_BROWSER=no
@@ -133,7 +134,7 @@ initialize_chrome_profile
     FIRST=yes
     for site in "${SITES[@]}"; do
         launch_browser "$site"
-        sleep $(($RANDOM % 17))
+        sleep 5
         OUTPUT=`mktemp`.png
         TMP_IMAGES+=( "${OUTPUT}" )
         DISPLAY="${XVFB_DISPLAY}" import -window root -quality 90 "${OUTPUT}"

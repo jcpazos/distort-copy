@@ -1,5 +1,9 @@
 #!/bin/bash -e
 
+#
+# Runs on the VM once to setup packages necessary to run the docker
+# container with twistor.
+#
 
 # https://docs.docker.com/engine/installation/linux/ubuntu/#recommended-extra-packages-for-trusty-1404
 sudo apt-get update
@@ -29,11 +33,17 @@ sudo apt-get update
 sudo apt-get install docker-ce
 
 #allow user ubuntu to do docker commands
-sudo groupadd docker
-sudo usermod -aG docker ubuntu
+egrep -vq '^docker:' /etc/group || {
+    sudo groupadd docker
+}
+egrep -vq '^docker.+:ubuntu' /etc/group || {
+    sudo usermod -aG docker ubuntu
+}
 
 #enable docker on boot
 sudo systemctl enable docker
 
 #analyze network traffic and interfaces
 sudo apt-get install -y bridge-utils iproute2
+
+echo "DOCKER-SETUP DONE"

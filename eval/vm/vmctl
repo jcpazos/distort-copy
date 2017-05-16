@@ -59,15 +59,15 @@ function cmd_ssh () #name args
     shift
     local readonly vmip=$(vm_ip "$name")
     chmod 0600 "$KEY"
-    exec ssh "${SSHARGS[@]}" "$vmip" "$@"
+    ssh "${SSHARGS[@]}" "$vmip" "$@"
 }
 
 function cmd_evalsetup () #vmname
 {
     local readonly name="$1"
     shift
-    cmd_ssh "$name" /bin/bash < "$HERE"/scripts/docker-setup.sh
-    tar czf - "$HERE"/vm-tools | cmd_ssh "$name" tar -C /home/ubuntu xzvf -
+    #cmd_ssh "$name" /bin/bash -ex < "$HERE"/scripts/docker-setup.sh
+    tar czf - -C "$HERE/vm-tools" . | cmd_ssh "$name" tar xzvf - -C /home/ubuntu
     cmd_ssh "$name" /home/ubuntu/run-client.sh init
 }
 
