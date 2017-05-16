@@ -14,6 +14,7 @@ OUTPUTDIR=./output
 CONTAINEROUT="$OUTPUTDIR/cont"
 HERE=$(cd "$(dirname "$0")" && pwd)
 DOCKERDIR="$HERE"/client
+
 function has_image ()
 {
     local iid=$(docker images -q "$1")
@@ -99,6 +100,8 @@ function cmd_start ()
 
     sudo rm -rf --one-file-system "$CONTAINEROUT/*" || :
     sudo mkdir -p "$CONTAINEROUT"
+
+    # docker volume dirs need to be absolute paths
     local absoutput=$(cd "$CONTAINEROUT" && pwd)
 
     # -t pseudo tty. CTRL-C detaches

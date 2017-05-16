@@ -139,7 +139,13 @@ initialize_chrome_profile
         TMP_IMAGES+=( "${OUTPUT}" )
         DISPLAY="${XVFB_DISPLAY}" import -window root -quality 90 "${OUTPUT}"
     done
+
+    # take screenshot
     montage "${TMP_IMAGES[@]}" -tile 3x -geometry +10+10 -gravity Center -extent 1024 "$OUTPUTDIR"/screenshot.png
+
+    if [[ -f "${DATA_DIR}"/chrome_debug.log ]]; then
+	cp "${DATA_DIR}"/chrome_debug.log "${OUTPUTDIR}"/chrome.lastrun.log
+    fi
 }
 
 if [[ "${DEBUG}" == 1 ]]; then
