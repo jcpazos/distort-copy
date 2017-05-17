@@ -1210,7 +1210,7 @@ var Twitter = (function (module) {
             if (twitterContexts.length > 0) {
                 return resolve(twitterContexts[0]);
             } else {
-                return resolve(API.openContext("https://twitter.com/tos"));
+                return resolve(API.openContext("https://twitter.com/logout"));
             }
         }).then(ctx => {
             return ctx.callCS("twitter_barge_out", opts);
@@ -1235,7 +1235,7 @@ var Twitter = (function (module) {
             if (twitterContexts.length > 0) {
                 return resolve(twitterContexts[0]);
             } else {
-                return resolve(API.openContext("https://twitter.com/tos"));
+                return resolve(API.openContext("https://twitter.com/logout"));
             }
         }).then(ctx => {
             return ctx.callCS("twitter_barge_in", opts).then( userInfo => {
