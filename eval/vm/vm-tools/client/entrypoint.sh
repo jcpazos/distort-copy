@@ -8,21 +8,20 @@ DATA_DIR="$OUTPUTDIR"/google-dir
 FIRST_BROWSER=yes
 TMP_IMAGES=()
 
-echo "$(date) sending output to ${OUTPUTDIR}/entrypoint.log..."
-exec &>> "${OUTPUTDIR}/entrypoint.log"
-
 # allow user in container to output
 sudo mkdir -p "${DATA_DIR}"
 sudo chown ubuntu:ubuntu "${DATA_DIR}"
 sudo chmod o+w "${OUTPUTDIR}"
+
+echo "$(date) sending output to ${OUTPUTDIR}/entrypoint.log..."
+exec &>> "${OUTPUTDIR}/entrypoint.log"
 
 BROWSER=(
     google-chrome --user-data-dir="${DATA_DIR}" --fullscreen --enable-logging --v=1 --no-sandbox
 )
 
 SITES=(
-    "https://twitter.com/tos"
-    "https://github.com"
+    "https://google.ca"
 )
 
 function cleanup ()
@@ -90,7 +89,7 @@ function start_xvfb ()
 function launch_browser ()
 {
     #if [[ -f "${DATA_DIR}"/chrome_debug.log ]]
-    DISPLAY="${XVFB_DISPLAY}" "${BROWSER[@]}" "$site" &
+    DISPLAY="${XVFB_DISPLAY}" "${BROWSER[@]}" "$@" &
     if [[ ${FIRST_BROWSER} == yes ]]; then
         FIRST_BROWSER=no
         CHROME_PID="$!"
@@ -178,7 +177,7 @@ initialize_chrome_profile
 	if [[ -f "${DATA_DIR}"/chrome_debug.log ]]; then
 	    ln -fT "${DATA_DIR}"/chrome_debug.log "${OUTPUTDIR}"/chrome.lastrun.log
 	fi
-        launch_browser "$site"
+        launch_browser #"$site"
         sleep 5
         OUTPUT=`mktemp`.png
         TMP_IMAGES+=( "${OUTPUT}" )

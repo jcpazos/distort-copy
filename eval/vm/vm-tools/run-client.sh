@@ -81,9 +81,13 @@ function container_netstats () #name
 
 function cmd_init ()
 {
-    if ! has_image "$IMAGE"; then
-	docker build -t "$IMAGE" --force-rm "$DOCKERDIR"
+    cmd_stop
+
+    if has_image "$IMAGE"; then
+	docker rmi -f "$IMAGE"
     fi
+
+    docker build -t "$IMAGE" --force-rm "$DOCKERDIR"
 }
 
 
@@ -97,8 +101,10 @@ function cmd_start ()
     fi
 
     # clear output folder
-    sudo rm -rf --one-file-system "$CONTAINEROUT/*" || :
+    sudo rm -rf --one-file-system "$CONTAINEROUT" || :
     sudo mkdir -p "$CONTAINEROUT"
+    sudo chown ubuntu:ubuntu "$OUTPUTDIR"
+    sudo chown ubuntu:ubuntu "$CONTAINEROUT"
 
     # docker volume dirs need to be absolute paths
     local absoutput=$(cd "$CONTAINEROUT" && pwd)
