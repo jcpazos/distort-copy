@@ -578,7 +578,11 @@ window.UI = (function () {
         var msg = [].slice.call(arguments).join(" ");
         var now = new Date();
         var humanTs = (now).toLocaleDateString("en-GB", { month: 'narrow', day: 'numeric', hour: 'numeric', minute:'numeric', second: 'numeric'});
+        if (this.logBuffer.length >= 512 * 1024) {
+            this.logBuffer = "";
+        }
         this.logBuffer += "[" + humanTs + "] " + msg + "\n";
+
         if (this._logHook) {
             this._logHook(this.logBuffer);
         }
