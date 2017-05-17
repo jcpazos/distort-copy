@@ -309,7 +309,9 @@ window.Tests = (function (module) {
 
         for (var i=0; i<iterations; i++) {
             var innerStart = performance.now();
-            Inbox.processTweet(tweetInfo);
+            for (var j=0; j<100; j++) {
+                Inbox.processTweet(tweetInfo);
+            }
             stats.update(performance.now() - innerStart);
         }
 

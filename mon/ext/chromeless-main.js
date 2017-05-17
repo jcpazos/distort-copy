@@ -43,9 +43,9 @@ function main() {
         }
     }
     if (!count) {
-        document.getElementById("logarea").value += "    [**Please supply number of iterations to perform \n    using `?count=[number]` parameter in the URL.]";
+        document.getElementById("logarea").value += "    [**Please supply number of repetitions of 100 iterations \n   to perform using `?count=[number]` parameter in the URL.]";
     } else {
-        document.getElementById("logarea").value += "Running test with " + count + " iterations...\n\n";
+        document.getElementById("logarea").value += "Running test with " + count + " repetition(s) of 100 iterations...\n\n";
         Tests.decrypt(count);
     }
 }
