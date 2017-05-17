@@ -1,4 +1,4 @@
-all: js sjcl.js
+all: js sjcl.js chromeless.js
 
 JS_TARGETS = pageapi/runtime.js
 
