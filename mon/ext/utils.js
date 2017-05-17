@@ -976,7 +976,7 @@ window.Utils = (function (module) {
             that.status = "completed";
             _reschedule();
         }).catch(function (err) {
-            console.error("Periodic task failed: " + err.stack);
+            console.error("Periodic task failed: " + (err.stack || "Stack N/A"));
             that.status = "error";
             _reschedule();
         });

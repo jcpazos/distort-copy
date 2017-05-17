@@ -443,10 +443,11 @@ window.Tests = (function (module) {
                 }
                 return Twitter.bargeOut().catch(err => {
                     err = err || {};
-                    console.error("ensureTwitter could not barge out: " + err + err.stack, err);
+                    console.error("ensureTwitter could not barge out: " + err.stack, err);
                     return true;
                 }).then(() => Twitter.bargeIn({username:username, password:password})).catch(err => {
-                    console.error("ensureTwitter could not login to twitter: ", err);
+                    err = err || {};
+                    console.error("ensureTwitter could not login to twitter: " + err.stack);
                     return null;
                 });
             });
@@ -510,6 +511,11 @@ window.Tests = (function (module) {
                     if (!isNaN(newPeriod) && newPeriod > 0 && task) {
                         console.log("setting periodMs on outbox task from " + task.periodMs + " to " + newPeriod + "ms");
                         task.periodMs = newPeriod;
+                        if (!task.stopped) {
+                            // restart
+                            task.stop();
+                            task.start();
+                        }
                     }
                 }
 
@@ -554,6 +560,7 @@ window.Tests = (function (module) {
                     UI.log("failed to obtain app keys.");
                     throw new Fail(Fail.BADAUTH, "can't login");
                 }
+                UI.log("browser session now in sync with account information retrieved from server.");
                 return allInfo;
             }).then(allInfo => {
                 if (!Vault.getAccount()) {

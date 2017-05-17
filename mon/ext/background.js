@@ -1003,10 +1003,10 @@ BGAPI.prototype.openContext = function (url) {
         chrome.tabs.create({
             url: url,
             active: true}, function (tab) {
-                if (chrome.runtime.lastError !== null) {
-                    return reject(chrome.runtime.lastError);
-                }
                 if (tab === undefined) {
+                    if (chrome.runtime.lastError) {
+                        return reject(new Fail(Fail.GENERIC, "tab create error: " + (chrome.runtime.lastError.message || "no message")));
+                    }
                     return reject(new Fail(Fail.GENERIC, "cant open tab. no window?"));
                 }
                 resolve(tab.id);
