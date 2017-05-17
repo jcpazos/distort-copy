@@ -299,13 +299,13 @@ window.Tests = (function (module) {
 
         for (var i=0; i<iterations; i++) {
             var innerStart = performance.now();
-            for (var j=0; j<1; j++) {
+            for (var j=0; j<100; j++) {
                 Inbox.processTweet(tweetInfo, certLookupFn);
             }
             stats.update(performance.now() - innerStart);
         }
 
-        console.log(stats.toString());
+        console.log("[stats] " + stats.toString());
     };
 
     module.test_load = function(rate) {

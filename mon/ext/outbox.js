@@ -338,15 +338,17 @@ window.Outbox = (function (module) {
             /**
                signature := ecdsa_sign(<twistor_epoch>, <version>, <ciphertext>)
             */
-            var twistor_epoch = pack.Number('epoch', {len: 32}, M.twistorEpoch());
+            var epoch_bits = pack.Number('epoch', {len: 32}, M.twistorEpoch()).toBits();
+            var version_bits = pack.Number('version', {len: 8}, 0x01).toBits();
+            var cipher_bits = ciphertext.toBits();
+            var bconcat = sjcl.bitArray.concat.bind(sjcl.bitArray);
+            var signTheseBits = bconcat(bconcat(epoch_bits, version_bits), cipher_bits);
 
+            var signature_bits = this.fromAccount.key.signText(signTheseBits, {encoding: "bits", outEncoding: "bits"});
             var twistor_body = pack('twistor_body',
-                                    pack.Number('version', {len: 8}, 0x01),
-                                    ciphertext,
-                                    pack.ECDSASignature('signature', {signKey: this.fromAccount.key, verifyKey: null},
-                                                        twistor_epoch,
-                                                        pack.FieldRef('vref', {path: ["..", "version"]}),
-                                                        pack.FieldRef('cref', {path: ["..", "ciphertext"]})),
+                                    pack.Bits('version', version_bits),
+                                    pack.Bits('ciphertext', cipher_bits),
+                                    pack.Bits('signature', signature_bits),
                                     pack.Trunc('unused', {len: M.UNUSED_BITS}));
 
             var body_bits = twistor_body.toBits({debug: module.DEBUG});

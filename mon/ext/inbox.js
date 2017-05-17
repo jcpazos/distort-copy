@@ -209,6 +209,9 @@ window.Inbox = (function (module) {
 
             resolve(certLookupFn(senderId).then(cert => {
                 var result = cert.key.verifySignature(message, signature, {encoding: 'bits', sigEncoding: 'bits'});
+                if (result) {
+                    console.log("[verification] Signature verified on tweet from user: " + senderId);
+                }
                 return result;
             }).catch(err => {
                 console.log("no cert found for twitterid " + senderId);
