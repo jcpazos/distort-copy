@@ -34,8 +34,12 @@ var Twitter = (function (module) {
     module.stats = {
         // length of incoming json strings for tweets
         tweetLen: new Stats.Dispersion({supportMedian: false}),
+
         // keep a copy of the last tweet received (for debugging purposes).
         lastTweet: null,
+
+        numPosted: 0,
+
         update: function (text, tweet) {
             module.stats.lastTweet = tweet;
             module.stats.tweetLen.update(text.length);
@@ -1206,7 +1210,7 @@ var Twitter = (function (module) {
             if (twitterContexts.length > 0) {
                 return resolve(twitterContexts[0]);
             } else {
-                return resolve(API.openContext("https://twitter.com/"));
+                return resolve(API.openContext("https://twitter.com/tos"));
             }
         }).then(ctx => {
             return ctx.callCS("twitter_barge_out", opts);
@@ -1231,7 +1235,7 @@ var Twitter = (function (module) {
             if (twitterContexts.length > 0) {
                 return resolve(twitterContexts[0]);
             } else {
-                return resolve(API.openContext("https://twitter.com/"));
+                return resolve(API.openContext("https://twitter.com/tos"));
             }
         }).then(ctx => {
             return ctx.callCS("twitter_barge_in", opts).then( userInfo => {
@@ -1282,7 +1286,7 @@ var Twitter = (function (module) {
                     ctx: twitterContexts[0]
                 };
             } else {
-                return API.openContext("https://twitter.com/").then(function (ctx) {
+                return API.openContext("https://twitter.com/tos").then(function (ctx) {
                     return {
                         token: twitterInfo.token,
                         twitterId: twitterInfo.twitterId,
@@ -1296,6 +1300,8 @@ var Twitter = (function (module) {
                 return twitterCtx.ctx.callCS("post_public", {tweet: msg, authToken: twitterCtx.token})
                     .then(resp => {
                         var obj = JSON.parse(resp);
+                        module.stats.numPosted += 1;
+                        console.log("[twitter] posted tweet id: " + obj.tweet.id);
                         return obj.tweet_id;
                     })
                     .catch(err => {

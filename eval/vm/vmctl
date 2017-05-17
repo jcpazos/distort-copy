@@ -162,7 +162,7 @@ CMD="${POSARGS[0]}"
 unset POSARGS[0]
 
 case "$CMD" in
-    create|ssh|evalsetup|evalstart|evaltools|evalcollect)
+    create|ssh|evalsetup|evalstart|evaltools|evalcollect|evalstop)
 	cmd_"$CMD" "${POSARGS[@]}"
 	exit $?;
 	;;

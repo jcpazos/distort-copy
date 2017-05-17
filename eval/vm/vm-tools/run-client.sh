@@ -32,7 +32,8 @@ function has_container ()
     if [[ -z "$cid" ]]; then
 	return 1
     else
-	return "$cid"
+	echo "$cid"
+	return 0
     fi
 }
 

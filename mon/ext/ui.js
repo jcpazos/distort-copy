@@ -227,7 +227,7 @@ window.UI = (function () {
         // usernames can only contain letters number and underscores
         return listing.join(" ");
     },
-            
+
     UI.prototype._updateBadge = function () {
 
         var that = this;
@@ -576,11 +576,13 @@ window.UI = (function () {
 
     UI.prototype.log = function () {
         var msg = [].slice.call(arguments).join(" ");
-        var ts = (new Date()).toLocaleDateString("en-GB", { month: 'narrow', day: 'numeric', hour: 'numeric', minute:'numeric', second: 'numeric'});
-        this.logBuffer += "[" + ts + "] " + msg + "\n";
+        var now = new Date();
+        var humanTs = (now).toLocaleDateString("en-GB", { month: 'narrow', day: 'numeric', hour: 'numeric', minute:'numeric', second: 'numeric'});
+        this.logBuffer += "[" + humanTs + "] " + msg + "\n";
         if (this._logHook) {
             this._logHook(this.logBuffer);
         }
+        console.debug("[UI.log] " + (now.getTime() / 1000) + " " + msg);
     };
 
     UI.prototype.clearLog = function () {
