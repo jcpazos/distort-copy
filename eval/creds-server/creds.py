@@ -226,6 +226,7 @@ class CredsApp(object):
 
     def _find_free_account(self):
         usable = [row for row in self.creds_db.db.values() if row['is_usable'] == 'y']
+        usable.sort(key=lambda row: int(row['account_id'], 10))
         free = [row for row in usable if not self.clients_db.find(lambda cli: cli['account_id'] == row['account_id'])]
         if not free:
             return None

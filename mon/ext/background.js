@@ -999,10 +999,16 @@ BGAPI.prototype.filterContext = function (filter) {
 BGAPI.prototype.openContext = function (url) {
     "use strict";
 
-    return new Promise(function (resolve) {
+    return new Promise(function (resolve, reject) {
         chrome.tabs.create({
             url: url,
             active: true}, function (tab) {
+                if (chrome.runtime.lastError !== null) {
+                    return reject(chrome.runtime.lastError);
+                }
+                if (tab === undefined) {
+                    return reject(new Fail(Fail.GENERIC, "cant open tab. no window?"));
+                }
                 resolve(tab.id);
             });
     }).then(function (tabId) {
