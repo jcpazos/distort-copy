@@ -1,1 +1,1 @@
-/Users/Poseidon/beeswax/crless/../mon/ext/chromeless.js
+../mon/ext/chromeless.js
