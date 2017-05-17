@@ -52,8 +52,10 @@ window.GroupStats = (function () {
     GroupStats.MIN_LEVEL = 0; // group root
     GroupStats.SUBGROUP_MASK = (1 << (GroupStats.MAX_LEVEL + 1)) - 1;
     GroupStats.SUBGROUP_BASE = 0x5000;
-    // "빵"
+    // "빵" bang/bread
     GroupStats.DEFAULT_GROUP = String.fromCharCode(48757);
+    // "짬" 'djahn'
+    GroupStats.ALT_EVAL_GROUP = String.fromCharCode(51692);
 
     /*
       converts the subgroup integer into the level

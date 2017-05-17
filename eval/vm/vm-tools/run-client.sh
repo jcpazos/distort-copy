@@ -113,6 +113,7 @@ function cmd_start ()
 	   -v "$DOCKERDIR/entrypoint.sh:/usr/bin/entrypoint.sh" \
 	   -v "$absoutput":/output \
 	   "$IMAGE" "$@"
+    echo "$(date +%s)" > "$absoutput/starttime.log"
 }
 
 function cmd_stop ()

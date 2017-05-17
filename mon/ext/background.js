@@ -681,6 +681,34 @@ _extends(DistributeTask, Utils.PeriodicTask, {
     }
 });
 
+function ShowStats(opts) {
+    "use strict";
+    opts = opts || {};
+    var period = opts.periodMs || ShowStats.DEFAULT_INTERVAL_MS;
+    ShowStats.__super__.constructor.call(this, period);
+}
+// once every min
+ShowStats.DEFAULT_INTERVAL_MS = 60*1000;
+
+Utils._extends(ShowStats, Utils.PeriodicTask, {
+    run: function () {
+        "use strict";
+
+        return new Promise(resolve => {
+            var fields = [
+                "twitter.tx:", Twitter.stats.numPosted,
+                "twitter.rx:", Twitter.stats.tweetLen.n,
+                "twitter.avglen:", Twitter.stats.tweetLen.mean,
+                "inbox.ndrop:", Inbox.stats.numDropped,
+                "inbox.nproc:", Inbox.stats.numProcessed
+            ].join(" ");
+            var now = new Date();
+            console.log("[stats] " + (now.getTime() / 1000) + " " + fields);
+            resolve(true);
+        });
+    }
+});
+
 function BGAPI() {
     "use strict";
 
@@ -691,6 +719,7 @@ function BGAPI() {
     this.activeAccounts = {};
     this.streamerManager = new Twitter.StreamerManager();
     this.outboxTask = new Outbox.PeriodicSend();
+    this.statsTask = new ShowStats();
 
     Certs.listenForTweets(this.streamerManager);
     Inbox.listenForTweets(this.streamerManager);
@@ -707,6 +736,7 @@ function BGAPI() {
 
         window.setTimeout(() => {
             this.outboxTask.start();
+            this.statsTask.start();
         }, 5000);               // give it some time to breathe when loading the extension.
     }, 0);
 

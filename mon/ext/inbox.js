@@ -36,12 +36,17 @@ window.Inbox = (function (module) {
         computeStats: function() {
             var newCount = module.stats.numProcessed - module.stats.prevCount;
             module.stats.prevCount = module.stats.numProcessed;
-            console.log("Tweets processed this interval: " + newCount);
+            if (newCount > 0) {
+                console.log("[inbox] tweets processed this interval: " + newCount);
+            }
         },
-        decodeTimeMs: new Stats.Dispersion({supportMedian: true}),
+        // monotonically increasing counter of tweets entering decoding/decryption
         numProcessed: 0,
         statsTimer: null,
-        prevCount: 0
+        prevCount: 0,
+        // monotonically increasing counter of tweets that were dropped because we're
+        // not processing them fast enough
+        numDropped: 0
     };
 
     module.stats.statsTimer = setInterval(module.stats.computeStats, 5000);
@@ -53,8 +58,8 @@ window.Inbox = (function (module) {
     module._scheduleProcessing = function (toQueue) {
         if (toQueue) {
             if (this._pendingTweets.length > module.QUEUE_LIMIT) {
-                this._dropCount += 1;
-                console.log("[inbox] Dropping tweet. queue limit exceeded. (" + this._dropCount + ")");
+                module.stats.numDropped += 1;
+                console.log("[inbox] Dropping tweet. queue limit exceeded. (" + module.stats.numDropped + ")");
             } else {
                 this._pendingTweets.push(toQueue);
             }

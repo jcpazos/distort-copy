@@ -691,7 +691,7 @@ var Twitter = (function (module) {
         return new Promise(function (resolve, reject) {
             // fetch the user's twitter homepage
             var preq = new XMLHttpRequest();
-            preq.open("GET", "https://twitter.com", true);
+            preq.open("GET", "https://twitter.com/", true);
             preq.onerror = function () {
                 console.error("Problem loading twitter homepage", [].slice.apply(arguments));
                 reject(new Error("error loading twitter homepage"));
@@ -1301,7 +1301,8 @@ var Twitter = (function (module) {
                     .then(resp => {
                         var obj = JSON.parse(resp);
                         module.stats.numPosted += 1;
-                        console.log("[twitter] posted tweet id: " + obj.tweet.id);
+                        var url = "https://twitter.com/" + encodeURIComponent(accountCredentials.appOwner) + "/status/" + obj.tweet_id;
+                        console.log("[twitter] posted tweet id: " + obj.tweet_id + " owner: " + accountCredentials.appOwner + " url: " + url);
                         return obj.tweet_id;
                     })
                     .catch(err => {
