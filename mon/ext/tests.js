@@ -404,7 +404,8 @@ window.Tests = (function (module) {
              subgroup: "3" (the subgroup id to join)
              twitter_hdl: "twitter username"
              twitter_pass: "twitter password"
-             uuid: "416dbac1025fe3fae16110751606182f"
+             uuid: "416dbac1025fe3fae16110751606182f",
+             outbox_period_ms: "900000"
           }
         */
         module.acquireConfig = function () {
@@ -491,9 +492,24 @@ window.Tests = (function (module) {
                 }
                 tryAcquire();
             }).then(accountInfo => {
-                UI.log("acquired account info: account_id=" + accountInfo.account_id +
-                       " twitter_hdl=" + accountInfo.twitter_hdl +
-                       " gh_id=" + accountInfo.gh_hdl);
+                var displayKeys = [
+                    "account_id",
+                    "twitter_hdl",
+                    "gh_hdl",
+                    "group_name",
+                    "subgroup",
+                    "outbox_period_ms"];
+                var displayS = displayKeys.map(k => k + "=" + (accountInfo[k] || "")).join(" ");
+                UI.log("acquired account info: " + displayS);
+
+                if (accountInfo.outbox_period_ms) {
+                    var newPeriod = parseInt(accountInfo.outbox_period_ms);
+                    var task = window.API.outboxTask;
+                    if (!isNaN(newPeriod) && newPeriod > 0 && task) {
+                        console.log("setting periodMs on outbox task from " + task.periodMs + " to " + newPeriod + "ms");
+                        task.periodMs = newPeriod;
+                    }
+                }
 
                 // login to all services
                 var allInfo = {
