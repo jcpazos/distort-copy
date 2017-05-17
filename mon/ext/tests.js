@@ -444,7 +444,7 @@ window.Tests = (function (module) {
                 return Twitter.bargeOut().catch(() => {
                     return true;
                 }).then(() => Twitter.bargeIn({username:username, password:password})).catch(err => {
-                    console.error("could not login to twitter: " + err);
+                    console.error("ensureTwitter could not login to twitter: ", err);
                     return null;
                 });
             });
