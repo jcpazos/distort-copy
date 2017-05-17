@@ -1,4 +1,4 @@
-#!/bin/bash -ex
+#!/bin/bash -e
 
 RESGROUP="twistor-eval"
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -94,6 +94,12 @@ function cmd_evaltools ()
     tar czf - -C "$HERE/vm-tools" . | cmd_ssh "$name" tar xzvf - -C /home/ubuntu
 }
 
+function cmd_evaltail ()
+{
+    local readonly name="$1"
+    cmd_ssh "$name" tail -f output/cont/google-dir/chrome_debug.log output/cont/netstats.log
+}
+
 function cmd_evalcollect ()
 {
     local readonly name="$1"
@@ -122,7 +128,21 @@ function usage ()
       sets up eval scripts on vm VMNAME
 
     evalstart VMNAME
-      starts the eval script
+      (re)starts the eval script from scratch.
+
+      if the client container is running remotely, it will be killed and deleted.
+      the user-data-directory will be wiped.
+
+    evalstop VMNAME
+       stops the client container from running. it will stick around
+       if you need to inspect.
+
+    evalcollect VMNAME
+       collects all the output of client VMNAME into ./output/{vmname}/.
+       this can be run while it is running.
+
+    evaltail VMNAME
+       shortcut to tail logs on VMNAME
 "
 }
 
@@ -161,8 +181,9 @@ fi
 CMD="${POSARGS[0]}"
 unset POSARGS[0]
 
+set -x
 case "$CMD" in
-    create|ssh|evalsetup|evalstart|evaltools|evalcollect|evalstop)
+    create|ssh|evalsetup|evalstart|evaltools|evalcollect|evalstop|evaltail)
 	cmd_"$CMD" "${POSARGS[@]}"
 	exit $?;
 	;;
