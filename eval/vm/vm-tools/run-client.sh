@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -ex
 
 #
 # meant to be run on the VM, this script will create the docker image
@@ -10,7 +10,7 @@
 
 IMAGE=twistor:0
 CONT=twistorclient
-OUTPUTDIR=./output
+OUTPUTDIR=$(pwd)/output
 CONTAINEROUT="$OUTPUTDIR/cont"
 HERE=$(cd "$(dirname "$0")" && pwd)
 DOCKERDIR="$HERE"/client
@@ -67,15 +67,15 @@ function container_netstats () #name
     local nums=()
     while read typ rest; do
 	case "$typ" in
-	    "RX:"|"TX:")
+	    RX:|TX:)
 		continue
 		;;
 	    *)
 		nums+=("$typ" $rest)
 		;;
 	esac
-    done
-    echo "$(date +"%s") ${rest[@]}"
+    done < <(echo "$numbers")
+    echo "$(date +"%s") ${nums[@]}"
 }
 
 function cmd_init ()
@@ -96,8 +96,6 @@ function cmd_start ()
     fi
 
     # clear output folder
-    [[ -d "$OUTPUTDIR" ]] || return 1
-
     sudo rm -rf --one-file-system "$CONTAINEROUT/*" || :
     sudo mkdir -p "$CONTAINEROUT"
 
@@ -110,12 +108,21 @@ function cmd_start ()
 	   --name "$CONT" \
 	   --rm \
 	   `: -ti` \
+	   -d `: daemonize` \
 	   -v "$DOCKERDIR/entrypoint.sh:/usr/bin/entrypoint.sh" \
 	   -v "$absoutput":/output \
 	   "$IMAGE" "$@"
 }
 
+function cmd_stop ()
+{
+    CID=$(has_container "$CONT") || :
 
+
+    if [[ -n "$CID" ]]; then
+	docker kill "$CID"
+    fi
+}
 
 POSARGS=()
 
@@ -159,7 +166,7 @@ CMD="${POSARGS[0]}"
 unset POSARGS[0]
 
 case "$CMD" in
-    init|start)
+    init|start|stop)
 	cmd_"$CMD" "${POSARGS[@]}"
 	exit $?;
 	;;

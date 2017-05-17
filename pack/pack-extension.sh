@@ -43,6 +43,7 @@ FILEMANIFEST=(
     ./pack.js
     ./popup.js
     ./outbox.js
+    ./inbox.js
     ./main.js
     ./stats.js
     ./parking.js

@@ -12,8 +12,8 @@ PUBKEY="$KEY".pub
 # Persistent storage disks are billed separately from virtual
 # machines. To use premium storage disks, use the variant “Dsv2”
 # virtual machines. The pricing and billing meters for Dsv2 sizes are
-# the same as Dv2 series. Pricing for disks is available
-VMSIZE=Standard_DS1_v2
+# the same as Dv2 series. Pricing for disks is available...
+VMSIZE=Standard_D1_v2
 
 SSHARGS=(
     -l ubuntu
@@ -31,7 +31,8 @@ function cmd_create ()  #name
 	--name "$name" \
 	--admin-username ubuntu \
 	--image UbuntuLTS \
-	`: --size "$VMSIZE"` \
+	--size "$VMSIZE" \
+	--storage-sku Standard_LRS `: use Premium_LRS for an SSD.` \
 	--authentication-type ssh \
 	--ssh-key-value "$PUBKEY" -o json > "$HERE"/pool/"$name".json.tmp
 
@@ -66,9 +67,41 @@ function cmd_evalsetup () #vmname
 {
     local readonly name="$1"
     shift
-    #cmd_ssh "$name" /bin/bash -ex < "$HERE"/scripts/docker-setup.sh
-    tar czf - -C "$HERE/vm-tools" . | cmd_ssh "$name" tar xzvf - -C /home/ubuntu
+    cmd_ssh "$name" /bin/bash -ex < "$HERE"/scripts/docker-setup.sh
+    cmd_evaltools "$name"
     cmd_ssh "$name" /home/ubuntu/run-client.sh init
+}
+
+function cmd_evalstart ()
+{
+    local readonly name="$1"
+    shift
+    cmd_evaltools "$name"
+    cmd_ssh "$name" /home/ubuntu/run-client.sh start
+}
+
+function cmd_evalstop ()
+{
+    local readonly name="$1"
+    shift
+    cmd_evaltools "$name"
+    cmd_ssh "$name" /home/ubuntu/run-client.sh stop
+}
+
+function cmd_evaltools ()
+{
+    local readonly name="$1"
+    tar czf - -C "$HERE/vm-tools" . | cmd_ssh "$name" tar xzvf - -C /home/ubuntu
+}
+
+function cmd_evalcollect ()
+{
+    local readonly name="$1"
+    tar czf - -C "$HERE/vm-tools" . | cmd_ssh "$name" tar xzvf - -C /home/ubuntu
+    local resultdir="$(pwd)/output/$name"
+    mkdir -p "${resultdir}"
+    cmd_ssh "$name" sudo tar czf - -C "/home/ubuntu/output/" . | tar xzf - -C  "${resultdir}"
+    echo "output in $resultdir"
 }
 
 function usage ()
@@ -87,6 +120,9 @@ function usage ()
 
     evalsetup VMNAME
       sets up eval scripts on vm VMNAME
+
+    evalstart VMNAME
+      starts the eval script
 "
 }
 
@@ -126,7 +162,7 @@ CMD="${POSARGS[0]}"
 unset POSARGS[0]
 
 case "$CMD" in
-    create|ssh|evalsetup)
+    create|ssh|evalsetup|evalstart|evaltools|evalcollect)
 	cmd_"$CMD" "${POSARGS[@]}"
 	exit $?;
 	;;

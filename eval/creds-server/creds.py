@@ -244,19 +244,33 @@ class CredsApp(object):
     @EnableCORS(['POST'])
     def new_instance(self, uuid):
         """ an installed client wishes to acquire a new name """
+        remote_ip = B.request.environ.get('REMOTE_ADDR')
+        log.info("acquiring account for address: $%s  uuid: %s", remote_ip, uuid)
+
         assigned = self.clients_db.find(lambda x: x['uuid'] == uuid)
         if assigned:
+            log.info("found matching account for uuid %s: %s", uuid, assigned[0])
             return assigned[0]
-        else:
-            free_acct = self._find_free_account()
-            if not free_acct:
-                self._bork('no more accounts', status=503)
-            new_instance = free_acct.copy() # shallow
-            new_instance['uuid'] = uuid
-            new_instance['ip'] = B.request.environ.get('REMOTE_ADDR')
-            self.clients_db.insert(new_instance)
-            self.clients_db.save()
-            return new_instance
+
+        log.info("no account mathching uuid %s. trying by ip.", uuid)
+        assigned = self.clients_db.find(lambda x: x['ip'] == remote_ip)
+        if assigned:
+            log.info("found matching account by ip: %s", assigned[0])
+            return assigned[0]
+
+        log.info("allocating free account...")
+        free_acct = self._find_free_account()
+        if not free_acct:
+            log.info("no more free accounts")
+            self._bork('no more accounts', status=503)
+
+        new_instance = free_acct.copy() # shallow
+        new_instance['uuid'] = uuid
+        new_instance['ip'] = remote_ip
+        log.info("new account locked to uuid %s, ip %s: %s", uuid, remote_ip, new_instance)
+        self.clients_db.insert(new_instance)
+        self.clients_db.save()
+        return new_instance
 
     @EnableCORS(['GET'])
     def test_rate(self, per_second):

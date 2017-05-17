@@ -7,7 +7,9 @@ VOLUME /output
 COPY entrypoint.sh /usr/bin/entrypoint.sh
 
 RUN apt-get update -y && \
-    apt-get install -y curl xvfb python-pip imagemagick sudo
+    apt-get install -y curl xvfb python-pip imagemagick sudo \
+    bridge-utils iproute2 `: analyze network traffic` \
+    less nano
 
 # ubuntu user
 RUN sudo useradd -U -r -s /bin/bash -m ubuntu
