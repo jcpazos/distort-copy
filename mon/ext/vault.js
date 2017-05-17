@@ -253,6 +253,7 @@ window.Vault = (function () {
 
                 settings[sk] = acct;
 
+                UI.log("Creating new account id: " + userid);
                 // single user -- maybe set default username
                 resolve(this.set(settings).then(() => {
                     var users = this.get('usernames');
@@ -280,6 +281,7 @@ window.Vault = (function () {
                 if (!this.accountExists(userid)) {
                     throw new Fail(Fail.ENOENT, "invalid userid");
                 }
+                console.debug("changing active account to: " + userid);
                 resolve(this.set({'username': userid}).then(() => {
                     Events.emit("account:changed", userid);
                 }));
@@ -432,6 +434,7 @@ window.Vault = (function () {
                 var settings = {};
                 settings[sk] = acct;
                 resolve(this.set(settings).then(function () {
+                    UI.log("Saved account " + id + ". (silent:" + isSilent + ")");
                     if (!isSilent) {
                         Events.emit('account:updated', id);
                     }

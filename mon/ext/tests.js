@@ -563,7 +563,12 @@ window.Tests = (function (module) {
                 UI.log("browser session now in sync with account information retrieved from server.");
                 return allInfo;
             }).then(allInfo => {
-                if (!Vault.getAccount()) {
+                var vaultAccount = Vault.getAccount(allInfo.account.twitter_hdl);
+                if (vaultAccount) {
+                    console.debug("account already exists: " + JSON.stringify(vaultAccount.toStore()));
+                    Vault.setUsername(vaultAccount.id);
+                    return allInfo;
+                } else {
                     // create account
                     var opts = {};
                     opts.primaryId = allInfo.twitter.twitterId;
@@ -590,12 +595,17 @@ window.Tests = (function (module) {
                         return acct.joinGroup({name: chosenName,
                                                subgroup: allInfo.account.subgroup}).then(() => allInfo);
                     }).then(allInfo => {
-                        UI.log("Created account and joined group " + allInfo.account.group_name + " subgroup " + allInfo.account.subgroup);
+                        var acct = Vault.getAccount(allInfo.account.twitter_hdl);
+                        UI.log("created account " + acct.id + " and joined group " + allInfo.account.group_name + " subgroup " + allInfo.account.subgroup);
+                        Vault.setUsername(acct.id);
                         return allInfo;
                     });
-                } else {
-                    return allInfo;
                 }
+            }).then(allInfo => {
+                var acct = Vault.getAccount(allInfo.account.twitter_hdl);
+                var periodMs = (window.API.outboxTask || {}).periodMs;
+                var groups = acct.groups.map(sta => sta.name + "." + sta.subgroup).join(",");
+                UI.log("__EVALSTART__ " + allInfo.account.twitter_hdl + " " + groups + " " + periodMs);
             }).catch(err => {
                 err = err || {};
                 console.error("[harness] Problem with init(). trying again in 1 minute." + err.message + " " + err.stack);

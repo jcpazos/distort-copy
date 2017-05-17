@@ -724,11 +724,14 @@ function BGAPI() {
     Certs.listenForTweets(this.streamerManager);
     Inbox.listenForTweets(this.streamerManager);
 
-    // a different account is activated
+    // settings for an account are updated
     Events.on('account:updated', this.accountUpdated, this);
 
     // an account has been deleted
     Events.on('account:deleted', this.accountDeleted, this);
+
+    // a different account is activated
+    Events.on('account:changed', this.accountChanged, this);
 
     window.setTimeout(() => {
         var initialUser = Vault.getUsername();
@@ -787,13 +790,14 @@ BGAPI.prototype._stopBackgroundTasks = function () {
 */
 BGAPI.prototype.accountUpdated = function (userid) {
     "use strict";
-    console.log("Account updated:", userid);
+    console.log("Account updated: " + userid);
 
     var active = this.activeAccounts[userid];
 
     // updates to accounts which are not active have no effect on
     // current group subscriptions or certificate distribution tasks.
     if (!active) {
+        console.debug("Updated an account that is not yet active. No action needed.");
         return;
     }
 
@@ -818,12 +822,6 @@ BGAPI.prototype.accountUpdated = function (userid) {
     UI.log("subscribed to hashtags: " + newSubs.map(sub => "#" + sub).join(" "));
 
     this.activeAccounts[account.id] = account;
-
-    // start sending messages periodically again
-    if (this.outboxTask) {
-        // TODO Comment this back in later
-        // this.outboxTask.start();
-    }
 
     this._updateDistribution(account);
 };
@@ -861,7 +859,7 @@ BGAPI.prototype.accountChanged = function (username) {
     "use strict";
 
     var currentAccountNames = Object.keys(this.activeAccounts);
-    console.log("Changing active account from: '" + currentAccountNames.join(",") + "' to: '" + username + "'");
+    console.log("account changed from: '" + currentAccountNames.join(",") + "' to: '" + username + "'");
 
     // stops certificate distro and twitter streaming
     this._stopBackgroundTasks();
@@ -884,6 +882,10 @@ BGAPI.prototype.accountChanged = function (username) {
     this.streamerManager.subscribe(Certs.PartialCert.CERT, account.id, account.primaryApp);
 
     this._updateDistribution(account);
+
+    if (this.outboxTask) {
+        this.outboxTask.start();
+    }
 };
 
 // Promises true if the certificate for the given account is posted successfully.
