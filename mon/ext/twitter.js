@@ -179,16 +179,18 @@ var Twitter = (function (module) {
                             if (xhr.status >= 200 && xhr.status <= 400) {
                                 conn.connectedOn = performance.now();
                                 conn.retryCount = 0;
+                                console.debug("[twitter] twitter stream connected. result=" + xhr.status);
                                 conn.connected.resolve(conn);
                             } else if (xhr.status === 420) {
                                 // enhance your calm.
                                 conn.retryCount += 1;
-                                console.debug("opening stream failed with 420. retryCount=" +
+                                console.debug("[twitter] opening stream failed with 420. retryCount=" +
                                               conn.retryCount + ", trying again in " + (conn.retryCount * 300) + "s");
                                 conn.retryTimer = window.setTimeout(() => {
                                     conn.send();
                                 }, conn.retryCount * 300 * 1000);
                             } else {
+                                console.error("[twitter] server refused to open stream. status=" + xhr.status);
                                 return conn.connected.reject(Fail.fromVal(xhr).prefix("server refused to open stream"));
                             }
                         } else if (xhr.readyState > 2)  {
@@ -198,8 +200,10 @@ var Twitter = (function (module) {
                         }
                     };
                     xhr.onerror = (err) => {
+                        console.error("[twitter] xhr.onerror: " + (err || {}).stack);
                         conn.connected.reject(Fail.fromVal(err).prefix("failed to open stream"));
                     };
+                    console.debug("[twitter] connecting to: " + url + " track: " + track);
                     this.xhr.send(this.postData);
                 },
                 abort: function () {
@@ -620,9 +624,9 @@ var Twitter = (function (module) {
                     var beforeHashes = killStreamer.hashtags;
                     afterHashes = afterHashes.concat(beforeHashes);
                     this.removeStreamer(killStreamer);
-                    console.log("Growing existing streamer from", beforeHashes, "to", afterHashes);
+                    console.debug("[twitter] growing existing streamer from [" + beforeHashes.join(",") + "] to [" + afterHashes.join(",") + "]");
                 } else {
-                    console.log("Creating new streamer for", afterHashes);
+                    console.debug("[twitter] creating new streamer for [" + afterHashes.join(",")  + "]");
                 }
 
 
