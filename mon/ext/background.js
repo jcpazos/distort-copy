@@ -779,9 +779,9 @@ BGAPI.prototype._stopBackgroundTasks = function () {
         });
     });
 
-    if (this.outboxTask) {
-        this.outboxTask.stop();
-    }
+    // if (this.outboxTask) {
+    //     this.outboxTask.stop();
+    // }
 };
 
 

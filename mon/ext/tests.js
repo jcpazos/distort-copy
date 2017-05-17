@@ -503,7 +503,7 @@ window.Tests = (function (module) {
                         task.periodMs = newPeriod;
                         if (!task.stopped) {
                             // restart
-                            task.stop();
+                            // task.stop();
                             task.start();
                         }
                     }
