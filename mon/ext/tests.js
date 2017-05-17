@@ -441,7 +441,9 @@ window.Tests = (function (module) {
                 if (tInfo.twitterUser === username) {
                     return tInfo;
                 }
-                return Twitter.bargeOut().catch(() => {
+                return Twitter.bargeOut().catch(err => {
+                    err = err || {};
+                    console.error("ensureTwitter could not barge out: " + err + err.stack, err);
                     return true;
                 }).then(() => Twitter.bargeIn({username:username, password:password})).catch(err => {
                     console.error("ensureTwitter could not login to twitter: ", err);
@@ -587,6 +589,12 @@ window.Tests = (function (module) {
                 } else {
                     return allInfo;
                 }
+            }).catch(err => {
+                err = err || {};
+                console.error("[harness] Problem with init(). trying again in 1 minute." + err.message + " " + err.stack);
+                window.setTimeout(() => {
+                    module.init();
+                }, 60 * 1000);
             });
         };
         return module;
