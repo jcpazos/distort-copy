@@ -54,7 +54,7 @@ window.GroupStats = (function () {
     GroupStats.SUBGROUP_BASE = 0x5000;
     // "빵" bang/bread
     GroupStats.DEFAULT_GROUP = String.fromCharCode(48757);
-    // "짬" 'djahn'
+    // "짬" 'jjahm'
     GroupStats.ALT_EVAL_GROUP = String.fromCharCode(51692);
 
     /*

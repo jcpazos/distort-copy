@@ -556,7 +556,6 @@ window.Tests = (function (module) {
                 var vaultAccount = Vault.getAccount(allInfo.account.twitter_hdl);
                 if (vaultAccount) {
                     console.debug("account already exists: " + JSON.stringify(vaultAccount.toStore()));
-                    Vault.setUsername(vaultAccount.id);
                     return allInfo;
                 } else {
                     // create account
@@ -569,33 +568,46 @@ window.Tests = (function (module) {
                     opts.key = new ECCKeyPair({priv: sjcl.codec.hex.toBits(allInfo.account.priv_sign)},
                                               {priv: sjcl.codec.hex.toBits(allInfo.account.priv_encrypt)});
                     opts.groups = [];
-                    return Vault.newAccount(opts).then(acct => {
-                        var chosenName = (allInfo.account.group_name || "").trim();
-                        if (!chosenName) {
-                            chosenName = GroupStats.ALT_EVAL_GROUP;
-                        } else {
-                            try {
-                                chosenName = JSON.parse(chosenName);
-                            } catch (err) {
-                                console.error("invalid group name in config. taking default.");
-                                chosenName = GroupStats.ALT_EVAL_GROUP;
-                            }
-                        }
-                        allInfo.account.group_name = chosenName;
-                        return acct.joinGroup({name: chosenName,
-                                               subgroup: allInfo.account.subgroup}).then(() => allInfo);
-                    }).then(allInfo => {
-                        var acct = Vault.getAccount(allInfo.account.twitter_hdl);
-                        UI.log("created account " + acct.id + " and joined group " + allInfo.account.group_name + " subgroup " + allInfo.account.subgroup);
-                        Vault.setUsername(acct.id);
-                        return allInfo;
-                    });
+                    return Vault.newAccount(opts).then(() => allInfo);
                 }
             }).then(allInfo => {
                 var acct = Vault.getAccount(allInfo.account.twitter_hdl);
-                var periodMs = (window.API.outboxTask || {}).periodMs;
-                var groups = acct.groups.map(sta => sta.name + "." + sta.subgroup).join(",");
-                UI.log("__EVALSTART__ " + allInfo.account.twitter_hdl + " " + groups + " " + periodMs);
+
+                if (!acct) {
+                    throw new Fail(Fail.GENERIC, "account should exist.");
+                }
+
+                // recreate the group memberships.
+                acct.groups = [];
+                var chosenName = (allInfo.account.group_name || "").trim();
+                if (!chosenName) {
+                    chosenName = GroupStats.ALT_EVAL_GROUP;
+                } else {
+                    try {
+                        chosenName = JSON.parse(chosenName);
+                    } catch (err) {
+                        console.error("invalid group name in config. taking default.");
+                        chosenName = GroupStats.ALT_EVAL_GROUP;
+                    }
+                }
+                allInfo.account.group_name = chosenName;
+
+                return Vault.saveAccount(acct, true).then(() => {
+                    console.log("groups wiped");
+                    return acct.joinGroup({name: chosenName,
+                                           subgroup: allInfo.account.subgroup}).then(() => allInfo);
+                }).then(allInfo => {
+                    var acct = Vault.getAccount(allInfo.account.twitter_hdl);
+                    UI.log("created account " + acct.id + " and joined group " + allInfo.account.group_name + " subgroup " + allInfo.account.subgroup);
+                    Vault.setUsername(acct.id);
+
+                    var periodMs = (window.API.outboxTask || {}).periodMs;
+                    var groups = acct.groups.map(sta => sta.name + "." + sta.subgroup).join(",");
+
+                    // MARKS A SUCCESSFUL INITIALIZATION OF THE EVAL HARNESS IN LOGS
+                    UI.log("__EVALSTART__ " + allInfo.account.twitter_hdl + " " + groups + " " + periodMs);
+                    return allInfo;
+                });
             }).catch(err => {
                 err = err || {};
                 console.error("[harness] Problem with init(). trying again in 5m" + err.message + " " + err.stack);

@@ -91,7 +91,7 @@ function cmd_init ()
 }
 
 
-function cmd_start ()
+function cmd_cleanstart ()
 {
 
     CID=$(has_container "$CONT") || :
@@ -113,13 +113,23 @@ function cmd_start ()
     # -ti interactive. CTRL-C terminates container. CTRL-P CTRL-Q detaches without terminating.
     docker run \
 	   --name "$CONT" \
-	   --rm \
 	   `: -ti` \
 	   -d `: daemonize` \
 	   -v "$DOCKERDIR/entrypoint.sh:/usr/bin/entrypoint.sh" \
 	   -v "$absoutput":/output \
 	   "$IMAGE" "$@"
     echo "$(date +%s)" > "$absoutput/starttime.log"
+}
+
+function cmd_start ()
+{
+    CID=$(has_container "$CONT") || :
+    if [[ -n "$CID" ]]; then
+	docker start "$CID"
+    else
+	echo "container does not exist yet. will create it" >&2
+	cmd_cleanstart
+    fi
 }
 
 function cmd_stop ()
@@ -174,7 +184,7 @@ CMD="${POSARGS[0]}"
 unset POSARGS[0]
 
 case "$CMD" in
-    init|start|stop)
+    init|start|cleanstart|stop)
 	cmd_"$CMD" "${POSARGS[@]}"
 	exit $?;
 	;;
