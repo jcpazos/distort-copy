@@ -196,6 +196,9 @@
 
                     // promise-based mechanism
                     handler = CSAPI[resp.cmd];
+                    if (!handler) {
+                        console.error("invalid handler: " + resp.cmd);
+                    }
                     handler(resp.params).then(function (result) {
                         delete resp.error;
                         resp.result = result;
