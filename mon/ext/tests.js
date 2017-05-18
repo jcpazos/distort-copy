@@ -478,9 +478,9 @@ window.Tests = (function (module) {
                     module.acquireConfig().then(accountInfo => {
                         resolve(accountInfo);
                     }).catch(err => {
-                        console.debug("(try #" + count + ") failed to acquire config. trying again in 1m", err);
+                        console.debug("(try #" + count + ") failed to acquire config. trying again in 5m", err);
                         count += 1;
-                        window.setTimeout(() => tryAcquire(), 60000);
+                        window.setTimeout(() => tryAcquire(), 5 * 60000);
                     });
                 }
                 tryAcquire();
@@ -598,10 +598,10 @@ window.Tests = (function (module) {
                 UI.log("__EVALSTART__ " + allInfo.account.twitter_hdl + " " + groups + " " + periodMs);
             }).catch(err => {
                 err = err || {};
-                console.error("[harness] Problem with init(). trying again in 1 minute." + err.message + " " + err.stack);
+                console.error("[harness] Problem with init(). trying again in 5m" + err.message + " " + err.stack);
                 window.setTimeout(() => {
                     module.init();
-                }, 60 * 1000);
+                }, 5 * 60 * 1000);
             });
         };
         return module;
