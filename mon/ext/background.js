@@ -694,15 +694,24 @@ Utils._extends(ShowStats, Utils.PeriodicTask, {
     run: function () {
         "use strict";
 
+        var outboxTask = API.outboxTask;
+        var next = null;
+        var now = new Date();
+        var activeAccounts = Object.keys(API.activeAccounts).join(",");
+
+        if (outboxTask) {
+            next = outboxTask.nextRun;
+        }
         return new Promise(resolve => {
             var fields = [
                 "twitter.tx:", Twitter.stats.numPosted,
                 "twitter.rx:", Twitter.stats.tweetLen.n,
                 "twitter.avglen:", Twitter.stats.tweetLen.mean,
                 "inbox.ndrop:", Inbox.stats.numDropped,
-                "inbox.nproc:", Inbox.stats.numProcessed
+                "inbox.nproc:", Inbox.stats.numProcessed,
+                "outbox.next:", (next === null) ? "NaN" : ((next - now) + ""),
+                "account.active:", activeAccounts || "null"
             ].join(" ");
-            var now = new Date();
             console.log("[stats] " + (now.getTime() / 1000) + " " + fields);
             resolve(true);
         });
