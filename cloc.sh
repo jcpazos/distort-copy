@@ -21,11 +21,13 @@ HERE=$(cd $(dirname "$0") && pwd)
 EXT=${HERE}/mon/ext
 
 EXCLUDE_DIRS=(
+    "$HERE"/venv
     "$HERE"/.git
     "$HERE"/twistor_client
     "$HERE"/sjcl
     "$HERE"/lint
     "$HERE"/test
+    "$HERE"/crless
     "$EXT"/logo
     "$EXT"/fonts
     "$EXT"/closure-compiler

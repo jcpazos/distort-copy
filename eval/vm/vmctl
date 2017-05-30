@@ -80,6 +80,14 @@ function cmd_evalstart ()
     cmd_ssh "$name" /home/ubuntu/run-client.sh start
 }
 
+function cmd_evalcleanstart ()
+{
+    local readonly name="$1"
+    shift
+    cmd_evaltools "$name"
+    cmd_ssh "$name" /home/ubuntu/run-client.sh cleanstart
+}
+
 function cmd_evalstop ()
 {
     local readonly name="$1"
@@ -128,10 +136,19 @@ function usage ()
       sets up eval scripts on vm VMNAME
 
     evalstart VMNAME
-      (re)starts the eval script from scratch.
+      starts the eval script using a previously stopped container -- if any
+      otherwise is like evalcleanstart
+
+      the extension will not be reinstalled. -- it will reuse the same extension
+      already installed.
+
+    evalcleanstart VMNAME
+
+      starts the eval script using a brand new container and chrome profile.
 
       if the client container is running remotely, it will be killed and deleted.
-      the user-data-directory will be wiped.
+      the user-data-directory will be wiped. this will force the re-installation
+      of the extension
 
     evalstop VMNAME
        stops the client container from running. it will stick around
@@ -183,7 +200,7 @@ unset POSARGS[0]
 
 set -x
 case "$CMD" in
-    create|ssh|evalsetup|evalstart|evaltools|evalcollect|evalstop|evaltail)
+    create|ssh|evalsetup|evalstart|evaltools|evalcollect|evalcleanstart|evalstop|evaltail)
 	cmd_"$CMD" "${POSARGS[@]}"
 	exit $?;
 	;;
