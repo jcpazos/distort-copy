@@ -350,6 +350,7 @@ window.Outbox = (function (module) {
                                     pack.Trunc('unused', {len: M.UNUSED_BITS}));
 
             var body_bits = twistor_body.toBits({debug: module.DEBUG});
+            // var res = this.to.key.verifySignature(ciphertext, pack.walk(twistor_body, 'twistor_body', 'signature'));
             var b16Encoding = pack.Base16k('b16').fromBits(body_bits)[0].val;
             var tweet = [
                 this._getPostGroups(subgroupPath, strictGroups),

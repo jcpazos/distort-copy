@@ -256,7 +256,7 @@ window.Tests = (function (module) {
         // var myCert = Certs.UserCert.fromAccount(Vault.getAccount());
         var myAcct = Vault.getAccount();
         if (!myAcct) {
-            myAcct = Vault.newAccount({
+            myAcct = new Vault.Account({
                 primaryId: "836492558473674752",
                 primaryHandle: "strangerglove",
                 secondaryHandle: "alexristich"
@@ -273,25 +273,10 @@ window.Tests = (function (module) {
             status: Certs.UserCert.STATUS_OK
         });
 
-        // function Account(opts) {
-        //     this.primaryId = opts.primaryId || null;           // string userid (e.g. large 64 integer as string)
-        //     this.primaryHandle = opts.primaryHandle || null;   // string username (e.g. twitter handle)
-        //     this.primaryApp = opts.primaryApp || null;         // dict   application/dev credentials
-        //     //this.secondaryId = opts.secondaryId || null;       // string userid for github
-        //     this.secondaryHandle = opts.secondaryHandle || null;  // string username for github
-        //
-        //     this.lastDistributeOn = opts.lastDistributeOn || null; // last time the cert was distributed.
-        //
-        //     this.key = opts.key || new ECCKeyPair();
-        //
-        //     // array of GroupStats
-        //     this.groups = opts.groups || [];
-        //
-        //     // when this account is active, distribute certs (default true)
-        //     this.distributionEnabled = (opts.distributionEnabled === undefined)?true:(!!opts.distributionEnabled);
-
         var msg = Outbox.Message.compose(myCert, "Han shot first.", myAcct);
         var text = msg.encodeForTweet(myCert.groups, false);
+
+
 
         var tweet = JSON.parse(module.twist_example);
         tweet.text = text;
@@ -306,11 +291,16 @@ window.Tests = (function (module) {
 
         var stats = new Stats.Dispersion({supportMedian: true});
 
+        var certLookupFn = function(cert) {
+            return new Promise((resolve, reject) => {
+                resolve(myCert);
+            });
+        };
 
         for (var i=0; i<iterations; i++) {
             var innerStart = performance.now();
-            for (var j=0; j<100; j++) {
-                Inbox.processTweet(tweetInfo);
+            for (var j=0; j<1; j++) {
+                Inbox.processTweet(tweetInfo, certLookupFn);
             }
             stats.update(performance.now() - innerStart);
         }

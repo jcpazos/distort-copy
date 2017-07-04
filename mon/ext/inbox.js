@@ -89,6 +89,9 @@ window.Inbox = (function (module) {
       Checks a tweet to see if the received tweet is designated for the current user or not. If the
       tweet is intended for this user it is passed along to the inbox, else it is dropped.
 
+      certLookupFn is a function taking a twitterId, that promises a cert or null for that
+      twitter id.
+
       promises:
           null  if the tweet is not for one of the accounts configured in this client
 
@@ -100,7 +103,10 @@ window.Inbox = (function (module) {
           message: the plaintext message received
          }
     */
-    module.processTweet = function (tweetInfo) {
+    module.processTweet = function (tweetInfo, certLookupFn) {
+        certLookupFn = (certLookupFn === undefined) ?
+            ((twitterId) => Certs.Store.loadCertsById(twitterId)) : certLookupFn;
+
         // the tweets sent by Twitter
         var tweet = tweetInfo.tweet;
 
@@ -136,11 +142,11 @@ window.Inbox = (function (module) {
             // 2. define the struct for the message, and unpack:
 
             var fmt = pack('twist',
-                           pack.Number('version', {len: 8}),
-                           pack.Bits('eg1', {len: KeyClasses.ECC_DEFLATED_CIPHER_BITS}),
-                           pack.Bits('eg2', {len: KeyClasses.ECC_DEFLATED_CIPHER_BITS}),
-                           pack.Bits('eg3', {len: KeyClasses.ECC_DEFLATED_CIPHER_BITS}),
-                           pack.Bits('signaturebits', {len: KeyClasses.ECC_SIGN_BITS}));
+                pack.Number('version', {len: 8}),
+                pack.Bits('eg1', {len: KeyClasses.ECC_DEFLATED_CIPHER_BITS}),
+                pack.Bits('eg2', {len: KeyClasses.ECC_DEFLATED_CIPHER_BITS}),
+                pack.Bits('eg3', {len: KeyClasses.ECC_DEFLATED_CIPHER_BITS}),
+                pack.Bits('signaturebits', {len: KeyClasses.ECC_SIGN_BITS}));
             var parsed = fmt.fromBits(bits);
             var data = parsed[0];
             var unusedBits = data[1];
@@ -154,19 +160,22 @@ window.Inbox = (function (module) {
             var account = Vault.getAccount();
             var decryptedBits1 = account.key.decryptEGCipher(cipherInfo1.cipher, {outEncoding: 'bits'});
 
-                //decryptedBits1 has a 64bit recipient id, followed by 1B for the usermessage length, followed by the first 12B of the user's message.
+            //decryptedBits1 has a 64bit recipient id, followed by 1B for the usermessage length, followed by the first 12B of the user's message.
 
             // 4. unpack the recipient id from the 1st point
 
             var fmtBlock1 = pack('block1',
-                                 pack.Decimal('rcptid', {len: 64}));
-                                 // don't care about the rest for now
+                pack.Decimal('rcptid', {len: 64}));
+            // don't care about the rest for now
             var block1Data = fmtBlock1.fromBits(decryptedBits1)[0];
             var recipientId = pack.walk(block1Data, 'block1', 'rcptid');
 
-            // check if recipientId === account.primaryId
-            // console.log("RECIPIENT ID: " + recipientId);
+            console.log("RECIPIENT ID: " + recipientId);
 
+            if (recipientId !== account.primaryId) {
+                // The twist is not intended for us so we can safely drop it.
+                resolve(null);
+            }
 
             // if we have a match. check the signature.  recompute the
             // signature text (as is done in outbox.js) and verify
@@ -175,8 +184,45 @@ window.Inbox = (function (module) {
             // bits of the 1st, and do another unpack to extract the message (utf-8).
             // log it to the console, or the UI.log.
 
-            resolve(null);
-        });
+            var cipherBits2 = pack.walk(data, 'twist', 'eg2');
+            var cipherBits3 = pack.walk(data, 'twist', 'eg3');
+
+            var twistor_epoch = Outbox.Message.twistorEpoch();
+            var version = pack.walk(data, 'twist', 'version');
+            var BA = sjcl.bitArray;
+            var ctTemp = BA.concat(cipherBits1, cipherBits2);
+            var ciphertext = BA.concat(ctTemp, cipherBits3);
+
+            var epochBits = pack.Number('epoch', {len: 32}, twistor_epoch).toBits();
+            var versionBits = pack.Number('version', version).toBits();
+
+            var msgTemp = BA.concat(epochBits, versionBits);
+            var message = BA.concat(msgTemp, ciphertext);
+            var signature = pack.walk(data, 'twist', 'signaturebits');
+
+            var senderId = tweet.user.id_str;
+            if (tweet.user.id === "863161657417121800") {
+                // Sender is from twist-example.json and this is a
+                // sample tweet.
+                senderId = Vault.getAccount().primaryId;
+            }
+
+            resolve(certLookupFn(senderId).then(cert => {
+                var result = cert.key.verifySignature(message, signature, {encoding: 'bits', sigEncoding: 'bits'});
+                return result;
+            }).catch(err => {
+                console.log("no cert found for twitterid " + senderId);
+                return null;
+            }));
+        })
+    };
+
+    module.getSenderId = function(tweet, testMode) {
+        testMode = testMode === undefined ? false : !!testMode;
+        if (testMode) {
+            return Vault.getAccount().primaryId;
+        }
+        return tweet.user.id;
     };
 
     module.onTweet = function (tweetInfo) {
