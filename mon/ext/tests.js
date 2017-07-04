@@ -36,9 +36,9 @@
 window.Tests = (function (module) {
     "use strict";
 
-    module.twist_example = '{"contributors": null, "truncated": false, "text": "#\ube75\u5000 #\ube75\u5001 #\ube75\u5004 #\ube75\u500a #\ube75\u5016 #\ube75\u502d \u80c4\u5041\u566e\u6f68\u88fa\u61d3\u630a\u6b3a\u51e8\u7324\u72f4\u68c8\u6298\u77ca\u55c5\u6441\u77fc\u7ae9\u8a22\u75d8\u7b9c\u7c68\u699c\u6201\u8c45\u7005\u6a82\u5348\u8cf4\u5603\u5175\u5505\u6fd6\u5305\u83fe\u6236\u7c20\u5372\u8c41\u8dda\u5e15\u80fe\u66fa\u840e\u5a28\u86e1\u8552\u6c59\u7dac\u53d8\u71f9\u6811\u6fd4\u5d57\u6227\u6200\u675d\u8f03\u5cb7\u6a15\u8c90\u5b84\u7497\u8982\u58ca\u63af\u86f5\u651c\u51c7\u82b0\u5a79\u8383\u7b83\u7128\u7574\u5f5b\u897f\u6dd2\u698f\u8efc\u56a3\u701b\u8679\u5fa7\u6ff6\u88a6\u6993\u82ba\u662d\u7416\u5c47\u8ea5\u544a\u691f\u63ee\u8cac\u7ceb\u75fb\u8200\u8d65\u8733\u7108\u57cc\u5098\u6343\u68a8\u6109\u78ae\u866e\u55eb\u7d14\u893d\u78ad", "is_quote_status": false, "in_reply_to_status_id": null, "id": 863448139549753300, "favorite_count": 0, "source": "<a href=\"http://twitter.com\" rel=\"nofollow\">Twitter Web Client</a>", "retweeted": false, "coordinates": null, "timestamp_ms": "1494697053216", "entities": {"user_mentions": [], "symbols": [], "hashtags": [{"indices": [0, 3], "text": "\ube75\u5000"}, {"indices": [4, 7], "text": "\ube75\u5001"}, {"indices": [8, 11], "text": "\ube75\u5004"}, {"indices": [12, 15], "text": "\ube75\u500a"}, {"indices": [16, 19], "text": "\ube75\u5016"}, {"indices": [20, 23], "text": "\ube75\u502d"}], "urls": []}, "in_reply_to_screen_name": null, "id_str": "863448139549753344", "retweet_count": 0, "in_reply_to_user_id": null, "favorited": false, "user": {"follow_request_sent": null, "profile_use_background_image": true, "default_profile_image": false, "id": 863161657417121800, "verified": false, "profile_image_url_https": "https://pbs.twimg.com/profile_images/863163651330514944/0MWk-LGF_normal.jpg", "profile_sidebar_fill_color": "DDEEF6", "profile_text_color": "333333", "followers_count": 0, "profile_sidebar_border_color": "C0DEED", "id_str": "863161657417121792", "profile_background_color": "F5F8FA", "listed_count": 0, "profile_background_image_url_https": "", "utc_offset": null, "statuses_count": 52, "description": "A big tank fan. I love tanks. Favorite movie: Fury.\n\nI\'m also a butcher by profession.", "friends_count": 0, "location": "Richmond, British Columbia", "profile_link_color": "1DA1F2", "profile_image_url": "http://pbs.twimg.com/profile_images/863163651330514944/0MWk-LGF_normal.jpg", "following": null, "geo_enabled": false, "profile_banner_url": "https://pbs.twimg.com/profile_banners/863161657417121792/1494629243", "profile_background_image_url": "", "name": "twaktuk2017", "lang": "en-gb", "profile_background_tile": false, "favourites_count": 0, "screen_name": "twaktuk2017", "notifications": null, "url": null, "created_at": "Fri May 12 22:39:10 +0000 2017", "contributors_enabled": false, "time_zone": null, "protected": false, "default_profile": true, "is_translator": false}, "geo": null, "in_reply_to_user_id_str": null, "lang": "ja", "created_at": "Sat May 13 17:37:33 +0000 2017", "filter_level": "low", "in_reply_to_status_id_str": null, "place": null}';
+    module.twist_example = '{"contributors": null, "truncated": false, "text": "#\ube75\u5000 #\ube75\u5001 #\ube75\u5004 #\ube75\u500a #\ube75\u5016 #\ube75\u502d \u80c4\u5041\u566e\u6f68\u88fa\u61d3\u630a\u6b3a\u51e8\u7324\u72f4\u68c8\u6298\u77ca\u55c5\u6441\u77fc\u7ae9\u8a22\u75d8\u7b9c\u7c68\u699c\u6201\u8c45\u7005\u6a82\u5348\u8cf4\u5603\u5175\u5505\u6fd6\u5305\u83fe\u6236\u7c20\u5372\u8c41\u8dda\u5e15\u80fe\u66fa\u840e\u5a28\u86e1\u8552\u6c59\u7dac\u53d8\u71f9\u6811\u6fd4\u5d57\u6227\u6200\u675d\u8f03\u5cb7\u6a15\u8c90\u5b84\u7497\u8982\u58ca\u63af\u86f5\u651c\u51c7\u82b0\u5a79\u8383\u7b83\u7128\u7574\u5f5b\u897f\u6dd2\u698f\u8efc\u56a3\u701b\u8679\u5fa7\u6ff6\u88a6\u6993\u82ba\u662d\u7416\u5c47\u8ea5\u544a\u691f\u63ee\u8cac\u7ceb\u75fb\u8200\u8d65\u8733\u7108\u57cc\u5098\u6343\u68a8\u6109\u78ae\u866e\u55eb\u7d14\u893d\u78ad", "is_quote_status": false, "in_reply_to_status_id": null, "id": 863448139549753300, "favorite_count": 0, "source": "<a href=\\\"http://twitter.com\\\" rel=\\\"nofollow\\\">Twitter Web Client</a>", "retweeted": false, "coordinates": null, "timestamp_ms": "1494697053216", "entities": {"user_mentions": [], "symbols": [], "hashtags": [{"indices": [0, 3], "text": "\ube75\u5000"}, {"indices": [4, 7], "text": "\ube75\u5001"}, {"indices": [8, 11], "text": "\ube75\u5004"}, {"indices": [12, 15], "text": "\ube75\u500a"}, {"indices": [16, 19], "text": "\ube75\u5016"}, {"indices": [20, 23], "text": "\ube75\u502d"}], "urls": []}, "in_reply_to_screen_name": null, "id_str": "863448139549753344", "retweet_count": 0, "in_reply_to_user_id": null, "favorited": false, "user": {"follow_request_sent": null, "profile_use_background_image": true, "default_profile_image": false, "id": 863161657417121800, "verified": false, "profile_image_url_https": "https://pbs.twimg.com/profile_images/863163651330514944/0MWk-LGF_normal.jpg", "profile_sidebar_fill_color": "DDEEF6", "profile_text_color": "333333", "followers_count": 0, "profile_sidebar_border_color": "C0DEED", "id_str": "863161657417121792", "profile_background_color": "F5F8FA", "listed_count": 0, "profile_background_image_url_https": "", "utc_offset": null, "statuses_count": 52, "description": "A big tank fan. I love tanks. Favorite movie: Fury.\\n\\nI\'m also a butcher by profession.", "friends_count": 0, "location": "Richmond, British Columbia", "profile_link_color": "1DA1F2", "profile_image_url": "http://pbs.twimg.com/profile_images/863163651330514944/0MWk-LGF_normal.jpg", "following": null, "geo_enabled": false, "profile_banner_url": "https://pbs.twimg.com/profile_banners/863161657417121792/1494629243", "profile_background_image_url": "", "name": "twaktuk2017", "lang": "en-gb", "profile_background_tile": false, "favourites_count": 0, "screen_name": "twaktuk2017", "notifications": null, "url": null, "created_at": "Fri May 12 22:39:10 +0000 2017", "contributors_enabled": false, "time_zone": null, "protected": false, "default_profile": true, "is_translator": false}, "geo": null, "in_reply_to_user_id_str": null, "lang": "ja", "created_at": "Sat May 13 17:37:33 +0000 2017", "filter_level": "low", "in_reply_to_status_id_str": null, "place": null}';
 
-    module.cert_example = '{"contributors": null, "truncated": false, "text": "#t1crt #\ube75\u500a \u54c0\u699d\u66e7\u6185\u7d62\u6bdd\u6726\u75b9\u7520\u5808\u5202\u5080\u7020\u5808\u5202\u5080\u7020\u5808\u5202\u5080\u7020\u5808\u5202\u5266\u77dd\u51a9\u8572\u8d28\u7f4a\u8e45\u7068\u5199\u76c2\u5ba6\u764d\u8359\u70b3\u6d8b\u8438\u5809\u826d\u899b\u5b7c\u678a\u7953\u7550\u6234\u6341\u52cc\u758f\u8610\u845e\u60bb\u76d8\u8d07\u8b42\u82a6\u59c2\u5b44\u5180\u6c89\u60e1\u76e1\u6866\u79e7\u88ce\u739c\u7666\u8b26\u7697\u5053\u87d2\u6580\u713c\u7222\u6126\u5ca9\u6f7b\u6000\u5164\u66b4\u6082\u63a7\u8f05\u5ed2\u75df\u8fec\u5104\u7e00\u61bd\u857e\u6384\u8e06\u740f\u8625\u8d5a\u6698\u5526\u8596\u68af\u8ecc\u8ebd\u84e1\u8596\u6ec5\u7017\u6e52\u7ec6\u6a82\u77e8\u6f70", "is_quote_status": false, "in_reply_to_status_id": null, "id": 863293161656819700, "favorite_count": 0, "source": "<a href=\"http://twitter.com\" rel=\"nofollow\">Twitter Web Client</a>", "retweeted": false, "coordinates": null, "timestamp_ms": "1494660103607", "entities": {"user_mentions": [], "symbols": [], "hashtags": [{"indices": [0, 6], "text": "t1crt"}, {"indices": [7, 10], "text": "\ube75\u500a"}], "urls": []}, "in_reply_to_screen_name": null, "id_str": "863293161656819712", "retweet_count": 0, "in_reply_to_user_id": null, "favorited": false, "user": {"follow_request_sent": null, "profile_use_background_image": true, "default_profile_image": false, "id": 863161657417121800, "verified": false, "profile_image_url_https": "https://pbs.twimg.com/profile_images/863163651330514944/0MWk-LGF_normal.jpg", "profile_sidebar_fill_color": "DDEEF6", "profile_text_color": "333333", "followers_count": 0, "profile_sidebar_border_color": "C0DEED", "id_str": "863161657417121792", "profile_background_color": "F5F8FA", "listed_count": 0, "profile_background_image_url_https": "", "utc_offset": null, "statuses_count": 4, "description": null, "friends_count": 0, "location": null, "profile_link_color": "1DA1F2", "profile_image_url": "http://pbs.twimg.com/profile_images/863163651330514944/0MWk-LGF_normal.jpg", "following": null, "geo_enabled": false, "profile_banner_url": "https://pbs.twimg.com/profile_banners/863161657417121792/1494629243", "profile_background_image_url": "", "name": "twaktuk2017", "lang": "en-gb", "profile_background_tile": false, "favourites_count": 0, "screen_name": "twaktuk2017", "notifications": null, "url": null, "created_at": "Fri May 12 22:39:10 +0000 2017", "contributors_enabled": false, "time_zone": null, "protected": false, "default_profile": true, "is_translator": false}, "geo": null, "in_reply_to_user_id_str": null, "lang": "ja", "created_at": "Sat May 13 07:21:43 +0000 2017", "filter_level": "low", "in_reply_to_status_id_str": null, "place": null}';
+    module.cert_example = '{"contributors": null, "truncated": false, "text": "#t1crt #\ube75\u500a \u54c0\u699d\u66e7\u6185\u7d62\u6bdd\u6726\u75b9\u7520\u5808\u5202\u5080\u7020\u5808\u5202\u5080\u7020\u5808\u5202\u5080\u7020\u5808\u5202\u5266\u77dd\u51a9\u8572\u8d28\u7f4a\u8e45\u7068\u5199\u76c2\u5ba6\u764d\u8359\u70b3\u6d8b\u8438\u5809\u826d\u899b\u5b7c\u678a\u7953\u7550\u6234\u6341\u52cc\u758f\u8610\u845e\u60bb\u76d8\u8d07\u8b42\u82a6\u59c2\u5b44\u5180\u6c89\u60e1\u76e1\u6866\u79e7\u88ce\u739c\u7666\u8b26\u7697\u5053\u87d2\u6580\u713c\u7222\u6126\u5ca9\u6f7b\u6000\u5164\u66b4\u6082\u63a7\u8f05\u5ed2\u75df\u8fec\u5104\u7e00\u61bd\u857e\u6384\u8e06\u740f\u8625\u8d5a\u6698\u5526\u8596\u68af\u8ecc\u8ebd\u84e1\u8596\u6ec5\u7017\u6e52\u7ec6\u6a82\u77e8\u6f70", "is_quote_status": false, "in_reply_to_status_id": null, "id": 863293161656819700, "favorite_count": 0, "source": "<a href=\\\"http://twitter.com\\\" rel=\\\"nofollow\\\">Twitter Web Client</a>", "retweeted": false, "coordinates": null, "timestamp_ms": "1494660103607", "entities": {"user_mentions": [], "symbols": [], "hashtags": [{"indices": [0, 6], "text": "t1crt"}, {"indices": [7, 10], "text": "\ube75\u500a"}], "urls": []}, "in_reply_to_screen_name": null, "id_str": "863293161656819712", "retweet_count": 0, "in_reply_to_user_id": null, "favorited": false, "user": {"follow_request_sent": null, "profile_use_background_image": true, "default_profile_image": false, "id": 863161657417121800, "verified": false, "profile_image_url_https": "https://pbs.twimg.com/profile_images/863163651330514944/0MWk-LGF_normal.jpg", "profile_sidebar_fill_color": "DDEEF6", "profile_text_color": "333333", "followers_count": 0, "profile_sidebar_border_color": "C0DEED", "id_str": "863161657417121792", "profile_background_color": "F5F8FA", "listed_count": 0, "profile_background_image_url_https": "", "utc_offset": null, "statuses_count": 4, "description": null, "friends_count": 0, "location": null, "profile_link_color": "1DA1F2", "profile_image_url": "http://pbs.twimg.com/profile_images/863163651330514944/0MWk-LGF_normal.jpg", "following": null, "geo_enabled": false, "profile_banner_url": "https://pbs.twimg.com/profile_banners/863161657417121792/1494629243", "profile_background_image_url": "", "name": "twaktuk2017", "lang": "en-gb", "profile_background_tile": false, "favourites_count": 0, "screen_name": "twaktuk2017", "notifications": null, "url": null, "created_at": "Fri May 12 22:39:10 +0000 2017", "contributors_enabled": false, "time_zone": null, "protected": false, "default_profile": true, "is_translator": false}, "geo": null, "in_reply_to_user_id_str": null, "lang": "ja", "created_at": "Sat May 13 07:21:43 +0000 2017", "filter_level": "low", "in_reply_to_status_id_str": null, "place": null}';
 
     module.compute_roots = function (n, repeats) {
         n = (n === undefined)? 1000 : n;
@@ -241,9 +241,14 @@ window.Tests = (function (module) {
         var url = "http://localhost:60000/test-rate/";
         xhr.open("GET", url + rate, true);
 
-        var startIdx = 0;
-        var endIdx = 0;
-        var currIdx = 0;
+        var iteration = 0;
+
+        var myCert = Certs.UserCert.fromAccount(Vault.getAccount());
+        var msg = Outbox.Message.compose(myCert, "Han shot first.");
+        var text = msg.encodeForTweet(myCert.groups);
+
+        var tweet = JSON.parse(module.twist_example);
+        // tweet.text = text;
 
         xhr.onreadystatechange = function () {
             if (xhr.readyState === 3) {
@@ -263,31 +268,29 @@ window.Tests = (function (module) {
                 //
                 // > (/\n[^\n]*$/g).exec("abc")
                 // null
-                while (1) {
-                    var currChar = xhr.responseText.charAt(currIdx);
-                    if (currChar !== '') {
-                        currIdx += 1;
-                        if (currChar == '\n') {
-                            if (endIdx !== 0) {
-                                startIdx = endIdx + 1;
-                            }
-                            endIdx = currIdx - 1;
 
-                            // Skip through any remaining linebreak characters.
-                            var thisChar = xhr.responseText.charAt(currIdx);
-                            while (thisChar == '\n' || thisChar == '\r') {
-                                currIdx += 1;
-                                thisChar = xhr.responseText.charAt(currIdx);
-                            }
+                // 16.5s for new msg per loop
+                // 5s for one msg per loop
 
-                            var newTweet = xhr.responseText.substring(startIdx, endIdx);
-                            // console.log("newTweet: " + newTweet);
-                            Events.emit('tweet', newTweet);
-                        }
-                    } else {
-                        break;
+                try {
+                    iteration += 1;
+                    if (iteration % 100 === 0) {
+                        console.log("ITERATION: " + iteration + " TIME: " + Date.now());
+
                     }
+
+                    // for (var i=0; i<20; i++) {
+                        Events.emit('tweet', tweet);
+                    // }
+                    if (Window.killswitch) {
+                        throw new Error("Manually killed test_load");
+                    }
+                } catch (err) {
+                    console.log("test_load: " + err);
+                    xhr.abort();
                 }
+
+
             }
         };
 

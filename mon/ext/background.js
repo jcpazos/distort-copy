@@ -724,7 +724,7 @@ BGAPI.prototype._postInit = function () {
         Tests.Harness.init();
     } else {
         // extension installed via "Load unpacked extension" (dev mode)
-        Utils.tts("twistor activated.");
+        // Utils.tts("twistor activated.");
     }
 };
 
