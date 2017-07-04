@@ -791,7 +791,8 @@ BGAPI.prototype.accountUpdated = function (userid) {
 
     // start sending messages periodically again
     if (this.outboxTask) {
-        this.outboxTask.start();
+        // TODO Comment this back in later
+        // this.outboxTask.start();
     }
 
     this._updateDistribution(account);
@@ -808,7 +809,8 @@ BGAPI.prototype._updateDistribution = function (account) {
         if (!this.distributeTasks[userid]) {
             this.distributeTasks[userid] = new DistributeTask(BGAPI.PERIOD_DISTRIBUTE_MS, userid);
         }
-        this.distributeTasks[userid].start();
+        // TODO Comment this back in later
+        // this.distributeTasks[userid].start();
     } else {
         if (this.distributeTasks[userid]) {
             this.distributeTasks[userid].stop();

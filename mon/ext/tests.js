@@ -26,6 +26,7 @@
   Fail,
   Github,
   GroupStats,
+  Inbox,
   KeyClasses,
   Stats,
   Twitter,
@@ -251,6 +252,34 @@ window.Tests = (function (module) {
         return new Promise(resolve => setTimeout(resolve, ms));
     };
 
+    module.decrypt = function(iterations) {
+        var myCert = Certs.UserCert.fromAccount(Vault.getAccount());
+        var msg = Outbox.Message.compose(myCert, "Han shot first.");
+        var text = msg.encodeForTweet(myCert.groups);
+
+        var tweet = JSON.parse(module.twist_example);
+        tweet.text = text;
+
+        var hashtaglist = (((tweet.entities || {}).hashtags) || []).map(ht => ht.text);
+        var tweetInfo = {
+            tweet: tweet,
+            hashtags: hashtaglist,
+            groups: null,
+            refs: null
+        };
+
+        var stats = new Stats.Dispersion({supportMedian: true});
+
+
+        for (var i=0; i<iterations; i++) {
+            var innerStart = performance.now();
+            Inbox.processTweet(tweetInfo);
+            stats.update(performance.now() - innerStart);
+        }
+
+        console.log(stats);
+    };
+
     module.test_load = function(rate) {
 
         var xhr = new XMLHttpRequest();
@@ -285,9 +314,6 @@ window.Tests = (function (module) {
                 // > (/\n[^\n]*$/g).exec("abc")
                 // null
 
-                // 16.5s for new msg per loop
-                // 5s for one msg per loop
-
                 try {
                     iteration += 1;
                     if (iteration % 100 === 0) {
@@ -295,9 +321,9 @@ window.Tests = (function (module) {
 
                     }
 
-                    // for (var i=0; i<20; i++) {
+                    for (var i=0; i<1; i++) {
                         Events.emit('tweet', tweet);
-                    // }
+                    }
                     if (Window.killswitch) {
                         throw new Error("Manually killed test_load");
                     }

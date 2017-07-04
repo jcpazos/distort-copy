@@ -33,9 +33,18 @@ window.Inbox = (function (module) {
     module._scheduled = false;
 
     module.stats = {
+        computeStats: function() {
+            var newCount = module.stats.numProcessed - module.stats.prevCount;
+            module.stats.prevCount = module.stats.numProcessed;
+            console.log("Tweets processed this interval: " + newCount);
+        },
         decodeTimeMs: new Stats.Dispersion({supportMedian: true}),
-        numProcessed: 0
+        numProcessed: 0,
+        statsTimer: null,
+        prevCount: 0
     };
+
+    module.stats.statsTimer = setInterval(module.stats.computeStats, 5000);
 
     /**
        We process tweets one batch at a time.
@@ -150,9 +159,8 @@ window.Inbox = (function (module) {
             var block1Data = fmtBlock1.fromBits(decryptedBits1)[0];
             var recipientId = pack.walk(block1Data, 'block1', 'rcptid');
 
-            console.log("RECIPIENT ID: " + recipientId);
-            //
             // check if recipientId === account.primaryId
+            // console.log("RECIPIENT ID: " + recipientId);
 
 
             // if we have a match. check the signature.  recompute the
