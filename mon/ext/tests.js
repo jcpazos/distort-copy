@@ -253,9 +253,45 @@ window.Tests = (function (module) {
     };
 
     module.decrypt = function(iterations) {
-        var myCert = Certs.UserCert.fromAccount(Vault.getAccount());
-        var msg = Outbox.Message.compose(myCert, "Han shot first.");
-        var text = msg.encodeForTweet(myCert.groups);
+        // var myCert = Certs.UserCert.fromAccount(Vault.getAccount());
+        var myAcct = Vault.getAccount();
+        if (!myAcct) {
+            myAcct = Vault.newAccount({
+                primaryId: "836492558473674752",
+                primaryHandle: "strangerglove",
+                secondaryHandle: "alexristich"
+            });
+        }
+        var myCert = new Certs.UserCert({
+            primaryId: myAcct.primaryId,
+            primaryHdl: myAcct.primaryHandle,
+            secondaryHdl: myAcct.secondaryHandle,
+            groups: myAcct.groups,
+            validFrom: Math.ceil(Date.now() / 1000),
+            validUntil: Math.floor(Date.now() * 2 / 1000),
+            key: myAcct.key,   // subclass of ECCPubKey
+            status: Certs.UserCert.STATUS_OK
+        });
+
+        // function Account(opts) {
+        //     this.primaryId = opts.primaryId || null;           // string userid (e.g. large 64 integer as string)
+        //     this.primaryHandle = opts.primaryHandle || null;   // string username (e.g. twitter handle)
+        //     this.primaryApp = opts.primaryApp || null;         // dict   application/dev credentials
+        //     //this.secondaryId = opts.secondaryId || null;       // string userid for github
+        //     this.secondaryHandle = opts.secondaryHandle || null;  // string username for github
+        //
+        //     this.lastDistributeOn = opts.lastDistributeOn || null; // last time the cert was distributed.
+        //
+        //     this.key = opts.key || new ECCKeyPair();
+        //
+        //     // array of GroupStats
+        //     this.groups = opts.groups || [];
+        //
+        //     // when this account is active, distribute certs (default true)
+        //     this.distributionEnabled = (opts.distributionEnabled === undefined)?true:(!!opts.distributionEnabled);
+
+        var msg = Outbox.Message.compose(myCert, "Han shot first.", myAcct);
+        var text = msg.encodeForTweet(myCert.groups, false);
 
         var tweet = JSON.parse(module.twist_example);
         tweet.text = text;
@@ -277,7 +313,7 @@ window.Tests = (function (module) {
             stats.update(performance.now() - innerStart);
         }
 
-        console.log(stats);
+        console.log(stats.toString());
     };
 
     module.test_load = function(rate) {

@@ -49,7 +49,30 @@ pageapi/runtime.js: pageapi/runtime.js.in pageapi/runtime.body.js pageapi/runtim
 	chmod -w $@
 
 clean:
-	rm -f $(JS_MINIFIED) $(JS_MIN_GZIP) $(CLEANUP)
+	rm -f $(JS_MINIFIED) $(JS_MIN_GZIP) $(CLEANUP) chromeless.js
+
+CRTARGETS = sjcl.js \
+	utils.js \
+    stats.js \
+    base16k.js \
+    emitter.js \
+    pack.js \
+    keyclasses.js \
+    vault.js \
+    inbox.js \
+    certs.js \
+    outbox.js \
+    tests.js \
+    chromeless-main.js
+
+chromeless.js:
+	cat $(CRTARGETS) >$@
+	chmod -w $@
+
+chromeless:
+	$(MAKE) chromeless.js
+
+
 
 CLOSURE_DIR := closure-compiler
 CLOSURE_JAR := closure-compiler/compiler.jar
@@ -63,4 +86,4 @@ $(CLOSURE_JAR):
 CLOSURE = java -jar $(CLOSURE_JAR)
 CPPJS = cpp -P -undef -Wundef -std=c99 -nostdinc -Wtrigraphs -fdollars-in-identifiers -CC
 
-.PHONY: all js clean
+.PHONY: all js clean chromeless

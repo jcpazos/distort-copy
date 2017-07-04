@@ -139,24 +139,23 @@ window.Outbox = (function (module) {
 
     // length checks on the message are to be performed before
     // this function is called.
-    Message.compose = function (recipientCert, userMessage) {
-        var account = Vault.getAccount();
-        if (!account) {
-            throw new Fail(Fail.GENERIC, "no current account. cannot send message.");
+    Message.compose = function (recipientCert, userMessage, fromAccount) {
+        if (!fromAccount) {
+            fromAccount = Vault.getAccount();
         }
-        var to = recipientCert || null;
+        if (!fromAccount) {
+            throw new Fail(Fail.GENERIC, "no source account. cannot send message.");
+        }
 
-        if (account === null) {
-            return null;
-        }
+        var to = recipientCert || null;
 
         if (to === null) {
             // mock cert
-            to = Certs.UserCert.fromAccount(account);
+            to = Certs.UserCert.fromAccount(fromAccount);
         }
 
         var msg = new Message({
-            fromAccount: account,
+            fromAccount: fromAccount,
             to: to,
             payload: userMessage,
             state: Message.STATE_DRAFT
@@ -295,18 +294,23 @@ window.Outbox = (function (module) {
             }
         },
 
-        _getPostGroups: function (subgroups) {
-            if (!subgroups || subgroups.length <= 0) {
-                throw new Fail(Fail.BADPARAM, "no subgroup names specified");
+        _getPostGroups: function (subgroups, isStrict) {
+            isStrict = !!isStrict;
+
+            if (isStrict) {
+                if (!subgroups || subgroups.length <= 0) {
+                    throw new Fail(Fail.BADPARAM, "no subgroup names specified");
+                }
+
+                var validNames = this.fromAccount.groups.map(stats => stats.name);
+
+                // ensure we are part of the subgroups
+                if (validNames.find(name => (subgroups.indexOf(name) !== -1)) === undefined) {
+                    throw new Fail(Fail.BADPARAM, "user is in groups " + subgroups +
+                        " but none match message subgroups: " + subgroups);
+                }
             }
 
-            var validNames = this.fromAccount.groups.map(stats => stats.name);
-
-            // ensure we are part of the subgroups
-            if (validNames.find(name => (subgroups.indexOf(name) !== -1)) === undefined) {
-                throw new Fail(Fail.BADPARAM, "user is in groups " + subgroups +
-                               " but none match message subgroups: " + subgroups);
-            }
             return subgroups.map(subgroupName => "#" + subgroupName).join(" ");
         },
 
@@ -314,7 +318,8 @@ window.Outbox = (function (module) {
 
            - subgroupPath is an array of subgroup names (no #-sign)
          */
-        encodeForTweet: function (subgroupPath) {
+        encodeForTweet: function (subgroupPath, strictGroups) {
+            strictGroups = (strictGroups === undefined) ? true : !!strictGroups;
             subgroupPath = subgroupPath || [];
             var userbody = pack('userbody',
                                 pack.Trunc('usermsg_padded', {len: M.USER_BODY_BITS},
@@ -347,7 +352,7 @@ window.Outbox = (function (module) {
             var body_bits = twistor_body.toBits({debug: module.DEBUG});
             var b16Encoding = pack.Base16k('b16').fromBits(body_bits)[0].val;
             var tweet = [
-                this._getPostGroups(subgroupPath),
+                this._getPostGroups(subgroupPath, strictGroups),
                 b16Encoding
             ].join(' ');
 
