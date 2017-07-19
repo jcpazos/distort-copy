@@ -31,22 +31,26 @@ function main() {
     console.debug = _csPrefix(console.debug);
     console.warn  = _csPrefix(console.warn);
 
-    var count = 0;
-    var queryParams = document.location.search.substr(1).split("&");
-    for (var parami in queryParams) {
-        if (queryParams.hasOwnProperty(parami)) {
+    document.getElementById("runtest").addEventListener("click", runTest);
+}
 
-            if (queryParams[parami].toUpperCase().substring(0, 6) === "COUNT=") {
-                count = queryParams[parami].substring(6);
-                break;
-            }
-        }
-    }
+function runTest(e) {
+    e.preventDefault();
+    var count = document.getElementById("iter").value || 0;
+    var sig = document.getElementById("sig").checked;
+
     if (!count) {
-        document.getElementById("logarea").value += "    [**Please supply number of repetitions of 100 iterations \n   to perform using `?count=[number]` parameter in the URL.]";
+        document.getElementById("logarea").value += "[**Please enter the number of iterations " +
+            "you wish to run.**]\n\n";
     } else {
-        document.getElementById("logarea").value += "Running test with " + count + " repetition(s) of 100 iterations...\n\n";
-        Tests.decrypt(count);
+        document.getElementById("logarea").value += "Running test with " + count +
+            " repetition(s) of 100 iterations...\n\n";
+        if (sig) {
+            Tests.decrypt(count, true);
+        } else {
+            Tests.decrypt(count);
+        }
+
     }
 }
 

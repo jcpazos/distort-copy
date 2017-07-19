@@ -252,8 +252,7 @@ window.Tests = (function (module) {
         return new Promise(resolve => setTimeout(resolve, ms));
     };
 
-    module.decrypt = function(iterations) {
-        // var myCert = Certs.UserCert.fromAccount(Vault.getAccount());
+    module.decrypt = function(iterations, verifySig) {
         var myAcct = Vault.getAccount();
         if (!myAcct) {
             myAcct = new Vault.Account({
@@ -263,7 +262,7 @@ window.Tests = (function (module) {
             });
         }
         var myCert = new Certs.UserCert({
-            primaryId: myAcct.primaryId,
+            primaryId: verifySig ? myAcct.primaryId : "000000000000000000",
             primaryHdl: myAcct.primaryHandle,
             secondaryHdl: myAcct.secondaryHandle,
             groups: myAcct.groups,
@@ -300,7 +299,7 @@ window.Tests = (function (module) {
         function oneIteration() {
             var innerStart = performance.now();
             var proms = [];
-            for (var j=0; j<100; j++) {
+            for (var j=0; j<1; j++) {
                 proms.push(Inbox.processTweet(tweetInfo, certLookupFn));
             }
             return Promise.all(proms).then(results => {
@@ -324,7 +323,7 @@ window.Tests = (function (module) {
             }
             loop();
         }).then(() => {
-            console.log("[stats] " + stats.toString());
+            console.log("[stats] " + stats.toString() + "\n\n");
         }).catch((error) => {
             console.log(error);
         });

@@ -170,11 +170,9 @@ window.Inbox = (function (module) {
             var block1Data = fmtBlock1.fromBits(decryptedBits1)[0];
             var recipientId = pack.walk(block1Data, 'block1', 'rcptid');
 
-            // console.log("RECIPIENT ID: " + recipientId);
-
             if (recipientId !== account.primaryId) {
                 // The twist is not intended for us so we can safely drop it.
-                resolve(null);
+                return resolve(null);
             }
 
             // if we have a match. check the signature.  recompute the
