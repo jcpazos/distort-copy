@@ -65,7 +65,8 @@ CRTARGETS = sjcl.js \
     tests.js \
     chromeless-main.js
 
-chromeless.js:
+chromeless.js: $(CRTARGETS)
+	rm -f $@
 	cat $(CRTARGETS) >$@
 	chmod -w $@
 
