@@ -170,7 +170,7 @@ window.Inbox = (function (module) {
             var block1Data = fmtBlock1.fromBits(decryptedBits1)[0];
             var recipientId = pack.walk(block1Data, 'block1', 'rcptid');
 
-            console.log("RECIPIENT ID: " + recipientId);
+            // console.log("RECIPIENT ID: " + recipientId);
 
             if (recipientId !== account.primaryId) {
                 // The twist is not intended for us so we can safely drop it.
@@ -210,7 +210,7 @@ window.Inbox = (function (module) {
             resolve(certLookupFn(senderId).then(cert => {
                 var result = cert.key.verifySignature(message, signature, {encoding: 'bits', sigEncoding: 'bits'});
                 if (result) {
-                    console.log("[verification] Signature verified on tweet from user: " + senderId);
+                    // console.log("[verification] Signature verified on tweet from user: " + senderId);
                 }
                 return result;
             }).catch(err => {

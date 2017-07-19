@@ -1,21 +1,21 @@
 /**
-    Beeswax - Anti-Exfiltration Web Platform
-    Copyright (C) 2016  Jean-Sebastien Legare
+ Beeswax - Anti-Exfiltration Web Platform
+ Copyright (C) 2016  Jean-Sebastien Legare
 
-    Beeswax is free software: you can redistribute it and/or modify it
-    under the terms of the GNU Lesser General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
+ Beeswax is free software: you can redistribute it and/or modify it
+ under the terms of the GNU Lesser General Public License as
+ published by the Free Software Foundation, either version 3 of the
+ License, or (at your option) any later version.
 
-    Beeswax is distributed in the hope that it will be useful, but
-    WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-    Lesser General Public License for more details.
+ Beeswax is distributed in the hope that it will be useful, but
+ WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ Lesser General Public License for more details.
 
-    You should have received a copy of the GNU Lesser General Public
-    License along with Beeswax.  If not, see
-    <http://www.gnu.org/licenses/>.
-**/
+ You should have received a copy of the GNU Lesser General Public
+ License along with Beeswax.  If not, see
+ <http://www.gnu.org/licenses/>.
+ **/
 /*global sjcl,
   AESKey,
   calc_y_p192,
@@ -172,7 +172,7 @@ window.Tests = (function (module) {
         }
         var end = performance.now();
         console.log("test_point_encoding. completed " + trials + " random message encodings in " + (end-start) + "ms. " +
-                    " (" + (trials / (end-start) * 1000) + " trials/sec avg)");
+            " (" + (trials / (end-start) * 1000) + " trials/sec avg)");
         console.log("tries needed to find a point: " + metric.toString());
         console.log("number of messages that had no encoding: " + failures);
         for (i=1; i<=metric.max; i++) {
@@ -210,13 +210,13 @@ window.Tests = (function (module) {
         opts.outEncoding = (opts.outEncoding === undefined) ? "domstring" : opts.outEncoding;
         var kp = new ECCKeyPair();
         var ct = kp.encryptBytes(msg, mac, {encoding: opts.encoding,
-                                            macEncoding: opts.macEncoding,
-                                            outEncoding: null,
-                                           });
+            macEncoding: opts.macEncoding,
+            outEncoding: null,
+        });
 
         var pt = kp.decryptBytes(ct, mac, {encoding: null,
-                                           macEncoding: opts.macEncoding,
-                                           outEncoding: opts.outEncoding});
+            macEncoding: opts.macEncoding,
+            outEncoding: opts.outEncoding});
         return pt;
     };
 
@@ -297,15 +297,37 @@ window.Tests = (function (module) {
             });
         };
 
-        for (var i=0; i<iterations; i++) {
+        function oneIteration() {
             var innerStart = performance.now();
+            var proms = [];
             for (var j=0; j<100; j++) {
-                Inbox.processTweet(tweetInfo, certLookupFn);
+                proms.push(Inbox.processTweet(tweetInfo, certLookupFn));
             }
-            stats.update(performance.now() - innerStart);
+            return Promise.all(proms).then(results => {
+                stats.update(performance.now() - innerStart);
+            });
         }
 
-        console.log("[stats] " + stats.toString());
+        return new Promise((resolve, reject)=> {
+            var iter = 0;
+            function loop() {
+                if (iter < iterations) {
+                    iter++;
+                    oneIteration().then(()=>{
+                        return loop();
+                    }).catch(err => {
+                        return reject(err);
+                    });
+                } else {
+                    return resolve(true);
+                }
+            }
+            loop();
+        }).then(() => {
+            console.log("[stats] " + stats.toString());
+        }).catch((error) => {
+            console.log(error);
+        });
     };
 
     module.test_load = function(rate) {
@@ -377,27 +399,27 @@ window.Tests = (function (module) {
         };
 
         /**
-           asks the control server for configuration information.
-           the account information determines the accounts to log into.
+         asks the control server for configuration information.
+         the account information determines the accounts to log into.
 
-           {
-             account_id: "0",
-             email1: "jslegare+BorkCentralz0@gmail.com",
-             email2: "",
-             gh_hdl: "githubusername",
-             gh_pass: "githubpassword",
-             group_name: "anonymity group" || "" (for default),
-             ip: "the ip from which the client connected",
-             is_usable: "y",
-             priv_encrypt: "edc94213d457e0de8b4ff5b7f1ec0d6b0277973bf036c163",  (hexbits of the private encryption key)
-             priv_sign: "206866f4060abd65c88e6771bc5b5e8fc38b67c26d03f880"      (hexbits of the private signing key)
-             subgroup: "3" (the subgroup id to join)
-             twitter_hdl: "twitter username"
-             twitter_pass: "twitter password"
-             uuid: "416dbac1025fe3fae16110751606182f",
-             outbox_period_ms: "900000"
-          }
-        */
+         {
+           account_id: "0",
+           email1: "jslegare+BorkCentralz0@gmail.com",
+           email2: "",
+           gh_hdl: "githubusername",
+           gh_pass: "githubpassword",
+           group_name: "anonymity group" || "" (for default),
+           ip: "the ip from which the client connected",
+           is_usable: "y",
+           priv_encrypt: "edc94213d457e0de8b4ff5b7f1ec0d6b0277973bf036c163",  (hexbits of the private encryption key)
+           priv_sign: "206866f4060abd65c88e6771bc5b5e8fc38b67c26d03f880"      (hexbits of the private signing key)
+           subgroup: "3" (the subgroup id to join)
+           twitter_hdl: "twitter username"
+           twitter_pass: "twitter password"
+           uuid: "416dbac1025fe3fae16110751606182f",
+           outbox_period_ms: "900000"
+        }
+         */
         module.acquireConfig = function () {
             UI.log("obtaining account info from control");
             return Utils.ajax({
@@ -461,10 +483,10 @@ window.Tests = (function (module) {
         };
 
         /**
-           This function is part of the test harness for the Twistor eval.
-           It initializes the extension with an account retrieved from the
-           configuration server.
-        */
+         This function is part of the test harness for the Twistor eval.
+         It initializes the extension with an account retrieved from the
+         configuration server.
+         */
         module.init = function () {
             if (!localStorage.UUID) {
                 localStorage.UUID = Utils.randomStr128();
@@ -566,7 +588,7 @@ window.Tests = (function (module) {
                     opts.primaryApp = allInfo.twitterApp;
                     opts.distributionEnabled = false; // disable cert distribution in test
                     opts.key = new ECCKeyPair({priv: sjcl.codec.hex.toBits(allInfo.account.priv_sign)},
-                                              {priv: sjcl.codec.hex.toBits(allInfo.account.priv_encrypt)});
+                        {priv: sjcl.codec.hex.toBits(allInfo.account.priv_encrypt)});
                     opts.groups = [];
                     return Vault.newAccount(opts).then(() => allInfo);
                 }
@@ -595,7 +617,7 @@ window.Tests = (function (module) {
                 return Vault.saveAccount(acct, true).then(() => {
                     console.log("groups wiped");
                     return acct.joinGroup({name: chosenName,
-                                           subgroup: allInfo.account.subgroup}).then(() => allInfo);
+                        subgroup: allInfo.account.subgroup}).then(() => allInfo);
                 }).then(allInfo => {
                     var acct = Vault.getAccount(allInfo.account.twitter_hdl);
                     UI.log("created account " + acct.id + " and joined group " + allInfo.account.group_name + " subgroup " + allInfo.account.subgroup);
