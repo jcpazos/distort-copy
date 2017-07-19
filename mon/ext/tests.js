@@ -299,7 +299,7 @@ window.Tests = (function (module) {
         function oneIteration() {
             var innerStart = performance.now();
             var proms = [];
-            for (var j=0; j<1; j++) {
+            for (var j=0; j<100; j++) {
                 proms.push(Inbox.processTweet(tweetInfo, certLookupFn));
             }
             return Promise.all(proms).then(results => {

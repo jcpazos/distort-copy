@@ -45,12 +45,13 @@ function runTest(e) {
     } else {
         document.getElementById("logarea").value += "Running test with " + count +
             " repetition(s) of 100 iterations...\n\n";
-        if (sig) {
-            Tests.decrypt(count, true);
-        } else {
-            Tests.decrypt(count);
-        }
-
+        setTimeout(function() {
+            if (sig) {
+                Tests.decrypt(count, true);
+            } else {
+                Tests.decrypt(count);
+            }
+        });
     }
 }
 

@@ -3,8 +3,8 @@
     <title>Privacy Monitor</title>
     <script src="chromeless.js"></script>
     <style>
-      form { width: 240px; border-style: solid; border-width: 1px; border-color: lightgray;}
-      label.field { width: 140px;}
+      form { width: 290px; border-style: solid; border-width: 1px; border-color: lightgray;}
+      label.field { width: 140px}
       input { width: 60px; }
       p { padding-left: 20px;}
       button { font-size: 14px; border-radius: 5px; }
@@ -14,7 +14,7 @@
   <body>
   <h2>Decryption test for DistoRt</h2>
   <form>
-    <p><label class="field">Number of iterations:</label><input id="iter" type="number" placeholder="Enter #"></p>
+    <p><label class="field" style="padding-right: 7px">Number of iterations (x100):</label><input id="iter" type="number" placeholder="Enter #"></p>
     <p><label class="field">Verify signatures? </label><input id="sig" type="checkbox">
     <p style="padding-left: 80px"><button id="runtest">Run test</button></p>
   </form>
