@@ -420,6 +420,51 @@ window.KeyClasses = (function (module) {
             }
         }
     });
+
+    //
+    // packs input into  [<Ybits 8bit><Xbits 2*192>
+    //
+    pack.ECIES_KEM = pack.define({
+        _fromBits: function (_path, bits, opts) {
+            /*jshint unused: false */
+            throw new Fail(Fail.NOTIMPL, "no fromBits signature");
+        },
+
+        toBits: function (path, opts) {
+            // the plaintext to encrypt
+            var allBits =  pack.EGPayload.__super__.toBits.apply(this, [].slice.apply(arguments)); // super.toBits()
+
+            // the public key of the receiver
+            var key = this.opts.encryptKey;
+
+
+            var ciphers = key.encryptEG(allBits, {encoding: "bits"});
+            if (opts && opts.debug) {
+                console.debug("EGPayload nciphers: " + ciphers.length, "inputbits: " + sjcl.bitArray.bitLength(allBits));
+            }
+
+            var x = ciphers.map(cipher => {
+                return KeyClasses.packEGCipher(cipher, {outEncoding: "bits"});
+            }).reduce((a, b) => {
+                return sjcl.bitArray.concat(a, b);
+            }, []);
+
+            if (opts && opts.debug) {
+                console.debug("EGPayload outputbits: " + sjcl.bitArray.bitLength(x));
+            }
+
+            return x;
+        },
+        validateOpts: function () {
+            Utils.assertType(this.opts, {
+                encryptKey: Utils.OneOf(null, undefined, ECCPubKey),
+                decryptKey: Utils.OneOf(null, undefined, ECCKeyPair)
+            });
+            if (!this.opts.encryptKey && !this.opts.decryptKey) {
+                throw new Fail(Fail.BADTYPE, "must specify at least one key");
+            }
+        }
+    });
     Object.keys(exports).forEach(k => module[k] = exports[k]);
     return module;
 })(window.KeyClasses || {});
@@ -574,7 +619,7 @@ AESKey.prototype = {
              outEncoding: return value encoding
            }
 
-       @returns the ciphertext
+       @returns the ciphertext concat(ciphertext, tag (in ccm mode), iv)
                 sizeof(output) === sizeof(plainText) + sizeof(iv) + sizeof(tag)
                                === sizeof(plainText) +  16bytes   +    8 bytes
     */
@@ -585,15 +630,14 @@ AESKey.prototype = {
 
         var mode = opts.mode || 'ccm';
         var plainTextBits = KeyClasses.stringToBits(plainText, opts.encoding);
-
+        var iv = sjcl.random.randomWords(KeyClasses.AES_IV_BITS / 32, ECCKeyPair.getParanoia());
+        var aData = opts.aData || "";
         var tlen;
-        var associatedData;
+
         if (mode === "ccm") {
             tlen = 64;
-            associatedData = "";
         } else if (mode === "ctr") {
             tlen = 0;
-            associatedData = "";
             if (!sjcl.mode.ctr) {
                 AESKey._loadCtr();
             }
@@ -603,11 +647,10 @@ AESKey.prototype = {
             throw new Error("invalid mode");
         }
 
-        var iv = sjcl.random.randomWords(KeyClasses.AES_IV_BITS / 32, ECCKeyPair.getParanoia());
         var sboxes = new sjcl.cipher.aes(this.key);
 
         // ct = messagecipher [+ 64bit tag (in ccm mode)]
-        var ct = sjcl.mode[mode].encrypt(sboxes, plainTextBits, iv, associatedData, tlen);
+        var ct = sjcl.mode[mode].encrypt(sboxes, plainTextBits, iv, aData, tlen);
         return KeyClasses.bitsToString(sjcl.bitArray.concat(ct, iv), opts.outEncoding);
     },
 
@@ -615,6 +658,9 @@ AESKey.prototype = {
        AESKey.decryptBytes()
 
        does the opposite of encryptBytes. returns plainText.
+
+       the ciphertext is expected to be in the format:
+           payload variable length, tag 8B (in ccm mode), iv 16B
 
        opts is: object{
             mode: 'ccm' (default) or 'ctr'
@@ -627,6 +673,7 @@ AESKey.prototype = {
 
         opts = opts || {};
         var mode = opts.mode || 'ctr';
+        var aData = opts.aData || "";
 
         if (mode === "ctr") {
             AESKey._loadCtr();
@@ -641,8 +688,15 @@ AESKey.prototype = {
         var ct = W.clamp(cipherBits, bitlen - KeyClasses.AES_IV_BITS);
         var iv = W.bitSlice(cipherBits, bitlen - KeyClasses.AES_IV_BITS);
         var sboxes = new sjcl.cipher.aes(this.key);
-        var associatedData = "";
-        var pt = sjcl.mode[mode].decrypt(sboxes, ct, iv, associatedData, 64);
+        var pt;
+
+        try {
+            pt = sjcl.mode[mode].decrypt(sboxes, ct, iv, aData, 64);
+        } catch (err) {
+            if (err instanceof sjcl.exception.corrupt) {
+                throw new Fail(Fail.CORRUPT, "ciphertext malformed: " + err.message);
+            }
+        }
 
         return KeyClasses.bitsToString(pt, opts.outEncoding);
     },
@@ -982,6 +1036,62 @@ Utils._extends(ECCPubKey, Object, {
         var plainBits = KeyClasses.stringToBits(plainText, opts.encoding || null);
         var plainPoints = curve.encodeMsg(plainBits);
         return plainPoints.map(pt => this.encrypt.pub.encryptEG(pt, ECCKeyPair.getParanoia()));
+    },
+
+    /*
+      ECCPubKey.encryptECIES_KEM()
+
+      encrypt a message with added authentication in the symmetric cipher
+
+      opts can specify {
+           encoding:  the encoding for plainText
+        macEncoding:  the encoding for macText
+        outEncoding:  return value encoding
+      }
+
+      This function:
+        1- uses publicKey.kem to produce random ecc tag and random aes key
+        2- AES encrypt plaintext in ccm mode with 64bit tag
+        3- returns final ct (ecc tag + aes ciphertext)
+
+        returns ct. sizeof(ct) == 96B ecc tag + sizeof(plaintext) + 8B tag + 16B iv
+    */
+    encryptECIES_KEM: function (plainText, opts) {
+        "use strict";
+
+        opts = opts || {};
+
+        var plainBits = KeyClasses.stringToBits(plainText, opts.encoding || null);
+        var macBits = KeyClasses.stringToBits(macText, opts.macEncoding || null);
+
+        function _deriveKey(k, name) {
+            var hmac = new sjcl.misc.hmac(k, sjcl.hash.sha256);
+            hmac.update(name);
+            return hmac.digest();
+        }
+
+        var pKem = this.encrypt.pub.kem(ECCKeyPair.getParanoia());
+        var eccTag = pKem.tag;
+        var aesKeyE = pKem.key;
+
+        // derive an aes key from the main key
+        //var aesKeyE = new AESKey(_deriveKey(mainKey, KeyClasses.DERIVE_NAME_ENCRYPT_KEY));
+
+        // symmetric encryption over message bits
+        var aesCt = aesKeyE.encryptBytes(plainBits, {mode: 'ccm', encoding: null});
+
+        // compute hmac over (ecc ciphertext + message ciphertext + hmacBits)
+        //var aesKeyH = new AESKey(_deriveKey(mainKey, KeyClasses.DERIVE_NAME_HMAC_KEY));
+        //var hmac = new sjcl.misc.hmac(aesKeyH, sjcl.hash.sha256);
+        //hmac.update(eccTag);
+        //if (macBits && macBits.length) {
+        //    hmac.update(macBits);
+        //}
+        //hmac.update(aesCt);
+        //var hmacDigest = sjcl.bitArray.clamp(hmac.digest(), KeyClasses.ECC_HMAC_BITS);
+
+        var W = sjcl.bitArray, ct = W.concat(eccTag, aesCt);
+        return KeyClasses.bitsToString(ct, opts.outEncoding);
     },
 
     /*

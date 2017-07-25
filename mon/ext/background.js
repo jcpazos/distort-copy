@@ -712,7 +712,7 @@ Utils._extends(ShowStats, Utils.PeriodicTask, {
                 "outbox.next:", (next === null) ? "NaN" : ((next - now) + ""),
                 "account.active:", activeAccounts || "null"
             ].join(" ");
-            console.log("[stats] " + (now.getTime() / 1000) + " " + fields);
+            // console.log("[stats] " + (now.getTime() / 1000) + " " + fields);
             resolve(true);
         });
     }
