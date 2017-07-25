@@ -330,7 +330,7 @@ window.Outbox = (function (module) {
                ciphertext starts with recipientid so that sender can determine if it is the indended
                recipient.
             */
-            var ciphertext = pack.EGPayload('ciphertext', {encryptKey: this.to.key, decryptKey: null},
+            var ciphertext = pack.ECIES_KEM('ciphertext', {encryptKey: this.to.key, decryptKey: null},
                                             pack.Trunc('plaintext', {len: M.PLAINTEXT_BITS},
                                                        pack.Decimal('rcptid', {len: 64}, this.to.primaryId),
                                                        userbody));

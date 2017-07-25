@@ -432,13 +432,14 @@ window.KeyClasses = (function (module) {
 
         toBits: function (path, opts) {
             // the plaintext to encrypt
-            var allBits =  pack.EGPayload.__super__.toBits.apply(this, [].slice.apply(arguments)); // super.toBits()
+            var allBits =  pack.ECIES_KEM.__super__.toBits.apply(this, [].slice.apply(arguments)); // super.toBits()
 
             // the public key of the receiver
             var key = this.opts.encryptKey;
 
 
-            var ciphers = key.encryptEG(allBits, {encoding: "bits"});
+            // var ciphers = key.encryptEG(allBits, {encoding: "bits"});
+            var ciphers = key.encryptECIES_KEM(allBits, {encoding: "bits"});
             if (opts && opts.debug) {
                 console.debug("EGPayload nciphers: " + ciphers.length, "inputbits: " + sjcl.bitArray.bitLength(allBits));
             }
@@ -1062,7 +1063,7 @@ Utils._extends(ECCPubKey, Object, {
         opts = opts || {};
 
         var plainBits = KeyClasses.stringToBits(plainText, opts.encoding || null);
-        var macBits = KeyClasses.stringToBits(macText, opts.macEncoding || null);
+        // var macBits = KeyClasses.stringToBits(macText, opts.macEncoding || null);
 
         function _deriveKey(k, name) {
             var hmac = new sjcl.misc.hmac(k, sjcl.hash.sha256);
@@ -1324,6 +1325,87 @@ Utils._extends(ECCKeyPair, ECCPubKey, {
         }
         var out = curve.decodeMsg([pt]);
         return  KeyClasses.bitsToString(out, opts.outEncoding);
+    },
+
+    /*
+  ECCKeyPair.decryptECIES_KEM()
+  // TODO Update function and documentation.
+
+  decrypt a message encrypted with ECCPubKey.encryptECIES_KEM().
+
+  If the message cannot be decrypted due to a failed integrity/auth
+  check, it fails with Fail.CORRUPT.
+
+  opts can specify {
+       encoding:  the encoding for cipherText
+    macEncoding:  the encoding for macText
+    outEncoding:  what the output should be decoded as
+  }
+
+  This function:
+    1- splits the input (ecc tag, hmac digest, aes ciphertext)
+    2- obtains sha256 of main key with unkem().
+    3- derives two keys from main key.
+    2- recomputes hmac over (tag, aes ct, macText) . should match.
+    5- returns final plaintext (encoded as outEncoding)
+*/
+    decryptECIES_KEM: function (cipherText, macText, opts) {
+        "use strict";
+
+        // function _deriveKey(k, name) {
+        //     var hmac = new sjcl.misc.hmac(k, sjcl.hash.sha256);
+        //     hmac.update(name);
+        //     return hmac.digest();
+        // }
+
+        opts = opts || {};
+
+        var cipherBits = KeyClasses.stringToBits(cipherText, opts.encoding || null);
+        // var macBits = KeyClasses.stringToBits(macText, opts.macEncoding || null);
+
+        // unpack items from tuple
+        var eccTag = sjcl.bitArray.bitSlice(cipherBits, 0, KeyClasses.ECC_TAG_BITS);
+
+        // var expectedHmac = sjcl.bitArray.bitSlice(cipherBits,
+        //     KeyClasses.ECC_TAG_BITS,
+        //     KeyClasses.ECC_TAG_BITS + KeyClasses.ECC_HMAC_BITS);
+
+        // var aesCt = sjcl.bitArray.bitSlice(cipherBits,
+        //     KeyClasses.ECC_TAG_BITS + KeyClasses.ECC_HMAC_BITS);
+        var aesCt = sjcl.bitArray.bitSlice(cipherBits, KeyClasses.ECC_TAG_BITS);
+
+        // var mainKey = null;
+        // try {
+        //     mainKey = this.encrypt.sec.unkem(eccTag);
+        // } catch (err) {
+        //     if (err instanceof sjcl.exception.corrupt) {
+        //         throw new Fail(Fail.CORRUPT, "bad tag: sjcl: " + err.message);
+        //     }
+        // }
+
+        // compute hmac over (ecc ciphertext + message ciphertext + hmacBits)
+        // var aesKeyH = new AESKey(_deriveKey(mainKey, KeyClasses.DERIVE_NAME_HMAC_KEY));
+        // var hmac = new sjcl.misc.hmac(aesKeyH, sjcl.hash.sha256);
+        // hmac.update(eccTag);
+        // if (macBits && macBits.length) {
+        //     hmac.update(macBits);
+        // }
+        // hmac.update(aesCt);
+        // var hmacDigest = sjcl.bitArray.clamp(hmac.digest(), KeyClasses.ECC_HMAC_BITS);
+
+        // verify
+        // if (!sjcl.bitArray.equal(hmacDigest, expectedHmac)) {
+        //     throw new Fail(Fail.CORRUPT, "different MAC");
+        // }
+
+        // derive an aes key from the main key
+        // TODO How to get aesKeyE? Is it just 'this.encrypt.pub.kem(ECCKeyPair.getParanoia())'?
+        var aesKeyE = new AESKey(_deriveKey(mainKey, KeyClasses.DERIVE_NAME_ENCRYPT_KEY));
+
+        // symmetric decryption over message bits
+        return aesKeyE.decryptBytes(aesCt, {mode: 'ccm',
+            encoding: null,
+            outEncoding: opts.outEncoding});
     },
 
     /*
