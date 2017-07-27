@@ -28,7 +28,8 @@
   unescape,
   UI,
   Utils,
-  Vault
+  Vault,
+  sjcl
 */
 
 window.Outbox = (function (module) {
@@ -198,21 +199,27 @@ window.Outbox = (function (module) {
         const RECIPIENT_GROUP_COUNT = 23;
         const ENVELOPE_COUNT = RECIPIENT_GROUP_COUNT + 1;
         const USABLE_BITS_PER_TWITTER_CHAR = 14; // base16k
-        const TWISTOR_BODY_BITS = (TWEET_COUNT - ENVELOPE_COUNT) * USABLE_BITS_PER_TWITTER_CHAR;
+        const TWISTOR_BODY_BITS = (TWEET_COUNT - ENVELOPE_COUNT) * USABLE_BITS_PER_TWITTER_CHAR; //1624
 
         const SIGNATURE_BITS = KeyClasses.ECC_SIGN_BITS;
         const VERSION_BITS = 8;
-        const NUM_ECC_CIPHERS = 3;
-        const CIPHERTEXT_BITS = NUM_ECC_CIPHERS * KeyClasses.ECC_DEFLATED_CIPHER_BITS;
+
+        //const NUM_ECC_CIPHERS = 3;
+        //const CIPHERTEXT_BITS = NUM_ECC_CIPHERS * KeyClasses.ECC_DEFLATED_CIPHER_BITS;
+        const CIPHERTEXT_BITS = TWISTOR_BODY_BITS - SIGNATURE_BITS - VERSION_BITS;
+        const ECC_TAG_BITS = KeyClasses.ECC_COORD_BITS * 2;
+        const AES_TAG_BITS = 64;
+
         const UNUSED_BITS = TWISTOR_BODY_BITS - VERSION_BITS - CIPHERTEXT_BITS - SIGNATURE_BITS;
         if (UNUSED_BITS < 0) {
             throw new Error("over budgeting");
         }
 
-        const PLAINTEXT_BITS = NUM_ECC_CIPHERS * KeyClasses.ECC_EG_MSG_BITS_PER_POINT;
-        const RECPT_ID_BITS = 64;
-        const USER_BODY_BITS = PLAINTEXT_BITS - RECPT_ID_BITS;
+        // Amount of plaintext we can encrypt
+        const PLAINTEXT_BITS = CIPHERTEXT_BITS - ECC_TAG_BITS - AES_TAG_BITS;
+        const USER_BODY_BITS = PLAINTEXT_BITS;
 
+        // Amount of plaintext reserved for user's message
         const USER_MSG_BITS = USER_BODY_BITS - 8; // 8b for len
         const USER_MSG_BYTES = Math.floor(USER_MSG_BITS / 8);
         const USER_MSG_PAD = Utils.stringRepeat('\0', USER_MSG_BYTES);
@@ -321,28 +328,38 @@ window.Outbox = (function (module) {
         encodeForTweet: function (subgroupPath, strictGroups) {
             strictGroups = (strictGroups === undefined) ? true : !!strictGroups;
             subgroupPath = subgroupPath || [];
-            var userbody = pack('userbody',
-                                pack.Trunc('usermsg_padded', {len: M.USER_BODY_BITS},
-                                           pack.VarLen('usermsg',
-                                                       pack.Utf8('utf8', this.payload || ""))));
+
+            /** the user's mesage */
+            var userbody_bits = pack('userbody',
+                                     pack.Trunc('usermsg_padded', {len: M.USER_BODY_BITS},
+                                                pack.VarLen('usermsg',
+                                                            pack.Utf8('utf8', this.payload || "")))).toBits();
+
+            var epoch_bits = pack.Number('epoch', {len: 32}, M.twistorEpoch()).toBits();
+
+            /** build the authenticated data **/
+            var adata_bits = pack("adata",
+                                  pack.Decimal('recipient_id', {len: 64}, this.to.primaryId),
+                                  pack.Decimal('sender_id',    {len: 64}, this.fromAccount.primaryId),
+                                  pack.Bits('epoch', epoch_bits)
+                                 ).toBits();
 
             /**
                ciphertext starts with recipientid so that sender can determine if it is the indended
                recipient.
             */
-            var ciphertext = pack.ECIES_KEM('ciphertext', {encryptKey: this.to.key, decryptKey: null},
-                                            pack.Trunc('plaintext', {len: M.PLAINTEXT_BITS},
-                                                       pack.Decimal('rcptid', {len: 64}, this.to.primaryId),
-                                                       userbody));
+            var cipher_bits = this.to.key.encryptECIES_KEM(userbody_bits, {encoding: "bits",
+                                                                           macText: adata_bits,
+                                                                           macEncoding: "bits"
+                                                                          });
 
             /**
                signature := ecdsa_sign(<twistor_epoch>, <version>, <ciphertext>)
             */
-            var epoch_bits = pack.Number('epoch', {len: 32}, M.twistorEpoch()).toBits();
+
             var version_bits = pack.Number('version', {len: 8}, 0x01).toBits();
-            var cipher_bits = ciphertext.toBits();
             var bconcat = sjcl.bitArray.concat.bind(sjcl.bitArray);
-            var signTheseBits = bconcat(bconcat(epoch_bits, version_bits), cipher_bits);
+            var signTheseBits = bconcat(version_bits, cipher_bits);
 
             var signature_bits = this.fromAccount.key.signText(signTheseBits, {encoding: "bits", outEncoding: "bits"});
             var twistor_body = pack('twistor_body',

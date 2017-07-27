@@ -21,7 +21,12 @@
   Events,
   performance,
   Stats,
-  Utils
+  Utils,
+  Outbox,
+  KeyClasses,
+  Vault,
+  Certs,
+  pack
 */
 
 window.Inbox = (function (module) {
@@ -119,6 +124,11 @@ window.Inbox = (function (module) {
                 return resolve(null);
             }
 
+            var account = Vault.getAccount();
+            if (!account) {
+                return resolve(null); // no active account
+            }
+
             // Strip hashtags off body of tweet text
             var toks = tweet.text.split(/\s+/);
             var body = "";
@@ -142,22 +152,28 @@ window.Inbox = (function (module) {
             // 2. define the struct for the message, and unpack:
 
             var fmt = pack('twist',
-                pack.Number('version', {len: 8}),
-                pack.Bits('eg1', {len: KeyClasses.ECC_DEFLATED_CIPHER_BITS}),
-                pack.Bits('eg2', {len: KeyClasses.ECC_DEFLATED_CIPHER_BITS}),
-                pack.Bits('eg3', {len: KeyClasses.ECC_DEFLATED_CIPHER_BITS}),
-                pack.Bits('signaturebits', {len: KeyClasses.ECC_SIGN_BITS}));
+                           pack.Number('version', {len: 8}),
+                           pack.Bits('cipherbits', {len: Outbox.Message.CIPHERTEXT_BITS}),
+                           pack.Bits('signaturebits', {len: KeyClasses.ECC_SIGN_BITS}));
             var parsed = fmt.fromBits(bits);
             var data = parsed[0];
-            var unusedBits = data[1];
+            //var unusedBits = data[1];
 
 
-            // 3. access first cipher
+            // calculate authenticated data
+            var twistor_epoch = Outbox.Message.twistorEpoch(); // FIXME, use timestamp in message
+            var epochBits = pack.Number('epoch', {len: 32}, twistor_epoch).toBits();
 
-            var cipherBits1 = pack.walk(data, 'twist', 'eg1');  // extract 'eg1' bits
+            var adata_bits = pack("adata",
+                                  pack.Decimal('recipient_id', {len: 64}, account.primaryId),
+                                  pack.Decimal('sender_id',    {len: 64}, tweet.user.id_str),
+                                  pack.Bits('epoch', epochBits)
+                                 ).toBits();
+
+            var cipherBits1 = pack.walk(data, 'twist', 'cipherbits');
+
             var cipherInfo1 = KeyClasses.unpackEGCipher(cipherBits1, {encoding: 'bits'});
 
-            var account = Vault.getAccount();
             var decryptedBits1 = account.key.decryptEGCipher(cipherInfo1.cipher, {outEncoding: 'bits'});
 
             //decryptedBits1 has a 64bit recipient id, followed by 1B for the usermessage length, followed by the first 12B of the user's message.
@@ -191,7 +207,6 @@ window.Inbox = (function (module) {
             var ctTemp = BA.concat(cipherBits1, cipherBits2);
             var ciphertext = BA.concat(ctTemp, cipherBits3);
 
-            var epochBits = pack.Number('epoch', {len: 32}, twistor_epoch).toBits();
             var versionBits = pack.Number('version', version).toBits();
 
             var msgTemp = BA.concat(epochBits, versionBits);
