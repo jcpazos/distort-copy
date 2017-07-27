@@ -143,6 +143,9 @@ window.KeyClasses = (function (module) {
 
     const AES_IV_BITS = 128;
 
+    // bitArray used as IV
+    const AES_FIXED_IV_BA = [-1925369386, 500862283, -1809749823, -1887920326];
+
     const AES_SIZE_OVERHEAD_BITS = AES_IV_BITS;
 
     // ECCPubKey.encryptBytes overhead
@@ -296,6 +299,7 @@ window.KeyClasses = (function (module) {
         ECC_HMAC_BITS,
         ECC_SIGN_BITS,
         AES_IV_BITS,
+        AES_FIXED_IV_BA,
         AES_SIZE_OVERHEAD_BITS,
         ECC_EB_OVERHEAD_BITS,
         ECC_DEFLATED_CIPHER_BITS,
@@ -387,7 +391,7 @@ window.KeyClasses = (function (module) {
     pack.EGPayload = pack.define({
         _fromBits: function (_path, bits, opts) {
             /*jshint unused: false */
-            throw new Fail(Fail.NOTIMPL, "no fromBits signature");
+            throw new Fail(Fail.NOTIMPL, "no fromBits EGPayload");
         },
 
         toBits: function (path, opts) {
@@ -421,51 +425,6 @@ window.KeyClasses = (function (module) {
         }
     });
 
-    //
-    // packs input into  [<Ybits 8bit><Xbits 2*192>
-    //
-    pack.ECIES_KEM = pack.define({
-        _fromBits: function (_path, bits, opts) {
-            /*jshint unused: false */
-            throw new Fail(Fail.NOTIMPL, "no fromBits signature");
-        },
-
-        toBits: function (path, opts) {
-            // the plaintext to encrypt
-            var allBits =  pack.ECIES_KEM.__super__.toBits.apply(this, [].slice.apply(arguments)); // super.toBits()
-
-            // the public key of the receiver
-            var key = this.opts.encryptKey;
-
-
-            // var ciphers = key.encryptEG(allBits, {encoding: "bits"});
-            var ciphers = key.encryptECIES_KEM(allBits, {encoding: "bits"});
-            if (opts && opts.debug) {
-                console.debug("EGPayload nciphers: " + ciphers.length, "inputbits: " + sjcl.bitArray.bitLength(allBits));
-            }
-
-            var x = ciphers.map(cipher => {
-                return KeyClasses.packEGCipher(cipher, {outEncoding: "bits"});
-            }).reduce((a, b) => {
-                return sjcl.bitArray.concat(a, b);
-            }, []);
-
-            if (opts && opts.debug) {
-                console.debug("EGPayload outputbits: " + sjcl.bitArray.bitLength(x));
-            }
-
-            return x;
-        },
-        validateOpts: function () {
-            Utils.assertType(this.opts, {
-                encryptKey: Utils.OneOf(null, undefined, ECCPubKey),
-                decryptKey: Utils.OneOf(null, undefined, ECCKeyPair)
-            });
-            if (!this.opts.encryptKey && !this.opts.decryptKey) {
-                throw new Fail(Fail.BADTYPE, "must specify at least one key");
-            }
-        }
-    });
     Object.keys(exports).forEach(k => module[k] = exports[k]);
     return module;
 })(window.KeyClasses || {});
@@ -615,14 +574,16 @@ AESKey.prototype = {
        @opts: encryption options:
 
            {
-             mode:        the AES mode. 'ctr' (no integrity) or 'ccm' (integrity. default)
-             encoding:    plainText encoding
+             mode:          the AES mode. 'ctr' (no integrity) or 'ccm' (integrity. default)
+             aData:         authenticated data
+             encoding:      plainText encoding
+             aDataEncoding: aData encoding
              outEncoding: return value encoding
            }
 
        @returns the ciphertext concat(ciphertext, tag (in ccm mode), iv)
-                sizeof(output) === sizeof(plainText) + sizeof(iv) + sizeof(tag)
-                               === sizeof(plainText) +  16bytes   +    8 bytes
+                sizeof(output) === sizeof(plainText) + sizeof(tag)
+                               === sizeof(plainText) +    8 bytes
     */
     encryptBytes: function (plainText, opts) {
         "use strict";
@@ -631,8 +592,10 @@ AESKey.prototype = {
 
         var mode = opts.mode || 'ccm';
         var plainTextBits = KeyClasses.stringToBits(plainText, opts.encoding);
-        var iv = sjcl.random.randomWords(KeyClasses.AES_IV_BITS / 32, ECCKeyPair.getParanoia());
-        var aData = opts.aData || "";
+        var iv = sjcl.bitArray.bitSlice(KeyClasses.AES_FIXED_IV_BA, 0);
+        //iv = sjcl.random.randomWords(KeyClasses.AES_IV_BITS / 32, ECCKeyPair.getParanoia());
+        var aData = KeyClasses.stringToBits(opts.aData || [], opts.aDataEncoding || null);
+
         var tlen;
 
         if (mode === "ccm") {
@@ -652,7 +615,8 @@ AESKey.prototype = {
 
         // ct = messagecipher [+ 64bit tag (in ccm mode)]
         var ct = sjcl.mode[mode].encrypt(sboxes, plainTextBits, iv, aData, tlen);
-        return KeyClasses.bitsToString(sjcl.bitArray.concat(ct, iv), opts.outEncoding);
+        //sjcl.bitArray.concat(ct, iv)
+        return KeyClasses.bitsToString(ct, opts.outEncoding);
     },
 
     /**
@@ -665,16 +629,20 @@ AESKey.prototype = {
 
        opts is: object{
             mode: 'ccm' (default) or 'ctr'
+            aData: the authenticated data (optional)
+            aDataEncoding: encoding for aData
             encoding: encoding of cipherText
             outEncoding: encoding for return value
        }
+
+       throws Fail.CORRUPT if the decryption cannot continue
     */
     decryptBytes: function (cipherText, opts) {
         "use strict";
 
         opts = opts || {};
-        var mode = opts.mode || 'ctr';
-        var aData = opts.aData || "";
+        var mode = opts.mode || 'ccm';
+        var aData = opts.aData || [];
 
         if (mode === "ctr") {
             AESKey._loadCtr();
@@ -684,15 +652,19 @@ AESKey.prototype = {
             throw new Error("invalid mode given: " + mode);
         }
 
-        var cipherBits = KeyClasses.stringToBits(cipherText);
-        var W = sjcl.bitArray, bitlen = W.bitLength(cipherBits);
-        var ct = W.clamp(cipherBits, bitlen - KeyClasses.AES_IV_BITS);
-        var iv = W.bitSlice(cipherBits, bitlen - KeyClasses.AES_IV_BITS);
+        var cipherBits = KeyClasses.stringToBits(cipherText, opts.encoding || null);
+        var aDataBits = KeyClasses.stringToBits(aData, opts.aDataEncoding || null);
+
+        var W = sjcl.bitArray;
+        const bitlen = W.bitLength(cipherBits);
+        var ct = W.clamp(cipherBits, bitlen); // ,bitlen - KeyClasses.AES_IV_BITS);
+        //var iv = W.bitSlice(cipherBits, bitlen - KeyClasses.AES_IV_BITS);
+        var iv = W.bitSlice(KeyClasses.AES_FIXED_IV_BA, 0); // copy
         var sboxes = new sjcl.cipher.aes(this.key);
         var pt;
 
         try {
-            pt = sjcl.mode[mode].decrypt(sboxes, ct, iv, aData, 64);
+            pt = sjcl.mode[mode].decrypt(sboxes, ct, iv, aDataBits, 64);
         } catch (err) {
             if (err instanceof sjcl.exception.corrupt) {
                 throw new Fail(Fail.CORRUPT, "ciphertext malformed: " + err.message);
@@ -1046,6 +1018,7 @@ Utils._extends(ECCPubKey, Object, {
 
       opts can specify {
            encoding:  the encoding for plainText
+            macText:  the text to authenticate (in addition to plaintext) a.k.a. adata
         macEncoding:  the encoding for macText
         outEncoding:  return value encoding
       }
@@ -1055,7 +1028,7 @@ Utils._extends(ECCPubKey, Object, {
         2- AES encrypt plaintext in ccm mode with 64bit tag
         3- returns final ct (ecc tag + aes ciphertext)
 
-        returns ct. sizeof(ct) == 96B ecc tag + sizeof(plaintext) + 8B tag + 16B iv
+        returns ct. sizeof(ct) == 48B ecc tag + sizeof(plaintext) + 8B tag + 16B iv
     */
     encryptECIES_KEM: function (plainText, opts) {
         "use strict";
@@ -1063,23 +1036,21 @@ Utils._extends(ECCPubKey, Object, {
         opts = opts || {};
 
         var plainBits = KeyClasses.stringToBits(plainText, opts.encoding || null);
-        // var macBits = KeyClasses.stringToBits(macText, opts.macEncoding || null);
-
-        function _deriveKey(k, name) {
-            var hmac = new sjcl.misc.hmac(k, sjcl.hash.sha256);
-            hmac.update(name);
-            return hmac.digest();
-        }
+        var macText = opts.macText || "";
+        var macBits = KeyClasses.stringToBits(macText, opts.macEncoding || null);
 
         var pKem = this.encrypt.pub.kem(ECCKeyPair.getParanoia());
         var eccTag = pKem.tag;
-        var aesKeyE = pKem.key;
+        var keyBits = pKem.key;
 
-        // derive an aes key from the main key
-        //var aesKeyE = new AESKey(_deriveKey(mainKey, KeyClasses.DERIVE_NAME_ENCRYPT_KEY));
+        var aesKeyE = new AESKey(keyBits);
 
         // symmetric encryption over message bits
-        var aesCt = aesKeyE.encryptBytes(plainBits, {mode: 'ccm', encoding: null});
+        var aesCt = aesKeyE.encryptBytes(plainBits, {mode: 'ccm',
+                                                     encoding: null,
+                                                     aData: macBits,
+                                                     aDataEncoding: null
+                                                    });
 
         // compute hmac over (ecc ciphertext + message ciphertext + hmacBits)
         //var aesKeyH = new AESKey(_deriveKey(mainKey, KeyClasses.DERIVE_NAME_HMAC_KEY));
@@ -1328,28 +1299,29 @@ Utils._extends(ECCKeyPair, ECCPubKey, {
     },
 
     /*
-  ECCKeyPair.decryptECIES_KEM()
-  // TODO Update function and documentation.
+      ECCKeyPair.decryptECIES_KEM()
 
-  decrypt a message encrypted with ECCPubKey.encryptECIES_KEM().
+      decrypt a message encrypted with ECCPubKey.encryptECIES_KEM().
 
-  If the message cannot be decrypted due to a failed integrity/auth
-  check, it fails with Fail.CORRUPT.
+      If the message cannot be decrypted due to a failed integrity/auth
+      check, it fails with Fail.CORRUPT.
 
-  opts can specify {
-       encoding:  the encoding for cipherText
-    macEncoding:  the encoding for macText
-    outEncoding:  what the output should be decoded as
-  }
+      opts can specify {
+             encoding:  the encoding for cipherText
+              macText:  the mac data
+          macEncoding:  the encoding for macText
+          outEncoding:  what the output should be decoded as
+      }
 
-  This function:
-    1- splits the input (ecc tag, hmac digest, aes ciphertext)
-    2- obtains sha256 of main key with unkem().
-    3- derives two keys from main key.
-    2- recomputes hmac over (tag, aes ct, macText) . should match.
-    5- returns final plaintext (encoded as outEncoding)
-*/
-    decryptECIES_KEM: function (cipherText, macText, opts) {
+     This function:
+       1- splits the input (ecc tag, hmac digest, aes ciphertext)
+       2- obtains sha256 of main key with unkem().
+       3- returns final plaintext (encoded as outEncoding)
+
+      if the macdata or the key cannot be recovered properly, then
+      Fail.CORRUPT is thrown.
+    */
+    decryptECIES_KEM: function (cipherText, opts) {
         "use strict";
 
         // function _deriveKey(k, name) {
@@ -1361,27 +1333,23 @@ Utils._extends(ECCKeyPair, ECCPubKey, {
         opts = opts || {};
 
         var cipherBits = KeyClasses.stringToBits(cipherText, opts.encoding || null);
-        // var macBits = KeyClasses.stringToBits(macText, opts.macEncoding || null);
+        var macBits = KeyClasses.stringToBits(opts.macText || [], opts.macEncoding || null);
 
         // unpack items from tuple
         var eccTag = sjcl.bitArray.bitSlice(cipherBits, 0, KeyClasses.ECC_TAG_BITS);
-
-        // var expectedHmac = sjcl.bitArray.bitSlice(cipherBits,
-        //     KeyClasses.ECC_TAG_BITS,
-        //     KeyClasses.ECC_TAG_BITS + KeyClasses.ECC_HMAC_BITS);
 
         // var aesCt = sjcl.bitArray.bitSlice(cipherBits,
         //     KeyClasses.ECC_TAG_BITS + KeyClasses.ECC_HMAC_BITS);
         var aesCt = sjcl.bitArray.bitSlice(cipherBits, KeyClasses.ECC_TAG_BITS);
 
-        // var mainKey = null;
-        // try {
-        //     mainKey = this.encrypt.sec.unkem(eccTag);
-        // } catch (err) {
-        //     if (err instanceof sjcl.exception.corrupt) {
-        //         throw new Fail(Fail.CORRUPT, "bad tag: sjcl: " + err.message);
-        //     }
-        // }
+        var mainKey = null;
+        try {
+            mainKey = this.encrypt.sec.unkem(eccTag);
+        } catch (err) {
+            if (err instanceof sjcl.exception.corrupt) {
+                throw new Fail(Fail.CORRUPT, "bad tag: sjcl: " + err.message);
+            }
+        }
 
         // compute hmac over (ecc ciphertext + message ciphertext + hmacBits)
         // var aesKeyH = new AESKey(_deriveKey(mainKey, KeyClasses.DERIVE_NAME_HMAC_KEY));
@@ -1400,12 +1368,14 @@ Utils._extends(ECCKeyPair, ECCPubKey, {
 
         // derive an aes key from the main key
         // TODO How to get aesKeyE? Is it just 'this.encrypt.pub.kem(ECCKeyPair.getParanoia())'?
-        var aesKeyE = new AESKey(_deriveKey(mainKey, KeyClasses.DERIVE_NAME_ENCRYPT_KEY));
+        var aesKeyE = new AESKey(mainKey);
 
         // symmetric decryption over message bits
         return aesKeyE.decryptBytes(aesCt, {mode: 'ccm',
-            encoding: null,
-            outEncoding: opts.outEncoding});
+                                            aData: macBits,
+                                            aDataEncoding: null,
+                                            encoding: null,
+                                            outEncoding: opts.outEncoding});
     },
 
     /*
