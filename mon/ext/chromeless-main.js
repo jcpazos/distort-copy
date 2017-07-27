@@ -59,6 +59,8 @@ function runTest(e) {
     var count = document.getElementById("iter").value || 0;
     var sig = document.getElementById("sig").checked;
 
+    count = parseInt(count);
+
     if (!count) {
         document.getElementById("logarea").value += "[**Please enter the number of iterations " +
             "you wish to run.**]\n\n";
