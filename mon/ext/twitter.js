@@ -726,18 +726,30 @@ var Twitter = (function (module) {
                                     twitterUser: null});
                 }
 
-                var accountGroups = currentUsers[0].getElementsByClassName("account-group");
-                if (accountGroups === null || accountGroups.length !== 1) {
-                    console.error("account-group userid fetch failed due to changed format.");
-                    return reject(new Fail(Fail.GENERIC, "account-group userid fetch failed due to changed format."));
+                // var accountGroups = currentUsers[0].getElementsByClassName("account-group");
+                // if (accountGroups === null || accountGroups.length !== 1) {
+                //     console.error("account-group userid fetch failed due to changed format.");
+                //     return reject(new Fail(Fail.GENERIC, "account-group userid fetch failed due to changed format."));
+                // }
+
+                var img = xmlDoc.querySelector("img[data-user-id]");
+                if (!img) {
+                    return reject(new Fail(Fail.GENERIC, "failed to extract ID."));
+                }
+                var twitterId = img.getAttribute("data-user-id") || null;
+
+                var currentUser = xmlDoc.querySelector("li.current-user a");
+                if (!currentUser) {
+                    return reject(new Fail(Fail.GENERIC, "failed to extract username."));
                 }
 
-                var accountElement = accountGroups[0];
-                var twitterId = accountElement.getAttribute("data-user-id");
-                var twitterUser = accountElement.getAttribute("data-screen-name");
-
+                var twitterUser = currentUser.getAttribute("href");
+                if (!twitterUser) {
+                    return reject(new Fail(Fail.GENERIC, "failed to extract username."));
+                }
+                twitterUser = twitterUser.substr(1) || null; // strip the '/'
                 if (twitterId === null || twitterUser === null) {
-                    return reject(new Fail(Fail.GENERIC, "failed to extract ID or username."));
+                    return reject(new Fail(Fail.GENERIC, "failed to extract username or ID"));
                 }
 
                 resolve(
