@@ -253,41 +253,6 @@ window.Tests = (function (module) {
     };
 
     module.decrypt = function(iterations, verifySig) {
-        var myAcct = Vault.getAccount();
-        if (!myAcct) {
-            myAcct = new Vault.Account({
-                primaryId: "836492558473674752",
-                primaryHandle: "strangerglove",
-                secondaryHandle: "alexristich"
-            });
-        }
-        var myCert = new Certs.UserCert({
-            primaryId: verifySig ? myAcct.primaryId : "000000000000000000",
-            primaryHdl: myAcct.primaryHandle,
-            secondaryHdl: myAcct.secondaryHandle,
-            groups: myAcct.groups,
-            validFrom: Math.ceil(Date.now() / 1000),
-            validUntil: Math.floor(Date.now() * 2 / 1000),
-            key: myAcct.key,   // subclass of ECCPubKey
-            status: Certs.UserCert.STATUS_OK
-        });
-
-        var msg = Outbox.Message.compose(myCert, "Han shot first.", myAcct);
-        var text = msg.encodeForTweet(myCert.groups, false);
-
-
-
-        var tweet = JSON.parse(module.twist_example);
-        tweet.text = text;
-
-        var hashtaglist = (((tweet.entities || {}).hashtags) || []).map(ht => ht.text);
-        var tweetInfo = {
-            tweet: tweet,
-            hashtags: hashtaglist,
-            groups: null,
-            refs: null
-        };
-
         var stats = new Stats.Dispersion({supportMedian: true});
 
         var certLookupFn = function(cert) {
@@ -308,11 +273,51 @@ window.Tests = (function (module) {
         }
 
         return new Promise((resolve, reject)=> {
+            var myAcct = Vault.getAccount();
+            if (!myAcct) {
+                return new Promise((resolve, reject) => {
+                    resolve(Vault.newAccount({
+                        primaryId: "836492558473674752",
+                        primaryHandle: "strangerglove",
+                        secondaryHandle: "alexristich"
+                    }));
+                })
+            }
+            resolve(Vault.getAccount());
+        }).then(function (myAcct) {
+            console.log("got account");
+            var myCert = new Certs.UserCert({
+                primaryId: verifySig ? myAcct.primaryId : "000000000000000000",
+                primaryHdl: myAcct.primaryHandle,
+                secondaryHdl: myAcct.secondaryHandle,
+                groups: myAcct.groups,
+                validFrom: Math.ceil(Date.now() / 1000),
+                validUntil: Math.floor(Date.now() * 2 / 1000),
+                key: myAcct.key,   // subclass of ECCPubKey
+                status: Certs.UserCert.STATUS_OK
+            });
+
+            var msg = Outbox.Message.compose(myCert, "Han shot first.", myAcct);
+            var text = msg.encodeForTweet(myCert.groups, false);
+
+
+            var tweet = JSON.parse(module.twist_example);
+            tweet.text = text;
+
+            var hashtaglist = (((tweet.entities || {}).hashtags) || []).map(ht => ht.text);
+            var tweetInfo = {
+                tweet: tweet,
+                hashtags: hashtaglist,
+                groups: null,
+                refs: null
+            };
+
             var iter = 0;
+
             function loop() {
                 if (iter < iterations) {
                     iter++;
-                    oneIteration().then(()=>{
+                    oneIteration().then(() => {
                         return loop();
                     }).catch(err => {
                         return reject(err);

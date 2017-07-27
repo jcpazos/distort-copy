@@ -17,6 +17,8 @@
  <http://www.gnu.org/licenses/>.
  **/
 
+// Reassign 'UI' variable to handle UI logging while in `chromeless`.
+window.UI = console;
 
 document.addEventListener("DOMContentLoaded", function() {
     "use strict";
