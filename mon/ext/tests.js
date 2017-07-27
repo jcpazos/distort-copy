@@ -275,7 +275,7 @@ window.Tests = (function (module) {
         return new Promise((resolve, reject)=> {
             var myAcct = Vault.getAccount();
             if (!myAcct) {
-                return new Promise((resolve, reject) => {
+                new Promise((resolve, reject) => {
                     resolve(Vault.newAccount({
                         primaryId: "836492558473674752",
                         primaryHandle: "strangerglove",
