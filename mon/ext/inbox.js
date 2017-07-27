@@ -132,13 +132,10 @@ window.Inbox = (function (module) {
             var parsedTwist = fmt.fromBits(bits)[0];
 
             // 3. assemble authenticated data
-            var twistor_epoch = Outbox.Message.twistorEpoch(opts.timestampMs);
-            var epochBits = pack.Number('epoch', {len: 32}, twistor_epoch).toBits();
-
             var adata_bits = pack("adata",
                                   pack.Decimal('recipient_id', {len: 64}, account.primaryId),
-                                  pack.Decimal('sender_id',    {len: 64}, opts.senderId),
-                                  pack.Bits('epoch', epochBits)
+                                  pack.Decimal('sender_id',    {len: 64}, opts.senderId)
+                                  //pack.Bits('epoch', epochBits)
                                  ).toBits();
 
             //console.debug("INBOX  ADATA BITS: " + sjcl.codec.hex.fromBits(adata_bits));
@@ -157,9 +154,21 @@ window.Inbox = (function (module) {
             }
 
             // decode utf8 plaintext
-            var msg_fmt = pack.VarLen('vlen', pack.Utf8('usermsg'));
+            var msg_fmt = pack("userbody",
+                               pack.Number('epoch', {len: Outbox.Message.EPOCH_BITS}),
+                               pack.VarLen('vlen', pack.Utf8('usermsg')));
             var parsedMsg = msg_fmt.fromBits(decryptedBits1)[0];
-            var usermsg = pack.walk(parsedMsg, 'vlen', 'usermsg');
+            var usermsg = pack.walk(parsedMsg, 'userbody', 'vlen', 'usermsg');
+
+            var twitterEpoch = Outbox.Message.twistorEpoch(opts.timestampMs);
+            //var epochBits = pack.Number('epoch', {len: 32}, twistor_epoch).toBits();
+            var msgEpoch = pack.walk(parsedMsg, 'userbody', 'epoch');
+
+            if (Math.abs(twitterEpoch - msgEpoch) > 1) {
+                console.error("possibly stale twist or clock skew with sender.");
+                // fixme report this to the user in the result?
+                return null;
+            }
 
             var result = {
                 account: account,

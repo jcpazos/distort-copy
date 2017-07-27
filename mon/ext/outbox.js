@@ -155,6 +155,11 @@ window.Outbox = (function (module) {
             to = Certs.UserCert.fromAccount(fromAccount);
         }
 
+        var userLen = M.utf8Len(userMessage);
+        if (M.utf8Len(userMessage) > M.USER_MSG_BYTES) {
+            throw new Fail(Fail.BADPARAM, "Message too long (" + userLen + " > " + M.USER_MSG_BYTES + ")");
+        }
+
         var msg = new Message({
             fromAccount: fromAccount,
             to: to,
@@ -209,6 +214,7 @@ window.Outbox = (function (module) {
         const CIPHERTEXT_BITS = TWISTOR_BODY_BITS - SIGNATURE_BITS - VERSION_BITS;
         const ECC_TAG_BITS = KeyClasses.ECC_COORD_BITS * 2;
         const AES_TAG_BITS = 64;
+        const EPOCH_BITS = 32;
 
         const UNUSED_BITS = TWISTOR_BODY_BITS - VERSION_BITS - CIPHERTEXT_BITS - SIGNATURE_BITS;
         if (UNUSED_BITS < 0) {
@@ -220,7 +226,7 @@ window.Outbox = (function (module) {
         const USER_BODY_BITS = PLAINTEXT_BITS;
 
         // Amount of plaintext reserved for user's message
-        const USER_MSG_BITS = USER_BODY_BITS - 8; // 8b for len
+        const USER_MSG_BITS = USER_BODY_BITS - 8 - EPOCH_BITS; // the 8b is for len
         const USER_MSG_BYTES = Math.floor(USER_MSG_BITS / 8);
         const USER_MSG_PAD = Utils.stringRepeat('\0', USER_MSG_BYTES);
         return {
@@ -231,6 +237,7 @@ window.Outbox = (function (module) {
             ENVELOPE_COUNT,
             CIPHERTEXT_BITS,
             PLAINTEXT_BITS,
+            EPOCH_BITS,
             UNUSED_BITS,
             USER_BODY_BITS,
             USER_MSG_BYTES,
@@ -247,7 +254,7 @@ window.Outbox = (function (module) {
         if (!userStr || userStr.length === 0) {
             return 0;
         }
-        return unescape(encodeURIComponent(userStr));
+        return unescape(encodeURIComponent(userStr)).length;
     };
 
     M.generatePadding = function (msgLenBytes) {
@@ -338,18 +345,17 @@ window.Outbox = (function (module) {
             subgroupPath = subgroupPath || [];
 
             /** the user's mesage */
+            var epoch_bits = pack.Number('epoch', {len: M.EPOCH_BITS}, M.twistorEpoch()).toBits();
             var userbody_bits = pack('userbody',
                                      pack.Trunc('usermsg_padded', {len: M.USER_BODY_BITS},
+                                                pack.Bits('epoch', epoch_bits),
                                                 pack.VarLen('usermsg',
                                                             pack.Utf8('utf8', this.payload || "")))).toBits();
-
-            var epoch_bits = pack.Number('epoch', {len: 32}, M.twistorEpoch()).toBits();
 
             /** build the authenticated data **/
             var adata_bits = pack("adata",
                                   pack.Decimal('recipient_id', {len: 64}, this.to.primaryId),
-                                  pack.Decimal('sender_id',    {len: 64}, this.fromAccount.primaryId),
-                                  pack.Bits('epoch', epoch_bits)
+                                  pack.Decimal('sender_id',    {len: 64}, this.fromAccount.primaryId)
                                  ).toBits();
 
             //console.debug("OUTBOX ADATA BITS: " + sjcl.codec.hex.fromBits(adata_bits));
