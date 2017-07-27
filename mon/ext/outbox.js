@@ -226,6 +226,7 @@ window.Outbox = (function (module) {
         return {
             MSG_VERSION,
             TWEET_COUNT,
+            USABLE_BITS_PER_TWITTER_CHAR,
             RECIPIENT_GROUP_COUNT,
             ENVELOPE_COUNT,
             CIPHERTEXT_BITS,
@@ -275,9 +276,16 @@ window.Outbox = (function (module) {
         return quota;
     };
 
-    M.twistorEpoch = function () {
+    // The twistor epoch is a 32 bit truncated time value
+    // corresponding to unix time rounded down to the nearest 256s
+    // interval (4m16s).
+    //
+    // you may pass a timestamp in milliseconds to work from,
+    // otherwise the current wallclock time is used.
+    M.twistorEpoch = function (nowMs) {
         /*jshint bitwise: false */
-        var secs = Math.floor(Date.now() / 1000);
+        nowMs = (nowMs === undefined || nowMs === null) ? Date.now() : nowMs;
+        var secs = Math.floor(nowMs / 1000);
         secs >>>= 8;
         return secs & 0xffffffff;
     };
@@ -369,8 +377,11 @@ window.Outbox = (function (module) {
                                     pack.Trunc('unused', {len: M.UNUSED_BITS}));
 
             var body_bits = twistor_body.toBits({debug: module.DEBUG});
+
             // var res = this.to.key.verifySignature(ciphertext, pack.walk(twistor_body, 'twistor_body', 'signature'));
             var b16Encoding = pack.Base16k('b16').fromBits(body_bits)[0].val;
+            // the first character has the length in bytes. it is fixed, so we strip it.
+            b16Encoding = b16Encoding.substr(1);
             var tweet = [
                 this._getPostGroups(subgroupPath, strictGroups),
                 b16Encoding

@@ -21,6 +21,7 @@
   Events,
   performance,
   Stats,
+  Fail,
   Utils,
   Outbox,
   KeyClasses,
@@ -97,6 +98,10 @@ window.Inbox = (function (module) {
       certLookupFn is a function taking a twitterId, that promises a cert or null for that
       twitter id.
 
+      receivingAccount is the account from which the receiver
+      information is taken (private decryption key and ids). if
+      unspecified, the code uses the currently active account.
+
       promises:
           null  if the tweet is not for one of the accounts configured in this client
 
@@ -104,11 +109,12 @@ window.Inbox = (function (module) {
 
          {
           account: recipient account,
-          tweet:   the input tweet
-          message: the plaintext message received
+          tweet:   the input tweet,
+          message: the plaintext message received,
+          verified: bool (if the sender signature verification passed)
          }
     */
-    module.processTweet = function (tweetInfo, certLookupFn) {
+    module.processTweet = function (tweetInfo, certLookupFn, receivingAccount) {
         certLookupFn = (certLookupFn === undefined) ?
             ((twitterId) => Certs.Store.loadCertsById(twitterId)) : certLookupFn;
 
@@ -119,12 +125,12 @@ window.Inbox = (function (module) {
         module.stats.numProcessed += 1;
 
         return new Promise(resolve => {
-            if (!tweet || !tweet.user || !tweet.text || !tweet.created_at || !tweet.id) {
+            if (!tweet || !tweet.user || !tweet.text || !tweet.timestamp_ms || !tweet.id) {
                 console.error("malformed tweet?", tweet);
                 return resolve(null);
             }
 
-            var account = Vault.getAccount();
+            var account = receivingAccount || Vault.getAccount();
             if (!account) {
                 return resolve(null); // no active account
             }
@@ -143,14 +149,12 @@ window.Inbox = (function (module) {
                 return resolve(null);
             }
 
-            // TODO Process tweet to determine if it belongs to the currently logged in user.
-
             // 1. convert base16k body toBits  (see Certs L274) => bits
-
-            var bits = pack.Base16k('b16', body).toBits({debug: !!module.DEBUG});
+            var bodyLenBytes = (body.length * Outbox.Message.USABLE_BITS_PER_TWITTER_CHAR) / 8;
+            var lenChar = String.fromCharCode(0x5000 + bodyLenBytes);
+            var bits = pack.Base16k('b16', lenChar + body).toBits({debug: !!module.DEBUG});
 
             // 2. define the struct for the message, and unpack:
-
             var fmt = pack('twist',
                            pack.Number('version', {len: 8}),
                            pack.Bits('cipherbits', {len: Outbox.Message.CIPHERTEXT_BITS}),
@@ -159,9 +163,9 @@ window.Inbox = (function (module) {
             var data = parsed[0];
             //var unusedBits = data[1];
 
-
-            // calculate authenticated data
-            var twistor_epoch = Outbox.Message.twistorEpoch(); // FIXME, use timestamp in message
+            // 3. assemble authenticated data
+            var tweet_timestamp_ms = parseInt(tweet.timestamp_ms); // should fit within 53 bits of precision for quite a while.
+            var twistor_epoch = Outbox.Message.twistorEpoch(tweet_timestamp_ms);
             var epochBits = pack.Number('epoch', {len: 32}, twistor_epoch).toBits();
 
             var adata_bits = pack("adata",
@@ -170,47 +174,26 @@ window.Inbox = (function (module) {
                                   pack.Bits('epoch', epochBits)
                                  ).toBits();
 
+            // 4. decrypt (attempt to)
             var cipherBits1 = pack.walk(data, 'twist', 'cipherbits');
-
-            var cipherInfo1 = KeyClasses.unpackEGCipher(cipherBits1, {encoding: 'bits'});
-
-            var decryptedBits1 = account.key.decryptEGCipher(cipherInfo1.cipher, {outEncoding: 'bits'});
-
-            //decryptedBits1 has a 64bit recipient id, followed by 1B for the usermessage length, followed by the first 12B of the user's message.
-
-            // 4. unpack the recipient id from the 1st point
-
-            var fmtBlock1 = pack('block1',
-                pack.Decimal('rcptid', {len: 64}));
-            // don't care about the rest for now
-            var block1Data = fmtBlock1.fromBits(decryptedBits1)[0];
-            var recipientId = pack.walk(block1Data, 'block1', 'rcptid');
-
-            if (recipientId !== account.primaryId) {
+            try {
+                var decryptedBits1 = account.key.decryptECIES_KEM(cipherBits1, {outEncoding: 'bits', macText: adata_bits});
+            } catch (err) {
                 // The twist is not intended for us so we can safely drop it.
-                return resolve(null);
+                if (err instanceof Fail && err.code === Fail.CORRUPT) {
+                    return resolve(null);
+                }
+                throw err;
             }
 
             // if we have a match. check the signature.  recompute the
             // signature text (as is done in outbox.js) and verify
-            // signature. if signature matches, decrypt the remaining
-            // 2 blocks of ciphertext, concatenate with the decrypted
-            // bits of the 1st, and do another unpack to extract the message (utf-8).
+            // signature. do another unpack to extract the message (utf-8).
             // log it to the console, or the UI.log.
 
-            var cipherBits2 = pack.walk(data, 'twist', 'eg2');
-            var cipherBits3 = pack.walk(data, 'twist', 'eg3');
-
-            var twistor_epoch = Outbox.Message.twistorEpoch();
-            var version = pack.walk(data, 'twist', 'version');
             var BA = sjcl.bitArray;
-            var ctTemp = BA.concat(cipherBits1, cipherBits2);
-            var ciphertext = BA.concat(ctTemp, cipherBits3);
-
-            var versionBits = pack.Number('version', version).toBits();
-
-            var msgTemp = BA.concat(epochBits, versionBits);
-            var message = BA.concat(msgTemp, ciphertext);
+            var versionBits = pack.Number('version', {len: 8}, 0x01).toBits(); // expect v01. lazy. version mismatch will fail signature.
+            var signTheseBits = BA.concat(versionBits, cipherBits1);
             var signature = pack.walk(data, 'twist', 'signaturebits');
 
             var senderId = tweet.user.id_str;
@@ -221,16 +204,20 @@ window.Inbox = (function (module) {
             }
 
             resolve(certLookupFn(senderId).then(cert => {
-                var result = cert.key.verifySignature(message, signature, {encoding: 'bits', sigEncoding: 'bits'});
+                var result = cert.key.verifySignature(signTheseBits, signature, {encoding: 'bits', sigEncoding: 'bits'});
                 if (result) {
                     // console.log("[verification] Signature verified on tweet from user: " + senderId);
+                    // FIXME unpack
+                    var fmt = pack.VarLen('usermsg',
+                                          pack.Utf8('utf8', this.payload || "")))).toBits();
+                    return decryptedBits1;
                 }
-                return result;
+                return false;
             }).catch(err => {
-                console.log("no cert found for twitterid " + senderId);
+                console.log("no cert found for twitterid " + senderId, err);
                 return null;
             }));
-        })
+        });
     };
 
     module.getSenderId = function(tweet, testMode) {
