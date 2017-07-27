@@ -95,16 +95,16 @@ function _csPrefix(old) {
             args = [];
         }
 
-        var err = getErr();
-        var caller_line = err.stack.split("\n")[4];
-        if (!caller_line) {
-            return "";
-        }
-        var index = caller_line.indexOf("at ");
-        var clean = caller_line.slice(index + 2, caller_line.length);
+        // var err = getErr();
+        // var caller_line = err.stack.split("\n")[4];
+        // if (!caller_line) {
+        //     return "";
+        // }
+        // var index = caller_line.indexOf("at ");
+        // var clean = caller_line.slice(index + 2, caller_line.length);
 
-        var value = old.apply(this, ["%c[BEESWAX CS]", "color: green", clean].concat(args));
-        document.getElementById("logarea").value += args;
+        var value = old.apply(this, args);
+        document.getElementById("logarea").value += args.join(" ") + "\n";
 
         return value;
     };
