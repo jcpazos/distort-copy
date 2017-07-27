@@ -17,8 +17,23 @@
  <http://www.gnu.org/licenses/>.
  **/
 
+/*global
+  Tests
+*/
+
 // Reassign 'UI' variable to handle UI logging while in `chromeless`.
-window.UI = console;
+// MOCK
+if (!window.UI) {
+    window.UI = {
+        log: function () {
+            "use strict";
+            var msg = [].slice.call(arguments).join(" ");
+            var now = new Date();
+            console.debug("[UI.log] " + (now.getTime() / 1000) + " " + msg);
+        },
+        clearLog: function () {}
+    };
+}
 
 document.addEventListener("DOMContentLoaded", function() {
     "use strict";
@@ -33,10 +48,13 @@ function main() {
     console.debug = _csPrefix(console.debug);
     console.warn  = _csPrefix(console.warn);
 
+
     document.getElementById("runtest").addEventListener("click", runTest);
 }
 
 function runTest(e) {
+    "use strict";
+
     e.preventDefault();
     var count = document.getElementById("iter").value || 0;
     var sig = document.getElementById("sig").checked;
@@ -49,9 +67,11 @@ function runTest(e) {
             " repetition(s) of 100 iterations...\n\n";
         setTimeout(function() {
             if (sig) {
-                Tests.decrypt(count, true);
+                // signal twist
+                Tests.decryptTwist(count, false);
             } else {
-                Tests.decrypt(count);
+                // noise twist
+                Tests.decryptTwist(count, true);
             }
         });
     }
@@ -61,6 +81,7 @@ function runTest(e) {
  Customize Console
  */
 function _csPrefix(old) {
+    "use strict";
 
     function getErr() {
         try { throw Error(""); } catch (err) { return err; }

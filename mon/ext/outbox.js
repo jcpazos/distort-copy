@@ -352,6 +352,8 @@ window.Outbox = (function (module) {
                                   pack.Bits('epoch', epoch_bits)
                                  ).toBits();
 
+            //console.debug("OUTBOX ADATA BITS: " + sjcl.codec.hex.fromBits(adata_bits));
+
             /**
                ciphertext starts with recipientid so that sender can determine if it is the indended
                recipient.

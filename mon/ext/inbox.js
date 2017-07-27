@@ -91,12 +91,129 @@ window.Inbox = (function (module) {
         }, 0);
     };
 
-    /*
-      Checks a tweet to see if the received tweet is designated for the current user or not. If the
-      tweet is intended for this user it is passed along to the inbox, else it is dropped.
+    //
+    // utility function for processTweet
+    // (abstracts away all the twitter metadata)
+    //
+    // body is just the b16encoded payload of a twist.
+    //
+    // opts is the remaining parameters to decrypt and verify
+    // signatures:
+    //{
+    //   timestampMs:      time at which we expect the twist to have been made (number),
+    //   senderId:         expected twitter ID of sender (string),
+    //   recipientAccount: expected receiver Account (needs x.primaryId, and x.key)
+    //   certLookupFn: resolves the senderID into a Cert object
+    //}
+    //
+    module._verifyTwistBody = function (body, opts) {
+        const BA = sjcl.bitArray;
+        opts.certLookupFn = (opts.certLookupFn === undefined) ?
+            ((twitterId) => Certs.Store.loadCertsById(twitterId)) : opts.certLookupFn;
 
-      certLookupFn is a function taking a twitterId, that promises a cert or null for that
-      twitter id.
+        return new Promise(resolve => {
+            var account = opts.recipientAccount;
+
+            // 1. convert base16k body toBits  (see Certs L274) => bits
+            body = body.trim();
+            var bodyLenBytes = (body.length * Outbox.Message.USABLE_BITS_PER_TWITTER_CHAR) / 8;
+            if (bodyLenBytes % 1 !== 0) {
+                throw new Fail(Fail.BADPARAM, "the body should be a multiple of 8bits");
+            }
+
+            var lenChar = String.fromCharCode(0x5000 + bodyLenBytes);
+            var bits = pack.Base16k('b16', lenChar + body).toBits({debug: !!module.DEBUG});
+
+            // 2. define the struct for the message, and unpack:
+            var fmt = pack('twist',
+                           pack.Number('version', {len: 8}),
+                           pack.Bits('cipherbits', {len: Outbox.Message.CIPHERTEXT_BITS}),
+                           pack.Bits('signaturebits', {len: KeyClasses.ECC_SIGN_BITS}));
+            var parsedTwist = fmt.fromBits(bits)[0];
+
+            // 3. assemble authenticated data
+            var twistor_epoch = Outbox.Message.twistorEpoch(opts.timestampMs);
+            var epochBits = pack.Number('epoch', {len: 32}, twistor_epoch).toBits();
+
+            var adata_bits = pack("adata",
+                                  pack.Decimal('recipient_id', {len: 64}, account.primaryId),
+                                  pack.Decimal('sender_id',    {len: 64}, opts.senderId),
+                                  pack.Bits('epoch', epochBits)
+                                 ).toBits();
+
+            //console.debug("INBOX  ADATA BITS: " + sjcl.codec.hex.fromBits(adata_bits));
+
+            // 4. decrypt (attempt to)
+            var cipherBits1 = pack.walk(parsedTwist, 'twist', 'cipherbits');
+            var decryptedBits1 = null;
+            try {
+                decryptedBits1 = account.key.decryptECIES_KEM(cipherBits1, {outEncoding: 'bits', macText: adata_bits});
+            } catch (err) {
+                // The twist is not intended for us so we can safely drop it.
+                if (err instanceof Fail && err.code === Fail.CORRUPT) {
+                    return resolve(null);
+                }
+                throw err;
+            }
+
+            // decode utf8 plaintext
+            var msg_fmt = pack.VarLen('vlen', pack.Utf8('usermsg'));
+            var parsedMsg = msg_fmt.fromBits(decryptedBits1)[0];
+            var usermsg = pack.walk(parsedMsg, 'vlen', 'usermsg');
+
+            var result = {
+                account: account,
+                message: usermsg,
+                verified: false
+            };
+
+            //5. verify signature
+            resolve(opts.certLookupFn(opts.senderId).catch(err => {
+                console.error("error fetching cert for twitterid " + opts.senderId + ". skipping verification.", err);
+                return null;
+            }).then(cert => {
+                // if the twist passes the integrity check, recompute
+                // the signature text (as is done in outbox.js) and
+                // verify signature.
+
+                if (!cert || ((cert instanceof Array) && cert.length === 0)) {
+                    // cert cannot be found. skip.
+                    return result;
+                }
+
+                if (cert instanceof Array) {
+                    cert = cert[0]; // first match
+                }
+
+                // FIXME lazy way to expect v01. version mismatch will fail signature.
+                var versionBits = pack.Number('version', {len: 8}, 0x01).toBits();
+                var signTheseBits = BA.concat(versionBits, cipherBits1);
+                var signature = pack.walk(parsedTwist, 'twist', 'signaturebits');
+
+                var isValid = cert.key.verifySignature(signTheseBits, signature, {encoding: 'bits', sigEncoding: 'bits'});
+                result.verified = isValid;
+
+                if (isValid) {
+                    // console.log("[verification] Signature verified on tweet from user: " + senderId);
+                } else {
+                    console.error("[verification] Signature verification failed. Spoofed tweet.");
+                }
+                return result;
+            }).catch(err => {
+                console.error("error during signature verification from ID" +  opts.senderId, err);
+                return result;
+            }));
+        });
+    };
+
+    /*
+      Checks a tweet to see if the received tweet is designated for
+      the current user or not. If the tweet is intended for this user
+      it is passed along to the inbox, else it is dropped.
+
+      certLookupFn is a function taking a twitterId (string) that
+      promises a cert or null for that twitter id. if null (or []) is
+      returned, the signature verification is skipped.
 
       receivingAccount is the account from which the receiver
       information is taken (private decryption key and ids). if
@@ -149,73 +266,16 @@ window.Inbox = (function (module) {
                 return resolve(null);
             }
 
-            // 1. convert base16k body toBits  (see Certs L274) => bits
-            var bodyLenBytes = (body.length * Outbox.Message.USABLE_BITS_PER_TWITTER_CHAR) / 8;
-            var lenChar = String.fromCharCode(0x5000 + bodyLenBytes);
-            var bits = pack.Base16k('b16', lenChar + body).toBits({debug: !!module.DEBUG});
-
-            // 2. define the struct for the message, and unpack:
-            var fmt = pack('twist',
-                           pack.Number('version', {len: 8}),
-                           pack.Bits('cipherbits', {len: Outbox.Message.CIPHERTEXT_BITS}),
-                           pack.Bits('signaturebits', {len: KeyClasses.ECC_SIGN_BITS}));
-            var parsed = fmt.fromBits(bits);
-            var data = parsed[0];
-            //var unusedBits = data[1];
-
-            // 3. assemble authenticated data
-            var tweet_timestamp_ms = parseInt(tweet.timestamp_ms); // should fit within 53 bits of precision for quite a while.
-            var twistor_epoch = Outbox.Message.twistorEpoch(tweet_timestamp_ms);
-            var epochBits = pack.Number('epoch', {len: 32}, twistor_epoch).toBits();
-
-            var adata_bits = pack("adata",
-                                  pack.Decimal('recipient_id', {len: 64}, account.primaryId),
-                                  pack.Decimal('sender_id',    {len: 64}, tweet.user.id_str),
-                                  pack.Bits('epoch', epochBits)
-                                 ).toBits();
-
-            // 4. decrypt (attempt to)
-            var cipherBits1 = pack.walk(data, 'twist', 'cipherbits');
-            try {
-                var decryptedBits1 = account.key.decryptECIES_KEM(cipherBits1, {outEncoding: 'bits', macText: adata_bits});
-            } catch (err) {
-                // The twist is not intended for us so we can safely drop it.
-                if (err instanceof Fail && err.code === Fail.CORRUPT) {
-                    return resolve(null);
+            return resolve(module._verifyTwistBody(body, {
+                timestampMs: parseInt(tweet.timestamp_ms), // should fit within 53 bits of precision for quite a while.
+                senderId: tweet.user.id_str,
+                recipientAccount: account,
+                certLookupFn: certLookupFn
+            }).then(result => {
+                if (result !== null) {
+                    result.tweet = tweet;
                 }
-                throw err;
-            }
-
-            // if we have a match. check the signature.  recompute the
-            // signature text (as is done in outbox.js) and verify
-            // signature. do another unpack to extract the message (utf-8).
-            // log it to the console, or the UI.log.
-
-            var BA = sjcl.bitArray;
-            var versionBits = pack.Number('version', {len: 8}, 0x01).toBits(); // expect v01. lazy. version mismatch will fail signature.
-            var signTheseBits = BA.concat(versionBits, cipherBits1);
-            var signature = pack.walk(data, 'twist', 'signaturebits');
-
-            var senderId = tweet.user.id_str;
-            if (tweet.user.id === "863161657417121800") {
-                // Sender is from twist-example.json and this is a
-                // sample tweet.
-                senderId = Vault.getAccount().primaryId;
-            }
-
-            resolve(certLookupFn(senderId).then(cert => {
-                var result = cert.key.verifySignature(signTheseBits, signature, {encoding: 'bits', sigEncoding: 'bits'});
-                if (result) {
-                    // console.log("[verification] Signature verified on tweet from user: " + senderId);
-                    // FIXME unpack
-                    var fmt = pack.VarLen('usermsg',
-                                          pack.Utf8('utf8', this.payload || "")))).toBits();
-                    return decryptedBits1;
-                }
-                return false;
-            }).catch(err => {
-                console.log("no cert found for twitterid " + senderId, err);
-                return null;
+                return result;
             }));
         });
     };

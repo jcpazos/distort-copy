@@ -419,7 +419,7 @@ window.pack = (function () {
             /*jshint unused:false */
 
             // skip all fields
-            var skipBits = BA.bitSlice(this.bits, (header.byteLen + 1) * 8);
+            var skipBits = BA.bitSlice(outVal.bits, (header.byteLen + 1) * 8);
             return [outVal, skipBits];
         },
 

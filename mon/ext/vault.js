@@ -599,5 +599,8 @@ window.Vault = (function () {
 
     KeyLoader.registerClass("acct", Account);
 
+    // hack for tests
+    Vault.prototype._Account = Account;
+
     return new Vault();
 })();

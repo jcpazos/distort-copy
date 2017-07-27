@@ -19,6 +19,7 @@
 /*global sjcl,
   AESKey,
   calc_y_p192,
+  Certs,
   ECCPubKey,
   ECCKeyPair,
   Emitter,
@@ -28,6 +29,7 @@
   GroupStats,
   Inbox,
   KeyClasses,
+  Outbox,
   Stats,
   Twitter,
   UI,
@@ -252,57 +254,57 @@ window.Tests = (function (module) {
         return new Promise(resolve => setTimeout(resolve, ms));
     };
 
-    module.decrypt = function(iterations, verifySig) {
+    /**
+       tests repeated decryption of a twist.
+
+       output is statistics on time taken (in ms) to do NPerIteration decryptions.
+
+       isNoise === true  means the twist is for someone else (skips signature verification)
+       isNoise === false (default) means the twist is intended for the user (integrity and signature will be computed)
+    */
+    module.decryptTwist = function(iterations, isNoise, NPerIteration) {
         var stats = new Stats.Dispersion({supportMedian: true});
+        var twistsPerSecond = new Stats.Dispersion({supportMedian: true});
 
-        var certLookupFn = function(cert) {
-            return new Promise((resolve, reject) => {
-                resolve(myCert);
-            });
-        };
-
-        function oneIteration() {
-            var innerStart = performance.now();
-            var proms = [];
-            for (var j=0; j<100; j++) {
-                proms.push(Inbox.processTweet(tweetInfo, certLookupFn));
-            }
-            return Promise.all(proms).then(results => {
-                stats.update(performance.now() - innerStart);
-            });
-        }
-
-        return new Promise((resolve, reject)=> {
-            var myAcct = Vault.getAccount();
-            if (!myAcct) {
-                new Promise((resolve, reject) => {
-                    resolve(Vault.newAccount({
-                        primaryId: "836492558473674752",
+        isNoise = (isNoise === undefined) ? false : !!isNoise;
+        NPerIteration = (NPerIteration === undefined) ? 100 : (+NPerIteration);
+        return new Promise(resolve => {
+            var myAcct = new Vault._Account({
+                        primaryId: (0xc0debabe + ""),
                         primaryHandle: "strangerglove",
                         secondaryHandle: "alexristich"
-                    }));
-                })
-            }
-            resolve(Vault.getAccount());
-        }).then(function (myAcct) {
-            console.log("got account");
-            var myCert = new Certs.UserCert({
-                primaryId: verifySig ? myAcct.primaryId : "000000000000000000",
-                primaryHdl: myAcct.primaryHandle,
-                secondaryHdl: myAcct.secondaryHandle,
-                groups: myAcct.groups,
-                validFrom: Math.ceil(Date.now() / 1000),
-                validUntil: Math.floor(Date.now() * 2 / 1000),
-                key: myAcct.key,   // subclass of ECCPubKey
-                status: Certs.UserCert.STATUS_OK
             });
+            resolve(myAcct);
+        }).then(function (myAcct) {
 
-            var msg = Outbox.Message.compose(myCert, "Han shot first.", myAcct);
-            var text = msg.encodeForTweet(myCert.groups, false);
+            var myCert = Certs.UserCert.fromAccount(myAcct);
+
+            var certLookupFn = (/* senderId */) => {
+                return Promise.resolve(myCert);
+            };
 
 
+            var originalMsg = "Han shot first.";
+
+            // compose a message for myself
+            var msg = Outbox.Message.compose(myCert            /*recipient*/,
+                                             originalMsg        /*msg*/,
+                                             myAcct            /*fromaccount*/);
+            var originalTs = Date.now() + "";
+            var twist = msg.encodeForTweet(myCert.groups, false);
+
+            // replicate the tweet structure
             var tweet = JSON.parse(module.twist_example);
-            tweet.text = text;
+            // subsitute the twist body
+            tweet.text = twist;
+            // fixate sender
+            if (isNoise) {
+                tweet.user.id_str = 0xbeefcaca + ""; // bad senderId. will cause integrity check to fail (and signature to be skipped)
+            } else {
+                tweet.user.id_str = myAcct.primaryId;
+            }
+            // fixate time
+            tweet.timestamp_ms = originalTs;
 
             var hashtaglist = (((tweet.entities || {}).hashtags) || []).map(ht => ht.text);
             var tweetInfo = {
@@ -312,25 +314,68 @@ window.Tests = (function (module) {
                 refs: null
             };
 
-            var iter = 0;
-
-            function loop() {
-                if (iter < iterations) {
-                    iter++;
-                    oneIteration().then(() => {
-                        return loop();
-                    }).catch(err => {
-                        return reject(err);
-                    });
-                } else {
-                    return resolve(true);
+            function oneIteration() {
+                let innerStart = performance.now();
+                var proms = [];
+                for (var j=0; j<NPerIteration; j++) {
+                    proms.push(Inbox.processTweet(tweetInfo, certLookupFn, myAcct));
                 }
+                return Promise.all(proms).then(results => {
+                    var failures = [];
+                    let ms = performance.now() - innerStart;
+                    // first, update the statistics on the time it took
+                    stats.update(ms);
+                    twistsPerSecond.update((NPerIteration * 1000) / ms);
+
+                    // second, make sure we got the expected results (assert)
+                    if (isNoise) {
+                        //every result should be null.
+                        failures = results.filter(res => res !== null);
+                        if (failures.length > 0) {
+                            throw new Error("Test broken. " + failures.length + " noise message(s) passed the integrity check");
+                        }
+                    } else {
+                        // every result should decrypt the initial
+                        // message correctly, and signature
+                        // verification should pass
+                        failures = results.filter(res => (res === null));
+                        if (failures.length > 0) {
+                            throw new Error("Test broken. " + failures.length + " signal message(s) failed integrity check");
+                        }
+                        failures = results.filter(res => (res.verified === false));
+                        if (failures.length > 0) {
+                            throw new Error("Test broken. " + failures.length + " signal message(s) failed signature verification");
+                        }
+                        failures = results.filter(res => (res.message !== originalMsg));
+                        if (failures.length > 0) {
+                            throw new Error("Test broken. " + failures.length + " signal message(s) did not recover the initial text");
+                        }
+                    }
+                });
             }
-            loop();
+
+            return new Promise((resolve, reject) => {
+                var iter = 0;
+                function loop() {
+                    if (iter < iterations) {
+                        iter++;
+                        oneIteration().then(() => {
+                            return loop();
+                        }).catch(err => {
+                            console.error("problem occurred in iteration: " + iter + ": ", err);
+                            reject(err);
+                        });
+                    } else {
+                        return resolve(true);
+                    }
+                }
+                loop();
+            });
         }).then(() => {
-            console.log("[stats] " + stats.toString() + "\n\n");
+            console.log("[stats (ms per " + NPerIteration + " twists)] isNoise=" + isNoise + " " + stats.toString() + "\n\n");
+            console.log("[stats (twists per second)] isNoise=" + isNoise + " " + twistsPerSecond.toString() + "\n\n");
         }).catch((error) => {
-            console.log(error);
+            console.log("Tests.decryptTwist failed: ", error);
         });
     };
 
