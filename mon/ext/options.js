@@ -671,7 +671,7 @@ function loadPage() {
         Twitter.getUserInfo().then(function (twitterInfo) {
             if (twitterInfo.twitterId === null ||
                 twitterInfo.twitterUser === null) {
-                updateStatus("Please login to Twitter in a tab.", true);
+                updateStatus("Response came back with token: " + twitterInfo.token + ". Please login to Twitter in a tab.", true);
                 return;
             }
             updateStatus("Twitter information retrieved.");

@@ -719,8 +719,13 @@ var Twitter = (function (module) {
                     return reject(new Fail(Fail.GENERIC, "token format changed?"));
                 }
 
+                //twitter now allows a nightlymode that has the current-user class as well, so filter that out.
                 var currentUsers = xmlDoc.getElementsByClassName("current-user");
-                if (currentUsers === null || currentUsers.length !== 1) {
+                var currentUsersArray = Array.prototype.slice.call(currentUsers, 0).filter(function(el) {
+                    return !(el.classList.contains('nightmode-toggle'));
+                });
+
+                if (currentUsersArray === null || currentUsersArray.length !== 1) {
                     return resolve({token: token,
                                     twitterId: null,
                                     twitterUser: null});
