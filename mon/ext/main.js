@@ -33,14 +33,13 @@ var monitorID = null;
 
 chrome.browserAction.onClicked.addListener(function(tab) {
     if (monitorID === null) {
+        //create monitor tab and update current monitor
         chrome.tabs.create({
             url: chrome.runtime.getURL("popup.html")
         }, function(tab) {
-            // win represents the Window object from windows API
-            // Do something after opening
-            console.log("new tab id " +tab.id);
             monitorID = tab.id;
         });
+        //else set monitor active
     } else {
         chrome.tabs.update(
             monitorID, {
@@ -50,6 +49,7 @@ chrome.browserAction.onClicked.addListener(function(tab) {
     }
 });
 
+//make sure to keep track of removed monitor tabs
 chrome.tabs.onRemoved.addListener(function (tabId, removeInfo) {
     console.log("tab removed " +tabId);
     if (tabId === monitorID) {
