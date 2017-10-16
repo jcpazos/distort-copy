@@ -26,3 +26,27 @@ window.Events = new Emitter();
    Background API
 */
 window.API = new BGAPI();
+
+
+//Manages unique monitor tab
+var monitorID = null;
+
+chrome.browserAction.onClicked.addListener(function(tab) {
+    if (monitorID === null) {
+        chrome.tabs.create({
+            url: chrome.runtime.getURL("popup.html")
+        }, function(tab) {
+            // win represents the Window object from windows API
+            // Do something after opening
+            console.log("new tab id " +tab.id);
+            monitorID = tab.id;
+        });
+    }
+});
+
+chrome.tabs.onRemoved.addListener(function (tabId, removeInfo) {
+    console.log("tab removed " +tabId);
+    if (tabId === monitorID) {
+        monitorID = null;
+    }
+});

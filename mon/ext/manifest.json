@@ -17,8 +17,7 @@
 	    "19": "logo/logo19.png",
 	    "38": "logo/logo38.png"
 	},
-	"default_title": "Beeswax External Monitor",
-	"default_popup": "popup.html"
+	"default_title": "Beeswax External Monitor"
     },
     "background": {
 	"scripts": ["lib/jquery-1.11.3.min.js",
