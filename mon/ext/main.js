@@ -41,6 +41,12 @@ chrome.browserAction.onClicked.addListener(function(tab) {
             console.log("new tab id " +tab.id);
             monitorID = tab.id;
         });
+    } else {
+        chrome.tabs.update(
+            monitorID, {
+                active: true 
+            }
+        ); 
     }
 });
 
