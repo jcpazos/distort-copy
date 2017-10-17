@@ -81,7 +81,9 @@ window.Inbox = (function (module) {
             var batch = this._pendingTweets;
             this._pendingTweets = [];
 
-            Promise.all(batch.map(tweetInfo => this.processTweet(tweetInfo).catch(err => {
+            Promise.all(batch.map(tweetInfo => this.processTweet(tweetInfo).then(processedTweet=>{
+                Events.emit('incomingMessage', processedTweet);
+            }).catch(err => {
                 console.error("[inbox] error processing message tweet: " + err.stack, err);
             }))).then(() => {
                 batch = null;
@@ -175,6 +177,7 @@ window.Inbox = (function (module) {
                 message: usermsg,
                 verified: false
             };
+            console.log("message from: " + account.id_both);
 
             //5. verify signature
             resolve(opts.certLookupFn(opts.senderId).catch(err => {
@@ -246,6 +249,7 @@ window.Inbox = (function (module) {
 
         // the tweets sent by Twitter
         var tweet = tweetInfo.tweet;
+        //TODO: check that hashtags in tweet message match hashtags receiving account is listening to
 
         // console.log("[inbox]", tweet);
         module.stats.numProcessed += 1;

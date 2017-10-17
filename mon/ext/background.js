@@ -849,8 +849,7 @@ BGAPI.prototype._updateDistribution = function (account) {
         if (!this.distributeTasks[userid]) {
             this.distributeTasks[userid] = new DistributeTask(BGAPI.PERIOD_DISTRIBUTE_MS, userid);
         }
-        // TODO Comment this back in later
-        // this.distributeTasks[userid].start();
+        this.distributeTasks[userid].start();
     } else {
         if (this.distributeTasks[userid]) {
             this.distributeTasks[userid].stop();
