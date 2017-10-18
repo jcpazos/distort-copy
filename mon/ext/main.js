@@ -28,31 +28,33 @@ window.Events = new Emitter();
 window.API = new BGAPI();
 
 
-//Manages unique monitor tab
+//Manages unique monitor window
 var monitorID = null;
 
 chrome.browserAction.onClicked.addListener(function(tab) {
     if (monitorID === null) {
-        //create monitor tab and update current monitor
-        chrome.tabs.create({
-            url: chrome.runtime.getURL("popup.html")
-        }, function(tab) {
-            monitorID = tab.id;
+        //create monitor window and update current monitor
+        chrome.windows.create({
+            url: chrome.runtime.getURL("popup.html"),
+            type: 'popup',
+            width: 550,
+            height: 850
+        }, function(window) {
+            monitorID = window.id;
         });
         //else set monitor active
     } else {
-        chrome.tabs.update(
+        chrome.windows.update(
             monitorID, {
-                active: true 
+                focused: true 
             }
         ); 
     }
 });
 
-//make sure to keep track of removed monitor tabs
-chrome.tabs.onRemoved.addListener(function (tabId, removeInfo) {
-    console.log("tab removed " +tabId);
-    if (tabId === monitorID) {
+//make sure to keep track of removed monitor windows
+chrome.windows.onRemoved.addListener(function (windowId) {
+    if (windowId === monitorID) {
         monitorID = null;
     }
 });
