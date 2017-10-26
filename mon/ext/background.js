@@ -1099,6 +1099,8 @@ BGAPI.prototype.getDevKeys = function (username, appName) {
     });
 };
 
+
+
 BGAPI.prototype.openTwitterStream = function (hashtag, username) {
     "use strict";
     var that = this;
@@ -1140,6 +1142,47 @@ BGAPI.prototype.openTwitterStream = function (hashtag, username) {
                             //console.log('setting tweetStreamerID to ', tweetStreamer.streamerID);
                             ctx.setStreamerIDs(tweetStreamer.streamerID);
                             tweetStreamer.send(tweetStreamer.postData);
+                        });
+                    }
+                }
+            }
+        });
+    });
+};
+
+BGAPI.prototype.getTwitterCred = function (username) {
+    "use strict";
+    var that = this;
+
+    return new Promise(function (resolve, reject) {
+        console.debug("[BGAPI] getting Twitter Stream for :", username);
+        // assumes a single tabId will be returned
+        var ctx;
+        chrome.tabs.query({
+            active: true,
+            currentWindow: true
+        }, function (tabs) {
+            //console.log("TABS:", tabs);
+            if (tabs.length < 1) {
+                reject(new Error("no active tabs in this window"));
+                return;
+            }
+            var tabId = tabs[0].id;
+            for (var serial in CryptoCtx.all) {
+                if (CryptoCtx.all.hasOwnProperty(serial)) {
+                    ctx = CryptoCtx.all[serial];
+                    //console.log(ctx, ctx.tabId, tabId);
+                    if (ctx.tabId === tabId) {
+
+                        var canon = CryptoCtx.userKeyName(username, 'devKeys', 'fr');
+
+                        API.loadKey(canon, DevKey).catch(function (err) {
+                            console.log("error getting twitter cred:", err);
+                            throw err;
+                        }).then(function (keyObj) {
+                            var url = 'https://api.twitter.com/1.1/statuses/user_timeline.json';
+                            var response = Twitter._appOnlyXHR("GET", url, keyObj);
+                            console.log(response);
                         });
                     }
                 }

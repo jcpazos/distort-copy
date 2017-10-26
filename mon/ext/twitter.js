@@ -88,8 +88,15 @@ var Twitter = (function (module) {
         var OAUTH_VERSION = "1.0";
         var OAUTH_VERSION_URL = "%26oauth_version%3D1.0";
 
-        var STREAM_BASE_STRING = "POST&https%3A%2F%2Fstream.twitter.com%2F1.1%2Fstatuses%2Ffilter.json&" +
-            encodeURIComponent("oauth_consumer_key=" + consumerKey);
+        var BASE_STRING;
+        if (url === 'https://api.twitter.com/1.1/statuses/user_timeline.json') {
+            BASE_STRING = "GET&https%3A%2F%2Fapi.twitter.com%2F1.1%2Fstatuses%2Fuser_timeline.json&" +
+                encodeURIComponent("oauth_consumer_key=" + consumerKey);
+        } else if (url === 'https://stream.twitter.com/1.1/statuses/filter.json') {
+            BASE_STRING = "POST&https%3A%2F%2Fstream.twitter.com%2F1.1%2Fstatuses%2Ffilter.json&" +
+                encodeURIComponent("oauth_consumer_key=" + consumerKey);
+            } //else do something else?
+
         var NONCE_LENGTH = 32;
 
         var oauth_nonce = encodeURIComponent(nonceGenerator(NONCE_LENGTH));
@@ -105,7 +112,7 @@ var Twitter = (function (module) {
         var dataStr = query.join("&");
 
         var signature_base_string = (
-            STREAM_BASE_STRING + oauth_nonce_url + SIGNATURE_METHOD_URL +
+            BASE_STRING + oauth_nonce_url + SIGNATURE_METHOD_URL +
                 oauth_timestamp_url + "%26oauth_token%3D" + accessToken +
                 OAUTH_VERSION_URL);
 
@@ -344,6 +351,7 @@ var Twitter = (function (module) {
     });
 
     module.Streamer = Streamer;
+    module._appOnlyXHR = _appOnlyXHR;
 
     /**
        The manager is the class that manages a series of Twitter streams
@@ -1167,7 +1175,7 @@ var Twitter = (function (module) {
             var preq = new XMLHttpRequest();
             preq.open("GET", "https://twitter.com/" + encodeURIComponent(handle), true);
             preq.onerror = function () {
-                console.error("Prolem loading tweets", [].slice.apply(arguments));
+                console.error("Problem loading tweets", [].slice.apply(arguments));
                 reject(new Fail(Fail.GENERIC, "Ajax failed."));
             };
             preq.onload = function () {
