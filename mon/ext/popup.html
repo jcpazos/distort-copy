@@ -4,6 +4,21 @@
     <style>
       a { color: red; cursor: pointer; }
       a.disabled { color: gray; cursor: not-allowed; }
+      table {
+        font-family: arial, sans-serif;
+        border-collapse: collapse;
+        width: 100%;
+      }
+
+      td, th {
+        border: 1px solid #dddddd;
+        text-align: left;
+        padding: 8px;
+      }
+
+      tr:nth-child(even) {
+        background-color: #dddddd;
+      }
     </style>
   </head>
   <body style="width: 450px">
@@ -37,13 +52,43 @@
       <!-- <li>Manual Sharing: <a class="kp-view" data-type="encrypt">Enc Pubkey</a> / <a class="kp-view" data-type="sign">Sign Pubkey</a></li> -->
       <li>Twitter/GitHub: <a class="kp-post" data-type="post-twitter">Repost Cert</a>
     </ul>
-
     <br />
-
+    <button id="compose">Compose</button>
+    <br/>
+    <br/>
+    <table id="messageUI" style="border-collapse: collapse; width: 100%;" hidden> 
+      <tbody>
+        <tr>
+          <th><input id="recipienttext" type="text" style="font-family:Times New Roman, Times, serif;" placeholder="Recipient"></th>
+        </tr>
+        <tr>
+          <td>From: apptwistor@gmail.com</td>
+         
+        </tr>
+        <tr>
+          <td><textarea id="messagetext" type="text" style="width: 100%; max-height: 300px; min-height: 250px; vertical-align:top; font-family:Times New Roman, Times, serif;" placeholder="Your message here"></textarea></td>
+        </tr>
+        <tr>
+          <td><button id="sendmessage">Send</button></td>
+        </tr>
+      </tbody>
+    </table>
+    <br/>
+    Distort Outgoing Message Log:
+    <table id="distortoutgoing"> 
+      <tbody>
+        <tr>
+          <td>To: #js</td>
+          <td>Message: This is Distort messaging</td>
+          <td>Wed Dec 20</td>
+        </tr>
+      </tbody>
+    </table>
+    <hr/>
+    <br/>
+    <hr/>
     Message Log: (<a id="clearlog">Clear</a>)
     <textarea id="messagelog" style="width: 100%; max-height: 300px; min-height: 250px; font-size: x-small;"></textarea>
-
-    <hr/>
 
     <label for="messageinput">Message Input:</label><br />
     <select disabled id="contextselect"><option>Loading...</option></select><br />

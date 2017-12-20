@@ -464,6 +464,43 @@ function onNewUser() {
     render();
 }
 
+function onMessageCompose() {
+    $doc.find("#messageUI").show();
+}
+
+function onMessageSend() {
+    if ($doc.find("#messagetext").val() === "" ||$doc.find("#recipienttext").val() === "") {
+        alert("Invalid user input, please specify a recipient or a message");
+        return;
+    }
+    logNewMessage();
+    $doc.find("#messagetext").val("");
+    $doc.find("#recipienttext").val("");
+    $doc.find("#messageUI").hide();
+
+}
+
+function logNewMessage() {
+    var table = $doc[0].getElementById("distortoutgoing");
+    var row = table.insertRow(0);
+    var to = row.insertCell(0);
+    var message = row.insertCell(1);
+    var date = row.insertCell(2);
+    var originalText = $doc.find("#messagetext").val();
+    var text = originalText;
+    if (originalText.length > 20) {
+        text = originalText.substr(0,20) + "...";
+    }
+    var recipient = " #" + $doc.find("#recipienttext").val();
+    to.innerText = "To: " + recipient;
+    message.innerText = "Message: " + text;
+    date.innerText = (new Date().toString()).substr(0,10);
+    $(row).click(function() {
+        //open up full message like gmail
+        alert("Message: " + originalText);
+    });
+}
+
 function sethooks() {
     "use strict";
 
@@ -480,6 +517,8 @@ function sethooks() {
     $doc.find("#contextselect").change(onCtxChange);
     $doc.find("#clearlog").click(onClearLog);
     $doc.find("#exportuser").click(onExportUser);
+    $doc.find("#compose").click(onMessageCompose);
+    $doc.find("#sendmessage").click(onMessageSend);
 
     UI.setLogHook(function (txt) {
         var $log = $doc.find("#messagelog");
