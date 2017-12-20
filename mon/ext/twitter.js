@@ -89,8 +89,9 @@ var Twitter = (function (module) {
         var OAUTH_VERSION_URL = "%26oauth_version%3D1.0";
 
         var BASE_STRING;
-        if (url === 'https://api.twitter.com/1.1/statuses/user_timeline.json') {
-            BASE_STRING = "GET&https%3A%2F%2Fapi.twitter.com%2F1.1%2Fstatuses%2Fuser_timeline.json&" +
+        if (url === 'https://api.twitter.com/1.1/search/tweets.json') {
+            url = 'https://api.twitter.com/1.1/search/tweets.json?q=from%3AAppTwistor%20%23t1crt'
+            BASE_STRING = "GET&https%3A%2F%2Fapi.twitter.com%2F1.1%2Fsearch%2tweets.json&" +
                 encodeURIComponent("oauth_consumer_key=" + consumerKey);
         } else if (url === 'https://stream.twitter.com/1.1/statuses/filter.json') {
             BASE_STRING = "POST&https%3A%2F%2Fstream.twitter.com%2F1.1%2Fstatuses%2Ffilter.json&" +
