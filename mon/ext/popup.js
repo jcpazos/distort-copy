@@ -469,34 +469,37 @@ function onMessageCompose() {
 }
 
 function onMessageSend() {
-    if ($doc.find("#messagetext").val() === "" ||$doc.find("#recipienttext").val() === "") {
+    var text = $doc.find("#messagetext");
+    var recipient = $doc.find("#recipienttext");
+    if (text.val() === "" || recipient.val() === "") {
         alert("Invalid user input, please specify a recipient or a message");
         return;
     }
-    logNewMessage();
-    $doc.find("#messagetext").val("");
-    $doc.find("#recipienttext").val("");
+    API.messageManager.compose("#apptwistor", text.val());
+    //save message to DB
+    //TODO: hookup with messages.js DB to store and retrieve certs
+    logNewMessage(text.val(), " #" + recipient.val());
+    text.val("");
+    recipient.val("");
     $doc.find("#messageUI").hide();
 
 }
 
-function logNewMessage() {
+function logNewMessage(originalText, recipient) {
     var table = $doc[0].getElementById("distortoutgoing");
     var row = table.insertRow(0);
     var to = row.insertCell(0);
     var message = row.insertCell(1);
     var date = row.insertCell(2);
-    var originalText = $doc.find("#messagetext").val();
     var text = originalText;
     if (originalText.length > 20) {
         text = originalText.substr(0,20) + "...";
     }
-    var recipient = " #" + $doc.find("#recipienttext").val();
     to.innerText = "To: " + recipient;
     message.innerText = "Message: " + text;
     date.innerText = (new Date().toString()).substr(0,10);
     $(row).click(function() {
-        //open up full message like gmail
+        //TODO: open up full message like gmail
         alert("Message: " + originalText);
     });
 }
@@ -519,6 +522,7 @@ function sethooks() {
     $doc.find("#exportuser").click(onExportUser);
     $doc.find("#compose").click(onMessageCompose);
     $doc.find("#sendmessage").click(onMessageSend);
+    $doc.find("#newuser").click(onNewUser);
 
     UI.setLogHook(function (txt) {
         var $log = $doc.find("#messagelog");

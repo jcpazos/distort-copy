@@ -731,6 +731,7 @@ function BGAPI() {
     this.activeAccounts = {};
     this.streamerManager = new Twitter.StreamerManager();
     this.outboxTask = new Outbox.PeriodicSend();
+    this.messageManager = Outbox.Message;
     this.statsTask = new ShowStats();
 
     Certs.listenForTweets(this.streamerManager);
