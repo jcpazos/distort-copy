@@ -614,11 +614,13 @@
                 var preq = new XMLHttpRequest();
 
                 var formData = [
-                    ['filename', data.filename],
+                    ['utf8', decodeURIComponent("%E2%9C%93")], // checkmark character
                     ['authenticity_token', data.authenticity_token],
+                    ['filename', data.filename],
                     ['new_filename', data.new_filename],
                     ['commit', data.commit],
                     ['same_repo', "1"],
+                    ['pr', ''],
                     ['content_changed', (data.authenticity_token)?"true":"false"],
                     ['value', data.value],
                     ['message', data.message],
