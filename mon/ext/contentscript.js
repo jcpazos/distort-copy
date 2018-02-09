@@ -622,9 +622,9 @@
                     ['same_repo', "1"],
                     ['pr', ''],
                     ['content_changed', (data.authenticity_token)?"true":"false"],
-                    ['value', data.value],
+                    ['value', "temp value"], //data.value
                     ['message', data.message],
-                    ['placeholder_message:', 'Update README.md'],
+                    ['placeholder_message', 'Update README.md'],
                     ['description', ''],
                     ['commit-choice', data.commit_choice],
                     ['target_branch', data.target_branch],
@@ -635,9 +635,11 @@
 
                 //TODO check that all parameters are present. throw otherwise
 
-                var url = "https://github.com/" + encodeURIComponent(userHandle) + "/twistor-app/tree-save/master/README.md";
+                var url = "https://github.com/" + encodeURIComponent(userHandle) + "/twistor-app/blob/master/README.md";
                 preq.open("POST", url, true);
-                preq.setRequestHeader("Content-type", "application/x-www-form-urlencoded; charset=utf-8");
+                preq.setRequestHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8");
+                preq.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+                preq.setRequestHeader("Upgrade-Insecure-Requests", "1");
 
                 // console.debug("Generated post: ", postData, " LENGTH: ", postData.length);
 
