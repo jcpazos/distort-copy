@@ -36,6 +36,8 @@ var Vault = BG.Vault;
 var API = BG.API;
 var UI = BG.UI;
 var Utils = BG.Utils;
+//TODO: MAKE THIS ARRAY PERSISTENT
+var outgoingMessages = [];
 
 function onUsernameChange(evt) {
     "use strict";
@@ -358,6 +360,7 @@ function render() {
         $select.removeAttr("disabled");
     }
     loadAccounts();
+    displayMessages();
 }
 
 function onKPPost(evt) {
@@ -475,10 +478,11 @@ function onMessageSend() {
         alert("Invalid user input, please specify a recipient or a message");
         return;
     }
-    API.messageManager.compose("#apptwistor", text.val());
+    var m = API.messageManager.compose("#apptwistor", text.val());
+    API.outboxTask.queue.enqueue(m);
     //save message to DB
     //TODO: hookup with messages.js DB to store and retrieve certs
-    logNewMessage(text.val(), " #" + recipient.val());
+    logNewMessage(text.val(), recipient.val());
     text.val("");
     recipient.val("");
     $doc.find("#messageUI").hide();
@@ -486,22 +490,37 @@ function onMessageSend() {
 }
 
 function logNewMessage(originalText, recipient) {
+    var date = (new Date().toString()).substr(0,10);
+    outgoingMessages.push({To: recipient, Message: originalText, Date: date});
+    displayMessage(originalText, recipient, date);
+
+}
+
+function displayMessage(originalText, recipient, tweetDate) {
     var table = $doc[0].getElementById("distortoutgoing");
     var row = table.insertRow(0);
     var to = row.insertCell(0);
     var message = row.insertCell(1);
     var date = row.insertCell(2);
     var text = originalText;
+
     if (originalText.length > 20) {
         text = originalText.substr(0,20) + "...";
     }
+
     to.innerText = "To: " + recipient;
     message.innerText = "Message: " + text;
-    date.innerText = (new Date().toString()).substr(0,10);
+    date.innerText = tweetDate;
     $(row).click(function() {
         //TODO: open up full message like gmail
         alert("Message: " + originalText);
     });
+}
+
+function displayMessages() {
+    for (var i = 0; i<outgoingMessages.length; i++) {
+        displayMessage(outgoingMessages[i].To, outgoingMessages[i].Message, outgoingMessages[i].Date);
+    }
 }
 
 function sethooks() {
