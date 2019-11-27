@@ -119,9 +119,9 @@ window.Inbox = (function (module) {
             // 1. convert base16k body toBits  (see Certs L274) => bits
             body = body.trim();
             var bodyLenBytes = (body.length * Outbox.Message.USABLE_BITS_PER_TWITTER_CHAR) / 8;
-            if (bodyLenBytes % 1 !== 0) {
+            /*if (bodyLenBytes % 1 !== 0) {
                 throw new Fail(Fail.BADPARAM, "the body should be a multiple of 8bits");
-            }
+            }*/
 
             var lenChar = String.fromCharCode(0x5000 + bodyLenBytes);
             var bits = pack.Base16k('b16', lenChar + body).toBits({debug: !!module.DEBUG});
@@ -251,7 +251,7 @@ window.Inbox = (function (module) {
         var tweet = tweetInfo.tweet;
         //TODO: check that hashtags in tweet message match hashtags receiving account is listening to
 
-        // console.log("[inbox]", tweet);
+         console.log("[inbox]", tweet);
         module.stats.numProcessed += 1;
 
         return new Promise(resolve => {

@@ -63,6 +63,7 @@
                     "https://apps.twitter.com/*",
                     "https://twitter.com/*",
                     "https://api.twitter.com/*",
+                    "*://*.twitter.com/*",
                     "https://stream.twitter.com/*",
                     "https://github.com/*",
                     "https://raw.githubusercontent.com/*"

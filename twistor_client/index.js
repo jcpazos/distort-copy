@@ -18,10 +18,10 @@ var port = process.env.PORT || 3000;
 //var base32k = require("base32k");
 var sqlite3 = require('sqlite3').verbose();
 var db = new sqlite3.Database('twistor.db'); 
-var write_app_keys = {consumer_key: "05jswCv23JNXbOvVkW7voMdDJ", consumer_secret: "SknKARXGc4IIiO4787lL5W84PgclGOQ93GS8EfKGBak2O5L7Bk"};
-var read_app_keys = {consumer_key: "Sob9bnpxvrlizyQeEY7OUUVi3", consumer_secret: "w6M3FPpV8syFbZW1BO8hWJhIvhSet64jQXWu6cJzCoG4T97Bpf"};
+var write_app_keys = {consumer_key: "", consumer_secret: ""};
+var read_app_keys = {consumer_key: "", consumer_secret: ""};
 
-var supernode_keys = { sn0: ["733744664746983424-lwdtjn5P4JIqsrGueRTRP8qP3uHANdF", "ndmXQecHmtCv4LbtzP89WPHgrEF7x4qIpvwGx9A2MsIoK"] };
+var supernode_keys = { sn0: ["", ""] };
 
 //var Stream = require('user-stream');
 

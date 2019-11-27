@@ -1,21 +1,21 @@
 {
-    "name": "socket-chat-example",
-    "version": "0.0.1",
-    "description": "twistor app",
-    "dependencies": {
-	"twitter-node-client": "0.0.6",
-	"express": "^4.14.0",
-	"socket.io": "^1.4.6",
-	"twitter": "1.7.0",
-	"node-twitter-api": "1.8.0",
-	"opener": "1.4.2",
-	"prompt": "1.0.0",
-	"base91": "0.0.5",
-	"base32k": "0.1.0",
-	"sqlite3": "3.1.8",
-	"user-stream": "0.0.8"
-    },
-    "devDependencies": {
-	"browserify": "13.3.0"
-    }
+			"name": "socket-chat-example",
+			"version": "0.0.1",
+			"description": "twistor app",
+			"dependencies": {
+						"base32k": "0.1.0",
+						"base91": "0.0.5",
+						"express": "^4.14.0",
+						"node-twitter-api": "1.8.0",
+						"opener": "1.4.2",
+						"prompt": "1.0.0",
+						"socket.io": "^1.4.6",
+						"sqlite3": "4.1.0",
+						"twitter": "^1.7.1",
+						"twitter-node-client": "0.0.6",
+						"user-stream": "0.0.8"
+			},
+			"devDependencies": {
+						"browserify": "13.3.0"
+			}
 }

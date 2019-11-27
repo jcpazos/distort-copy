@@ -1341,6 +1341,57 @@ var Twitter = (function (module) {
             });
             return Promise.all(allPromises);
         });
+    },
+
+    module.getOAuthToken = function getOAuthToken() {
+        /*var originalTabId = -1;
+        function isTwitterCtx(ctx) {
+            return (!ctx.isMaimed && ctx.app === "twitter.com");
+        }
+        //var ctx = CryptoCtx.filter(isTwitterCtx)[0];
+
+        return API.openContext("https://api.twitter.com/oauth2/token").then(function (ctx) {
+
+            originalTabId = ctx.tabId;
+
+            return ctx.callCS("retrieve_twitter_auth_token", {}).then(function (responseText) {
+                console.log(responseText);
+            }).catch(function (err) {
+                if (err.code === Fail.MAIMED) {
+                    console.log("app creation tab closed early. checking if operation completed.");
+                    return ctx;
+                } else {
+                    throw err;
+                }
+            });
+        });*/
+
+        var preq = new XMLHttpRequest();
+        var username = "BV8HrCNqIBwIOCue4tQUe6s7X";
+        var token = "i4r9L2WVMjLSelV1PCkXCoiAni1Qu90UyNgZTMz0d99r4dPmLC";
+        var auth_credentials = btoa(encodeURIComponent(username) + ":" + encodeURIComponent(token));
+        var URL = "https://api.twitter.com/oauth2/token";
+        var body = 'grant_type=client_credentials';
+        preq.open("POST", URL, true);
+        preq.setRequestHeader('Authorization', 'Basic ' + auth_credentials);
+        preq.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
+
+        preq.onload = function () {
+            if (preq.status < 200 || preq.status >= 300) {
+                // if the response is a 301, it doesn't look like the browser follows the
+                // redirect to post again. so we need the 200 range
+                var msg = "HTTP Error when accessing Twitter OAuth token: (" + preq.status + ") " + preq.statusText;
+                console.error(msg, preq);
+            }
+            console.log(preq.responseText);
+        };
+
+        preq.onerror = function (err) {
+            console.error("Problem retrieving Twitter OAuth token.", [].slice.apply(arguments));
+        };
+
+
+        preq.send(body);
     };
 
     return module;

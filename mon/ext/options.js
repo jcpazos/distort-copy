@@ -97,6 +97,7 @@ function readAccountForm() {
     opts.primaryHandle = $doc.find("input[name='primary-handle']").val();
     opts.primaryApp = $doc.find("input[name='twitter-app-keys']").data('keys');
     opts.secondaryHandle = $doc.find("input[name='secondary-handle']").val();
+    opts.gitHubToken = $doc.find("input[name='github-token-info']").val();
     // null if a new key is to be generated
     opts.key = $doc.find("textarea[name='key-data']").data("key");
     opts.groups = [];
@@ -147,7 +148,7 @@ function stepButtonClick(evt) {
         case "start-github":
             switch(bName) {
                 case "next":
-                    showStep(stepClass, "twitter-app");
+                    showStep(stepClass, "get-github-token");
                     break;
                 default:
                     showPage("main");
@@ -155,20 +156,19 @@ function stepButtonClick(evt) {
             }
             break;
 
-       case "twitter-app":
-           switch(bName) {
-            case "back":
-                showStep(stepClass, "start");
-                break;
-            case "next":
-                showStep(stepClass, "import-keys");
-                break;
-            default:
-                showPage("main");
-                break;
-            }
-            break;
-
+        case "get-github-token":
+            switch(bName) {
+                case "back":
+                    showStep(stepClass, "start");
+                    break;
+                case "next":
+                    showStep(stepClass, "twitter-app");
+                    break;
+                default:
+                    showPage("main");
+                    break;
+            } 
+            break;   
         case "twitter-app":
             switch(bName) {
             case "back":
@@ -321,6 +321,9 @@ function initStep(className, stepNo) {
         break;
     case "new-account-step.start-github":
         $stepDiv.find("#github-info").hide();
+        break;
+    case "new-account-step.get-github-token":
+        $stepDiv.find("#new-github-token").hide();
         break;
     case "new-account-step.twitter-app":
         $stepDiv.find("#twitter-app-existing").html("<option value='new'>Create a new Application</option>");
@@ -715,6 +718,26 @@ function loadPage() {
             //         "account.", true);
             //     return;
             // }
+
+            enableByName({"next": true});
+        }).catch(function (err) {
+            updateStatus(err, true);
+            throw err;
+        });
+    });
+
+    $doc.find('#generate-github-token').click(function () {
+        enableByName({next: false});
+        updateStatus("Creating GitHub access token...");
+        return Github.createAccessToken().then(function (accessToken) {
+            if (accessToken === null) {
+                updateStatus("Please make sure you only have one GitHub tab open with the token.")
+                return;
+            }
+            updateStatus("GitHub token created and retrieved.");
+            $doc.find("input[name='github-token-info']").val(accessToken);
+            $doc.find("input[name='github-token']").val(accessToken);
+            $doc.find("#new-github-token").show();
 
             enableByName({"next": true});
         }).catch(function (err) {

@@ -729,6 +729,62 @@
                 waitForDocument();
             });
         },
+
+        create_github_access_token: function (opts) {
+            console.debug("create_github_access_token:");
+            return new Promise(function (resolve, reject) {
+                var triesLeft = 5;
+                function waitForDocument() {
+                    if (document.readyState !== "complete") {
+                        triesLeft--;
+                        if (triesLeft <= 0) {
+                            return reject(Fail.TIMEOUT, "Document did not load.");
+                        }
+                        console.debug("document not ready yet.");
+                        setTimeout(waitForDocument, 500);
+                        return;
+                    }
+                    if (!document.getElementById("oauth_access_description")) {
+                        return reject(new Fail(Fail.GENERIC, "Different page expected."));
+                    }
+                    document.getElementById('oauth_access_description').value = "distort";
+                    document.getElementById('oauth_access_scopes_repo').checked = true;
+                    document.getElementById('oauth_access_scopes_user').checked = true;
+                    document.getElementsByClassName('btn-primary')[0].addEventListener("click", function (event) {
+                        //TODO: possible issue here if the submit goes through before the message is delivered.                   
+                        document.getElementsByClassName('btn-primary')[0].submit();
+                        //resolve("distort");
+                        console.log(document.getElementsByClassName("new-token")[0].getElementsByClassName("token")[0].innerText);
+                    });
+                    console.log("Waiting for user to submit application creation form.");
+                }
+                waitForDocument();
+            });
+        },
+
+        retrieve_new_access_token: function() {
+            console.debug("retrieve_new_access_token:");
+            return new Promise(function (resolve, reject) {
+                var triesLeft = 5;
+                function waitForDocument() {
+                    if (document.readyState !== "complete") {
+                        triesLeft--;
+                        if (triesLeft <= 0) {
+                            return reject(Fail.TIMEOUT, "Document did not load.");
+                        }
+                        console.debug("document not ready yet.");
+                        setTimeout(waitForDocument, 500);
+                        return;
+                    }
+                    
+                    if (!document.getElementsByClassName("new-token")) {
+                        return reject(new Fail(Fail.GENERIC, "Different page expected."));
+                    }
+                    resolve(document.getElementsByClassName("new-token")[0].getElementsByClassName("token")[0].innerText);
+                }
+                waitForDocument();
+            });
+        }
     };
 
 

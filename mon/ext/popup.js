@@ -478,7 +478,7 @@ function onMessageSend() {
         alert("Invalid user input, please specify a recipient or a message");
         return;
     }
-    var m = API.messageManager.compose("#apptwistor", text.val());
+    var m = API.messageManager.compose(recipient.val(), text.val());
     API.outboxTask.queue.enqueue(m);
     //save message to DB
     //TODO: hookup with messages.js DB to store and retrieve certs

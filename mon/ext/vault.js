@@ -450,7 +450,7 @@ window.Vault = (function () {
         this.primaryApp = opts.primaryApp || null;         // dict   application/dev credentials
         //this.secondaryId = opts.secondaryId || null;       // string userid for github
         this.secondaryHandle = opts.secondaryHandle || null;  // string username for github
-
+        this.gitHubToken = opts.gitHubToken || null;          //github token for the account
         this.lastDistributeOn = opts.lastDistributeOn || null; // last time the cert was distributed.
 
         this.key = opts.key || new ECCKeyPair();
@@ -573,6 +573,7 @@ window.Vault = (function () {
                      primaryHandle: this.primaryHandle,
                      primaryApp: this.primaryApp,
                      //secondaryId: this.secondaryId,
+                     gitHubToken: this.gitHubToken,
                      secondaryHandle: this.secondaryHandle,
                      key: this.key.toStore(),
                      groups: this.groups.map(function (grp) { return grp.toStore(); }),

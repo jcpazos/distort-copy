@@ -325,8 +325,28 @@
 	  </div>
 	</div>
 
+	<div data-step="get-github-token" data-buttons="back next.disabled cancel" class="new-account-step">
+		<h3>Step 2.a GitHub Token</h3>
+		<p>In order to maintain your certificate updated on your
+		   Git account, Twistor requires access to a GitHub token.
+		   GitHub doesn't allow already created token information
+		   to be retrieved, so we need to generate a new one.
+		   Please click on 'Generate GitHub token' below and 
+		   then 'Generate Token' on the new tab.
+		<p><a id="generate-github-token">Generate GitHub Token</a>
+
+			<div id="new-github-token" class="hidden">
+				<hr>
+
+			<label for="github-token">GitHub Token</label>
+			<input placeholder="n/a" type="text" name="github-token" readonly></input>
+
+			<input type="hidden" name="github-token-info"></input>
+		</div>
+	</div> <!-- github-token step -->
+
 	<div data-step="twitter-app" data-buttons="back next.disabled cancel" class="new-account-step">
-	  <h3>Step 2. Streaming App</h3>
+	  <h3>Step 2.b Streaming App</h3>
 	  <p>To stream hashtags for incoming messages, Twistor relies
 	    on Twitter application credentials associated with your
 	    account. Twistor can create an application and tokens for you

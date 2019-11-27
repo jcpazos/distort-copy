@@ -208,108 +208,49 @@ window.Github = (function() {
             });
         },
 
+        // posts cert to GitHub
         postCert: function (account, userCert) {
             return this._ensureRepo(account).then(githubInfo => {
-                // get authenticity token to POST to repo
-                // add it to githubInfo
-                var repoURL = "https://github.com/" + [
-                    account.secondaryHandle,
-                    Github.CERT_REPO,
-                    "edit",
-                    Github.CERT_REPO_BRANCH,
-                    Github.CERT_REPO_FNAME
-                ].map(x => encodeURIComponent(x)).join("/");
-
-                function parseToken(xmlDoc) {
-                    var editForm = xmlDoc.getElementsByClassName("js-blob-form");
-                    if (editForm === null || editForm.length !== 1) {
-                        console.error("js-blob-form edit form fetch failed due to changed format");
-                        throw new Fail(Fail.GENERIC, "js-blob-form edit form fetch failed due to changed format");
-                    }
-
-                    var authToken = editForm[0].authenticity_token.value;
-                    if (authToken === null || (typeof authToken) !== "string") {
-                        console.error("authenticity_token authToken fetch failed due to changed format");
-                        throw new Fail(Fail.GENERIC, "authenticity_token authToken fetch failed due to changed format");
-                    }
-                    return authToken;
-                }
-
-                function parseCommitId(xmlDoc) {
-                    var editForm = xmlDoc.getElementsByClassName("js-blob-form");
-                    if (editForm === null || editForm.length !== 1) {
-                        console.error("js-blob-form edit form fetch failed due to changed format");
-                        throw new Fail(Fail.GENERIC, "js-blob-form edit form fetch failed due to changed format");
-                    }
-
-                    var commitId = editForm[0].commit.value;
-                    if (commitId === null || (typeof commitId) !== "string") {
-                        console.error("authenticity_token authToken fetch failed due to changed format");
-                        throw new Fail(Fail.GENERIC, "authenticity_token authToken fetch failed due to changed format");
-                    }
-                    return commitId;
-                }
-
-                return Utils.ajax({
-                    method: "GET",
-                    url: repoURL
-                }).then(preq => {
-                    if (preq.status === 404) {
-                        throw new Fail(Fail.NOENT, "file doesn't exist");
-                    } else if (preq.status < 200 || preq.status >= 400) {
-                        throw new Fail(Fail.GENERIC, "can't fetch repo edit form");
-                    }
-
-                    var xmlDoc = (new DOMParser()).parseFromString(preq.responseText, "text/html");
-                    var githubInfo = Github._extractHandle(xmlDoc);
-                    if (githubInfo.githubUser !== account.secondaryHandle) {
+                if (githubInfo.githubUser !== account.secondaryHandle) {
                         throw new Fail(Fail.BADAUTH,
                                        "Github authenticated under a different username. Found '" + (githubInfo.githubUser || "<none>") +
                                        "' but expected  '" + account.secondaryHandle + "'.");
                     }
-                    return {
-                        token: parseToken(xmlDoc),
-                        commitId: parseCommitId(xmlDoc)
-                    };
-                });
-            }).then(commitInfo => {
-                function isGithubCtx(ctx) {
-                    return (!ctx.isMaimed && ctx.app === "github.com");
-                }
+                var username = githubInfo.githubUser;
+                var email = "distort@gmail.com"
+                var readmeURL = "https://api.github.com/repos/" + username + "/twistor-app/readme";
+                var repoURL = "https://api.github.com/repos/" + username + "/twistor-app/contents/README.md";
+                var auth_credentials = btoa(username + ":" + account.gitHubToken);
+                var SHA_xhr = new XMLHttpRequest();
+                var xhr = new XMLHttpRequest();
 
-                var githubContents = API.filterContext(isGithubCtx);
-                if (githubContents.length > 0) {
-                    commitInfo.ctx = githubContents[0];
-                    return commitInfo;
-                } else {
-                    return API.openContext("https://github.com/").then(ctx => {
-                        commitInfo.ctx = ctx;
-                        return commitInfo;
-                    });
-                }
-            }).then(commitInfo => {
-                // post the form using the context.
-                var githubCtx = commitInfo.ctx;
-                var fd = {
-                    filename: Github.CERT_REPO_FNAME,
-                    authenticity_token: commitInfo.token,
-                    new_filename: Github.CERT_REPO_FNAME,
-                    commit: commitInfo.commitId,
-                    same_repo: "1",
-                    content_changed: "true",
-                    value: userCert.toRepo(account.key),
-                    message: "Certificate updated to " + (new Date(userCert.validFrom * 1000)).toISOString(),
-                    commit_choice: "direct",
-                    target_branch: Github.CERT_REPO_BRANCH,
-                    ghHandle: account.secondaryHandle,
+                xhr.onreadystatechange = function(){
+                    if(xhr.readyState==4 && xhr.status==200){
+                        console.log(xhr.responseText);
+                    }
                 };
 
-                return githubCtx.callCS("update_repo", {data: fd, ghHandle: account.secondaryHandle})
-                        .then(resp => { /*jshint unused: false */
-                            // TODO might want to return a commit id or a timestamp, for our records.
-                            // e.g. What if user wanted to know the last time the post was made.
-                            return true;
-                        });
+                xhr.open("PUT", repoURL);
+                xhr.setRequestHeader('Authorization', 'Basic ' + auth_credentials);
+
+                SHA_xhr.onreadystatechange = function(){
+                    if(SHA_xhr.readyState==4 && SHA_xhr.status==200){
+                        var cert = userCert.toRepo(account.key); 
+                        var bits = KeyClasses.stringToBits(cert, "domstring");
+                        var base64content = KeyClasses.bitsToString(bits, "base64");
+                        var body = '{"message":"updateCert","committer":{"name": "' + username + '", "email": "' + email + '"}, "content": "' + 
+                        base64content + 
+                        '", "sha": "'+ JSON.parse(SHA_xhr.responseText).sha  +'", "branch": "master"}';
+
+                        xhr.send(body);
+                    }
+                }
+
+                SHA_xhr.open("GET", readmeURL);
+                SHA_xhr.setRequestHeader('Authorization', 'Basic ' + auth_credentials);
+                SHA_xhr.send();
+
+                     
             });
         },
 
@@ -392,6 +333,47 @@ window.Github = (function() {
                                    "' but expected  '" + account.secondaryHandle + "'.");
                 }
 
+                var body = '{"owner": "' +  account.secondaryHandle + '", "name": "' + Github.CERT_REPO + '", "description": "' + 
+                           Utils.randomStr128() + '", "auto_init": true}';
+
+                var xhr = new XMLHttpRequest();
+                var username = githubInfo.githubUser;
+                var token = account.gitHubToken;
+                var auth_credentials = btoa(username + ":" + token);
+                var URL = "https://api.github.com/user/repos"; 
+
+                xhr.onreadystatechange = function(){
+                    if(xhr.readyState==4 && xhr.status==200){
+                        console.log(xhr.responseText);
+                    }
+                };
+
+                xhr.open("POST", URL);
+                xhr.setRequestHeader('Authorization', 'Basic ' + auth_credentials);
+                xhr.send(body);
+
+                
+            });
+        },
+        /*createRepo: function(account) {
+            return Utils.ajax({
+                method: "GET",
+                url: "https://github.com/new"
+            }).then(preq => {
+                if (preq.status < 200 || preq.status >= 400) {
+                    throw Fail.fromVal(preq);
+                }
+
+                // parse the response
+                var xmlDoc = (new DOMParser()).parseFromString(preq.responseText, "text/html");
+
+                var githubInfo = Github._extractHandle(xmlDoc);
+                if (githubInfo.githubUser !== account.secondaryHandle) {
+                    throw new Fail(Fail.BADAUTH,
+                                   "Github authenticated under a different username. Found '" + (githubInfo.githubUser || "<none>") +
+                                   "' but expected  '" + account.secondaryHandle + "'.");
+                }
+
                 var createForm = xmlDoc.getElementsByClassName("js-braintree-encrypt");
                 if (createForm === null || createForm.length !== 1) {
                     throw new Fail(Fail.GENERIC, "js-braintree-encrypt create form fetch failed due to changed format");
@@ -437,7 +419,58 @@ window.Github = (function() {
                         };
                     });
             });
-        }
+        },*/
+
+        createAccessToken: function () {
+            var originalTabId = -1;
+
+            return API.openContext("https://github.com/settings/tokens/new").then(function (ctx) {
+                originalTabId = ctx.tabId;
+
+                return ctx.callCS("create_github_access_token", {}).then(function () {
+                        return ctx;
+                }).catch(function (err) {
+                    if (err.code === Fail.MAIMED) {
+                        console.log("Access token creation tab closed early. checking if operation completed.");
+                        return ctx;
+                    } else {
+                        throw err;
+                    }
+                });
+            }).then(function () {
+                return new Promise(function (resolve, reject) {
+                    //API.closeContextTab(originalTabId);
+                    var triesLeft = 3;
+                    var retryMs = 2000;
+
+                    function tryAgain() {
+                            if (triesLeft <= 0) {
+                                return reject(new Fail(Fail.GENERIC, "Access token creation failed. Check that only one github page is open."));
+                            }
+
+                            var tokenCtx = API.filterContext(function (ctx) {
+                                return ctx.app == "github.com"
+                            });
+
+                            if (tokenCtx.length != 1) {
+                                triesLeft--;
+                                setTimeout(tryAgain, retryMs);
+                                console.log("New access token not available yet. Trying again in " + retryMs + "ms.");
+                                return;
+                            }
+                            tokenCtx[0].callCS("retrieve_new_access_token").then(function (accessToken) {
+                                console.log("accessToken retrieved: ", accessToken);
+                                resolve(accessToken);
+                            }).catch(function (err) {
+                                console.log("Error retrieving access Token", err);
+                            });
+                    }
+                    tryAgain();
+                });
+      
+            });
+        },
+
     };
 
 
