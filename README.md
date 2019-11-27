@@ -1,3 +1,7 @@
+This is a fork of the original distort repo by Dr. Jean-Sébastien Légaré and Jose Carlos Pazos. Distort is currently undergoing architectural changes due to new Twitter policies regarding app creation, which make it difficult to create personal applications. 
+
+The idea is to switch the client-side Twitter communication logic to a server. Examples of this functionality can be found in twistor_client/index.js. However, this server contains an early concept of the messaging API, so it's missing several features. The current messaging API can be found in the client-side implementation in mon/ext/twitter.js.
+
 BEESWAX
 =======
 
